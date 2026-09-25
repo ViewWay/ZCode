@@ -63,6 +63,8 @@ interface QuickPickCommandHandlers {
   openTerminalTab: () => void;
   openBrowserTab: () => void;
   openReviewTab: () => void;
+  openFileExplorerTab: () => void;
+  openRepoWikiTab: () => void;
 }
 
 interface CreateQuickPickCommandsOptions {
@@ -191,6 +193,32 @@ export function createQuickPickCommands({
       icon: "diff",
       keywords: ["add", "review", "diff", "changes", "添加审查", "审查标签", "变更"],
       run: handlers.openReviewTab,
+    },
+    {
+      id: "add-file-explorer-tab",
+      sectionId: "panels",
+      titleId: "quickPick.command.addFileExplorerTab",
+      icon: "folder",
+      keywords: [
+        "add",
+        "file",
+        "explorer",
+        "tree",
+        "files",
+        "文件",
+        "文件树",
+        "浏览",
+        "文件夹",
+      ],
+      run: handlers.openFileExplorerTab,
+    },
+    {
+      id: "add-repo-wiki-tab",
+      sectionId: "panels",
+      titleId: "quickPick.command.addRepoWikiTab",
+      icon: "book",
+      keywords: ["add", "wiki", "docs", "documentation", "wiki", "文档", "仓库"],
+      run: handlers.openRepoWikiTab,
     },
     {
       id: "settings",

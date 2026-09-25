@@ -45,6 +45,7 @@ import type {
   SavedWorkflowsOpenRunParams,
 } from "@/settings/saved-workflows/SavedWorkflowsSection.js";
 import { AutomationsMainBreadcrumbFrame } from "@/settings/AutomationsMainBreadcrumbFrame.js";
+import { RepoWikiWorkbench } from "@/app-shell/RepoWikiWorkbench.js";
 import { PluginStorePage } from "@/settings/PluginStorePage.js";
 import { TaskFindDialog } from "@/quickpick/TaskFindDialog.js";
 import { WorkspaceHeader } from "@/WorkspaceHeader.js";
@@ -303,6 +304,9 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   handleOpenWhiteboard,
   handleOpenDeveloperTools,
   handleOpenTerminalTab,
+  handleOpenFileExplorerTab,
+  handleOpenRepoWikiTab,
+  onOpenRepoWiki,
   handleToggleGit,
   handleOpenGitReview,
   handleToggleSidePane,
@@ -1463,6 +1467,8 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
       onOpenWhiteboard={handleOpenWhiteboard}
       onOpenDeveloperTools={handleOpenDeveloperTools}
       onOpenTerminalTab={handleOpenTerminalTab}
+      onOpenFileExplorerTab={handleOpenFileExplorerTab}
+      onOpenRepoWikiTab={handleOpenRepoWikiTab}
       onOpenReviewTab={handleToggleGit}
       onOpenSelectionSideConversation={handleOpenSelectionSideConversationLauncher}
       onRevealGitFileInTree={handleRevealGitFileInTree}
@@ -1543,6 +1549,8 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
             ref={sidebarContainerRef}
             className="h-full overflow-hidden select-none"
             aria-hidden={!isSidebarPanelVisible}
+            // 外观偏好「半透明侧边栏」的模糊目标（styles.css .appearance-translucent-sidebar）。
+            data-appearance-translucent="true"
           >
             <ScopedErrorBoundary
               scope="workspace-sidebar"
@@ -1564,6 +1572,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                     onSelectTask={handleSelectTaskInChat}
                     onStartDraftInWorkspace={handleCreateProjectDraft}
                     onOpenCodeViewer={handleOpenCodeViewer}
+                    onOpenRepoWiki={onOpenRepoWiki}
                     onOpenBrowserUrl={handleOpenBrowserUrl}
                     fileTreeOpenRequest={fileTreeOpenRequest}
                     onCreateTask={handleCreateTaskInChat}
@@ -1744,7 +1753,18 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                       </ScopedErrorBoundary>
                     ) : null}
                     <div className="min-h-0 flex-1 overflow-hidden">
-                      {workspaceMainView === "automations" ? (
+                      {workspaceMainView === "repo-wiki" ? (
+                        <RepoWikiWorkbench
+                          workspacePath={workspaceAbsPath}
+                          workspaceIdentity={workspaceIdentity}
+                          workspaceRemoteSessionId={workspaceRemoteSessionId}
+                          active={isWorkspaceVisible}
+                          gitSummary={gitState.summary}
+                          onExit={() => onWorkspaceMainViewChange?.("chat")}
+                          onOpenCodeViewer={handleOpenCodeViewer}
+                          onOpenBrowserUrl={handleOpenBrowserUrl}
+                        />
+                      ) : workspaceMainView === "automations" ? (
                         <main
                           id={AUTOMATIONS_TOAST_ANCHOR_ID}
                           className="flex h-full min-h-0 flex-1 flex-col bg-background"

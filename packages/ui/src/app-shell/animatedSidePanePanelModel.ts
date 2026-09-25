@@ -3,6 +3,8 @@ const MIN_PREVIEW_PANE_HEAVY_CONTENT_VISIBLE_INLINE_SIZE_PX = 96;
 export type OpenTabLauncherItemId =
   | "selection-side-conversation"
   | "review"
+  | "file-explorer"
+  | "repo-wiki"
   | "terminal"
   | "browser"
   | "developer-tools";
@@ -10,11 +12,16 @@ export type OpenTabLauncherItemId =
 export function resolveOpenTabLauncherItemIds({
   developerToolsEnabled,
   hasReviewTab,
+  hasFileExplorerTab = false,
+  hasRepoWikiTab = false,
   canOpenSelectionSideConversation = false,
   supportsEmbeddedBrowser = true,
 }: {
   developerToolsEnabled: boolean;
   hasReviewTab: boolean;
+  /** 单例 tab 已打开时不再进 launcher（与 review 同一去重语义）。 */
+  hasFileExplorerTab?: boolean;
+  hasRepoWikiTab?: boolean;
   canOpenSelectionSideConversation?: boolean;
   supportsEmbeddedBrowser?: boolean;
 }): OpenTabLauncherItemId[] {
@@ -26,6 +33,14 @@ export function resolveOpenTabLauncherItemIds({
 
   if (!hasReviewTab) {
     itemIds.push("review");
+  }
+
+  if (!hasFileExplorerTab) {
+    itemIds.push("file-explorer");
+  }
+
+  if (!hasRepoWikiTab) {
+    itemIds.push("repo-wiki");
   }
 
   itemIds.push("terminal");

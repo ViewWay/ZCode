@@ -227,6 +227,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   onSelectTask,
   onStartDraftInWorkspace,
   onOpenCodeViewer,
+  onOpenRepoWiki,
   onOpenBrowserUrl,
   fileTreeOpenRequest,
   onCreateTask,
@@ -275,6 +276,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   ) => void;
   onStartDraftInWorkspace: (targetWorkspacePath: string, targetWorkspaceIdentity?: string) => void;
   onOpenCodeViewer?: (source: CodeViewerSource) => void;
+  onOpenRepoWiki?: () => void;
   onOpenBrowserUrl?: (url: string) => void;
   fileTreeOpenRequest?: SidebarFileTreeOpenRequest | null;
   onCreateTask: (request?: CreateTaskRequest) => void;
@@ -1678,6 +1680,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               temporaryExternalDirectory={fileTreeTarget.temporaryExternalDirectory}
               canOpenLocalFileManager={isDesktop}
               activePreviewPath={activePreviewPath}
+              onOpenRepoWiki={onOpenRepoWiki}
               onClose={() => setIsFileTreeOpen(false)}
               onOpenBrowserUrl={isDesktop ? onOpenBrowserUrl : undefined}
               onOpenPreview={(source) => {

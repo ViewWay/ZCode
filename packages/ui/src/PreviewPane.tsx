@@ -20,6 +20,7 @@ import {
   FileCode2Icon,
   CopyIcon,
 } from "lucide-react";
+import { EditableHighlightedCode } from "@/components/ui/editable-highlighted-code.js";
 import { nanoid } from "nanoid";
 import { Button } from "@/components/ui/button.js";
 import { toast } from "@/components/ui/toast.js";
@@ -33,6 +34,7 @@ import { usePdfViewerLabels, usePptxViewerLabels } from "@/hooks/usePreviewViewe
 import {
   FILE_VIEWER_MAX_TEXT_BYTES,
   createDiffSourceFilePreviewSource,
+  inferCodeLanguage,
   inferImageMediaType,
   inferMediaPreview,
   isPdfPreviewPath,
@@ -49,6 +51,11 @@ import { usePlatform } from "@/hooks/usePlatform.js";
 import { useFileContextActions } from "@/hooks/useFileContextActions.js";
 import { useWorkspaceOpenInEditorTarget } from "@/hooks/useWorkspaceOpenInEditorTarget.js";
 import { logger } from "@/logger.js";
+import {
+  isFileEditorDirty,
+  selectFileEditorState,
+  useFileEditorStore,
+} from "@/store/fileEditorStore.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
 import { useCodeCommentPreviewStore } from "@/store/codeCommentPreviewStore.js";
 import { resolveTheme } from "@/useTheme.js";
@@ -484,6 +491,7 @@ export function PreviewPane({
   onOpenCodeViewer,
   renderHeavyContent = true,
   markdownSelectionTarget,
+  tabId,
 }: {
   source: CodeViewerSource | null;
   onClose: () => void;
@@ -492,6 +500,8 @@ export function PreviewPane({
   onOpenCodeViewer?: (source: CodeViewerSource) => void;
   renderHeavyContent?: boolean;
   markdownSelectionTarget?: MarkdownSelectionTarget;
+  /** 所属侧边面板 tab id，作为编辑草稿 store 的 key；缺席时编辑入口不出现。 */
+  tabId?: string;
 }) {
   const platform = usePlatform();
   const { intl } = useZCodeIntl();
@@ -521,6 +531,62 @@ export function PreviewPane({
   );
   const [filePreview, setFilePreview] = useState<FileTextSlice | null>(null);
   const [fileTooLarge, setFileTooLarge] = useState(false);
+  // ── 实时可编辑代码表面（file source 专用）──
+  // 可编辑文本文件的预览本身就是编辑器（高亮底层 + 透明输入覆盖层），
+  // 草稿所有者是 fileEditorStore（key=tabId），保存经 IFileService.writeTextFile。
+  const fileEditor = useFileEditorStore((state) =>
+    tabId ? selectFileEditorState(state, tabId) : null,
+  );
+  const canEditCurrentFile =
+    tabId != null &&
+    source?.type === "file" &&
+    filePreview != null &&
+    !filePreview.isBinary &&
+    !fileTooLarge;
+  const isFileDirty = fileEditor != null && isFileEditorDirty(fileEditor);
+  const handleChangeDraft = useCallback(
+    (next: string) => {
+      if (!tabId) return;
+      const store = useFileEditorStore.getState();
+      if (!store.editorsByTabId[tabId]) {
+        // 首次按键：以当前磁盘内容为基线建立编辑会话。
+        store.startEditing(tabId, filePreview?.content ?? "");
+      }
+      store.updateDraft(tabId, next);
+    },
+    [filePreview, tabId],
+  );
+  const handleDiscardDraft = useCallback(() => {
+    if (!tabId) return;
+    useFileEditorStore.getState().discardDraft(tabId);
+  }, [tabId]);
+  const handleSaveEditing = useCallback(async () => {
+    if (!tabId || !fileEditor || fileEditor.saving) return;
+    const filePath = source?.type === "file" ? source.path : null;
+    if (!filePath) return;
+    useFileEditorStore.getState().beginSave(tabId);
+    try {
+      await fileService.writeTextFile({ path: filePath, content: fileEditor.draft });
+      useFileEditorStore.getState().saveSucceeded(tabId);
+      // 实时编辑表面常驻：保存只推进基线（脏标记消失），不退出编辑态。
+      setFilePreview((prev) =>
+        prev
+          ? {
+              ...prev,
+              content: fileEditor.draft,
+              totalBytes: new TextEncoder().encode(fileEditor.draft).length,
+              truncated: false,
+            }
+          : prev,
+      );
+      toast(intl.formatMessage({ id: "codeViewer.saved" }));
+    } catch (saveError) {
+      const message = saveError instanceof Error ? saveError.message : String(saveError);
+      useFileEditorStore.getState().saveFailed(tabId, message);
+      toast(intl.formatMessage({ id: "codeViewer.saveFailed" }, { message }));
+      logger.error("[PreviewPane] writeTextFile failed", saveError);
+    }
+  }, [fileEditor, fileService, intl, source, tabId]);
   const [loadingInitial, setLoadingInitial] = useState(false);
   const [loadingImagePreview, setLoadingImagePreview] = useState(false);
   const [imagePreview, setImagePreview] = useState<FileMediaPreview | null>(null);
@@ -563,6 +629,14 @@ export function PreviewPane({
   const resolvedTheme = resolveTheme(theme);
   const codeTheme =
     resolvedTheme === "dark" ? codePreviewSettings.darkTheme : codePreviewSettings.lightTheme;
+  // 复用模块级 isMarkdownFilePath(path)。markdown 默认预览态；切到源码模式即实时编辑。
+  // 必须放在 markdownViewMode 声明之后。
+  const showLiveEditor =
+    canEditCurrentFile &&
+    (!isMarkdownFilePath(source?.path) || markdownViewMode === "code");
+  // live editor 会话未创建（从未输入）时以磁盘加载内容为初值；
+  // 首键经 handleChangeDraft 以该内容为基线懒建会话。
+  const liveEditorValue = fileEditor?.draft ?? filePreview?.content ?? "";
   const imageSource = useMemo(() => resolvePreviewPaneImageSource(source), [source]);
   const mediaSource = useMemo(() => resolvePreviewPaneMediaSource(source), [source]);
   const pdfSource = useMemo(() => resolvePreviewPanePdfSource(source), [source]);
@@ -1695,6 +1769,37 @@ export function PreviewPane({
               </DropdownMenuContent>
             </DropdownMenu>
           ) : null}
+          {/* 实时编辑：可编辑文本文件的预览即编辑器（高亮保留）；脏时头部出现保存/放弃。
+              草稿是 tab 级状态，markdown 切回预览态时脏标记仍须可见（否则脏草稿被静默藏起，
+              预览展示的是磁盘旧内容，看起来像丢改动）。 */}
+          {isFileDirty ? (
+            <>
+              <span className="shrink-0 rounded-full border border-border bg-surface px-1 py-0 text-ui-xs leading-3 text-foreground-subtle">
+                {intl.formatMessage({ id: "codeViewer.unsaved" })}
+              </span>
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                className="shrink-0 text-foreground-subtle hover:text-foreground"
+                onClick={handleDiscardDraft}
+                disabled={fileEditor?.saving}
+                title={intl.formatMessage({ id: "codeViewer.unsavedChanges.confirm" })}
+              >
+                {intl.formatMessage({ id: "codeViewer.unsavedChanges.confirm" })}
+              </Button>
+            </>
+          ) : null}
+          {isFileDirty ? (
+            <Button
+              type="button"
+              size="xs"
+              onClick={() => void handleSaveEditing()}
+              disabled={fileEditor?.saving}
+            >
+              {intl.formatMessage({ id: "codeViewer.save" })}
+            </Button>
+          ) : null}
           {/* 第一期 PPTX 明确为只读预览，不展示任何编辑入口。 */}
           <Button
             type="button"
@@ -1727,7 +1832,23 @@ export function PreviewPane({
         </div>
       </div>
       <div className="min-h-0 flex-1">
-        {renderHeavyContent ? (
+        {/* live editor 修复：原先要求 fileEditor 会话已存在才渲染编辑面，而会话只能由
+            编辑面的输入创建——先有输入面才有会话、先有会话才渲染输入面的死锁，导致
+            编辑功能不可达。现改为 showLiveEditor 即常驻渲染；未建会话时以磁盘内容为
+            初值，首键经 handleChangeDraft 懒建会话。不活动 tab 走既有延迟占位。 */}
+        {showLiveEditor && renderHeavyContent ? (
+          <EditableHighlightedCode
+            value={liveEditorValue}
+            onChange={handleChangeDraft}
+            language={inferCodeLanguage(source?.path, liveEditorValue)}
+            theme={codeTheme}
+            fontSizePx={codePreviewSettings.fontSizePx}
+            wrapLongLines={wrapLongLines}
+            showLineNumbers={codePreviewSettings.showLineNumbers}
+            onSave={() => void handleSaveEditing()}
+            ariaLabel={source?.type === "file" ? source.title : "editor"}
+          />
+        ) : renderHeavyContent ? (
           <PreviewPaneContent
             source={pptxSource ?? imageSource ?? pdfSource ?? mediaSource ?? source}
             filePreview={filePreview}

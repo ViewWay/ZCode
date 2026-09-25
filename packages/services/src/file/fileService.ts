@@ -1,6 +1,6 @@
 /* eslint-disable max-lines */
 import type { Dirent } from "node:fs";
-import { mkdir, open, readFile, readdir, realpath, stat } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, realpath, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { extname, join, relative, sep } from "node:path";
 import type {
@@ -29,6 +29,7 @@ import {
 } from "./workspaceFileIgnore.js";
 import { createServiceLogger } from "../logger/serviceLogger.js";
 import { getConversationWorkspaceDir } from "../paths.js";
+import { atomicWriteText } from "../fs/atomicFileUtils.js";
 const DEFAULT_TEXT_READ_BYTES = 128 * 1024;
 const MAX_TEXT_READ_BYTES = 256 * 1024;
 const DEFAULT_MEDIA_PREVIEW_BYTES = 4 * 1024 * 1024;
@@ -517,6 +518,28 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
         };
       } finally {
         await handle.close();
+      }
+    },
+    async writeTextFile(params: {
+      path: string;
+      content: string;
+    }): Promise<{ bytesWritten: number }> {
+      // 用户文件编辑保存走原子写但不加协作锁：同目录 lock 文件是为多进程抢写
+      // 配置 JSON 设计的，落在用户项目目录里反而制造噪音；tmp+rename 已避免半写。
+      const bytesWritten = Buffer.byteLength(params.content, "utf-8");
+      await atomicWriteText(params.path, params.content, { useFileLock: false });
+      return { bytesWritten };
+    },
+    async deleteFile(params: { path: string }): Promise<{ deleted: boolean }> {
+      // 不存在视为已删除（幂等，删除 Wiki 的常规路径）；非空目录与权限错误照常抛出。
+      try {
+        await rm(params.path);
+        return { deleted: true };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+          return { deleted: false };
+        }
+        throw error;
       }
     },
     async readFileRange(params: {

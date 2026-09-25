@@ -23,6 +23,7 @@ import {
   openWhiteboardSidePane,
   openModelTrajectorySidePane,
   openTerminalSidePane,
+  openFileExplorerSidePane,
   openSubagentSessionSidePane,
   openSubagentDirectorySidePane,
   openSelectionSideChatPane,
@@ -75,6 +76,9 @@ import {
 } from "@/lib/workspaceSidePane.js";
 import { isSidePaneTabVisibleForParent } from "@/lib/workspaceSidePane.js";
 import { logger } from "@/logger.js";
+import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useFileEditorStore, isFileEditorDirty } from "@/store/fileEditorStore.js";
+import { useConfirmDialogStore } from "@/store/confirmDialogStore.js";
 import { getPathLeaf, joinFilePath, toFileUrl } from "@/lib/path.js";
 import { shouldOpenWorkflowArtifactInBrowser } from "@/lib/workflowArtifactOpen.js";
 import { useWhiteboardStore } from "@/store/whiteboardStore.js";
@@ -171,6 +175,7 @@ export function useAppPanels(options: {
     defaultWhiteboardNamePrefix,
     platform,
   } = options;
+  const { intl } = useZCodeIntl();
   const supportsEmbeddedBrowser = explicitSupportsEmbeddedBrowser ?? Boolean(isDesktop);
   const activeWorkspaceKey = workspaceIdentity?.trim() || workspaceAbsPath;
   const { zcodeAgentService, zcodeSessionService } = useServices();
@@ -809,6 +814,17 @@ export function useAppPanels(options: {
     workspaceRemoteSessionId,
   ]);
 
+  const handleOpenFileExplorerTab = useCallback(() => {
+    revealSidePaneForCurrentOwner();
+    commitOpenedSidePaneState((current) => {
+      const next = openFileExplorerSidePane(current);
+      logger.info(
+        `[App] 打开文件浏览面板 workspace=${workspaceAbsPath} tabs=${next.tabs.length}`,
+      );
+      return next;
+    });
+  }, [commitOpenedSidePaneState, revealSidePaneForCurrentOwner, workspaceAbsPath]);
+
   const handleOpenModelTrajectory = useCallback(
     (params: { taskId: string; title?: string | null }) => {
       if (!params.taskId) {
@@ -1392,13 +1408,44 @@ export function useAppPanels(options: {
     [isDesktop, platform, workspaceRemoteSessionId],
   );
 
+  // 关闭带未保存编辑草稿的 code-viewer tab 前统一确认；确认后丢弃草稿。
+  // 三个关闭入口（单个/其他/全部）都必须走这里，避免批量关闭静默丢编辑。
+  const confirmCloseDirtyEditors = useCallback(
+    async (closingTabIds: readonly string[]): Promise<boolean> => {
+      const dirtyTabIds = closingTabIds.filter((id) => {
+        const editor = useFileEditorStore.getState().editorsByTabId[id];
+        return editor != null && isFileEditorDirty(editor);
+      });
+      if (dirtyTabIds.length === 0) return true;
+      const confirmed = await useConfirmDialogStore.getState().requestConfirmation({
+        title: intl.formatMessage({ id: "codeViewer.unsavedChanges.title" }),
+        description: intl.formatMessage(
+          { id: "codeViewer.unsavedChanges.description" },
+          { count: dirtyTabIds.length },
+        ),
+        confirmLabel: intl.formatMessage({ id: "codeViewer.unsavedChanges.confirm" }),
+        cancelLabel: intl.formatMessage({ id: "common.cancel" }),
+        confirmVariant: "destructive",
+      });
+      if (confirmed) {
+        for (const id of dirtyTabIds) {
+          useFileEditorStore.getState().discardDraft(id);
+        }
+      }
+      return confirmed;
+    },
+    [intl],
+  );
+
   const handleCloseSidePaneTab = useCallback(
     (tabId: string) => {
       const closingTab = sidePaneState?.tabs.find((tab) => tab.id === tabId);
       if (closingTab?.type === "selection-side-chat") {
         closeSelectionSideChatRuntime(closingTab);
       }
-      void closeBrowserTabsWithAuthority(closingTab ? [closingTab] : []).then((authorized) => {
+      void (async () => {
+        if (!(await confirmCloseDirtyEditors(closingTab ? [tabId] : []))) return;
+        const authorized = await closeBrowserTabsWithAuthority(closingTab ? [closingTab] : []);
         if (!authorized) return;
         if (closingTab) rememberClosedSidePaneTabs([closingTab]);
         // 保活：显式关闭 terminal tab 必须真回收 PTY/xterm（registry 常驻，不会随卸载自动回收）。
@@ -1418,13 +1465,14 @@ export function useAppPanels(options: {
         logger.info(
           `[App] 关闭右侧面板 tab=${tabId} mode=${activeTab?.type ?? "none"} workspace=${workspaceAbsPath} tabs=${next?.tabs.length ?? 0}`,
         );
-      });
+      })();
     },
     [
       activeTaskId,
       closeSelectionSideChatRuntime,
       closeBrowserTabsWithAuthority,
       commitSidePaneState,
+      confirmCloseDirtyEditors,
       rememberClosedSidePaneTabs,
       sidePaneState?.tabs,
       syncSidePaneCollapsedWithTabs,
@@ -1438,7 +1486,13 @@ export function useAppPanels(options: {
         sidePaneState?.tabs.filter((tab) => isSidePaneTabVisibleForParent(tab, activeTaskId)) ?? [];
       const targetExists = visibleTabs.some((tab) => tab.id === tabId);
       const closingTabs = targetExists ? visibleTabs.filter((tab) => tab.id !== tabId) : [];
-      void closeBrowserTabsWithAuthority(closingTabs).then((authorized) => {
+      void (async () => {
+        if (
+          !(await confirmCloseDirtyEditors(closingTabs.map((tab) => tab.id)))
+        ) {
+          return;
+        }
+        const authorized = await closeBrowserTabsWithAuthority(closingTabs);
         if (!authorized) return;
         for (const tab of closingTabs) {
           if (tab.type === "selection-side-chat") closeSelectionSideChatRuntime(tab);
@@ -1457,13 +1511,14 @@ export function useAppPanels(options: {
           );
           return next;
         });
-      });
+      })();
     },
     [
       activeTaskId,
       closeSelectionSideChatRuntime,
       closeBrowserTabsWithAuthority,
       commitSidePaneState,
+      confirmCloseDirtyEditors,
       rememberClosedSidePaneTabs,
       sidePaneState?.tabs,
       workspaceAbsPath,
@@ -1473,7 +1528,9 @@ export function useAppPanels(options: {
   const handleCloseAllSidePaneTabs = useCallback(() => {
     const visibleTabs =
       sidePaneState?.tabs.filter((tab) => isSidePaneTabVisibleForParent(tab, activeTaskId)) ?? [];
-    void closeBrowserTabsWithAuthority(visibleTabs).then((authorized) => {
+    void (async () => {
+      if (!(await confirmCloseDirtyEditors(visibleTabs.map((tab) => tab.id)))) return;
+      const authorized = await closeBrowserTabsWithAuthority(visibleTabs);
       if (!authorized) return;
       for (const tab of visibleTabs) {
         if (tab.type === "selection-side-chat") closeSelectionSideChatRuntime(tab);
@@ -1491,12 +1548,13 @@ export function useAppPanels(options: {
         syncSidePaneCollapsedWithTabs(next);
         return next;
       });
-    });
+    })();
   }, [
     activeTaskId,
     closeSelectionSideChatRuntime,
     closeBrowserTabsWithAuthority,
     commitSidePaneState,
+    confirmCloseDirtyEditors,
     rememberClosedSidePaneTabs,
     sidePaneState?.tabs,
     syncSidePaneCollapsedWithTabs,
@@ -1588,6 +1646,7 @@ export function useAppPanels(options: {
     handleOpenWhiteboard,
     handleOpenDeveloperTools,
     handleOpenTerminalTab,
+    handleOpenFileExplorerTab,
     handleOpenModelTrajectory,
     handleOpenSubagentSession,
     handleOpenBackgroundBash,

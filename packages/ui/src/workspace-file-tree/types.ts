@@ -12,6 +12,8 @@ export interface WorkspaceFileTreeProps {
   temporaryExternalDirectory?: boolean;
   canOpenLocalFileManager?: boolean;
   activePreviewPath?: string | null;
+  /** 打开 Repo Wiki 主工作台（官方文档入口：文件树顶部仓库名旁的图标）。 */
+  onOpenRepoWiki?: () => void;
   onClose: () => void;
   onOpenBrowserUrl?: (url: string) => void;
   onOpenPreview?: (source: CodeViewerSource) => void;

@@ -50,6 +50,7 @@ import { WorkflowRunDirectorySidePane } from "@/app-shell/WorkflowRunDirectorySi
 import { WorkflowActorSessionSidePane } from "@/app-shell/WorkflowActorSessionSidePane.js";
 import { WorkflowWorkspaceSidePane } from "@/app-shell/WorkflowWorkspaceSidePane.js";
 import { WorkflowArtifactSidePane } from "@/app-shell/WorkflowArtifactSidePane.js";
+import { FileExplorerSidePane } from "@/app-shell/FileExplorerSidePane.js";
 import {
   getSidePaneTabTitle,
   SidePaneTabDragOverlay,
@@ -90,8 +91,10 @@ import type { MessageFileLinkTarget } from "@/components/ai-elements/message.js"
 import { getVisibleSidePaneTabs } from "@/lib/workspaceSidePane.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import {
+  BookOpenIcon,
   BugIcon,
   FileDiffIcon,
+  FolderTreeIcon,
   GlobeIcon,
   MessageSquareTextIcon,
   PlusIcon,
@@ -315,6 +318,8 @@ export function AnimatedSidePanePanel({
   onOpenDeveloperTools,
   onOpenTerminalTab,
   onOpenReviewTab,
+  onOpenFileExplorerTab,
+  onOpenRepoWikiTab,
   onOpenSelectionSideConversation,
   onRevealGitFileInTree,
   onOpenBrowserUrl,
@@ -380,6 +385,8 @@ export function AnimatedSidePanePanel({
   onOpenDeveloperTools: () => void;
   onOpenTerminalTab: () => void;
   onOpenReviewTab: () => void;
+  onOpenFileExplorerTab: () => void;
+  onOpenRepoWikiTab: () => void;
   onOpenSelectionSideConversation: () => void;
   onRevealGitFileInTree?: (path: string) => void;
   onOpenBrowserUrl: (url: string) => void;
@@ -715,6 +722,24 @@ export function AnimatedSidePanePanel({
             <span>{intl.formatMessage({ id: "sidePane.review" })}</span>
           </DropdownMenuItem>
         ) : null}
+        <DropdownMenuItem
+          data-side-pane-add-item="file-explorer"
+          onSelect={() => {
+            onOpenFileExplorerTab();
+          }}
+        >
+          <FolderTreeIcon className="size-4" />
+          <span>{intl.formatMessage({ id: "sidePane.fileExplorer" })}</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          data-side-pane-add-item="repo-wiki"
+          onSelect={() => {
+            onOpenRepoWikiTab();
+          }}
+        >
+          <BookOpenIcon className="size-4" />
+          <span>{intl.formatMessage({ id: "sidePane.repoWiki" })}</span>
+        </DropdownMenuItem>
         {/* 画板入口未启用 */}
         {/* <DropdownMenuItem
           onSelect={() => {
@@ -772,6 +797,18 @@ export function AnimatedSidePanePanel({
       label: intl.formatMessage({ id: "sidePane.review" }),
       icon: FileDiffIcon,
       onOpen: onOpenReviewTab,
+    },
+    "file-explorer": {
+      id: "file-explorer",
+      label: intl.formatMessage({ id: "sidePane.fileExplorer" }),
+      icon: FolderTreeIcon,
+      onOpen: onOpenFileExplorerTab,
+    },
+    "repo-wiki": {
+      id: "repo-wiki",
+      label: intl.formatMessage({ id: "sidePane.repoWiki" }),
+      icon: BookOpenIcon,
+      onOpen: onOpenRepoWikiTab,
     },
     terminal: {
       id: "terminal",
@@ -886,6 +923,7 @@ export function AnimatedSidePanePanel({
           id: "developerTools.title",
         }),
         terminalTitle: intl.formatMessage({ id: "terminal.title" }),
+        fileExplorerTitle: intl.formatMessage({ id: "sidePane.fileExplorer" }),
         subagentTypeLabel: intl.formatMessage({ id: "sidePane.subagent" }),
         subagentDirectoryTitle: intl.formatMessage({
           id: "sidePane.subagentDirectory",
@@ -1185,6 +1223,7 @@ export function AnimatedSidePanePanel({
                           />
                         ) : tab.type === "code-viewer" ? (
                           <PreviewPane
+                            tabId={tab.id}
                             markdownSelectionTarget={{ sessionId: activeTaskId, workspaceKey }}
                             source={tab.source}
                             onClose={onCloseCodeViewer}
@@ -1205,6 +1244,17 @@ export function AnimatedSidePanePanel({
                               isSidePaneVisible: isVisible,
                               visibleInlineSizePx: sidePaneVisibleInlineSizePx,
                             })}
+                          />
+                        ) : tab.type === "file-explorer" ? (
+                          <FileExplorerSidePane
+                            tab={tab}
+                            workspacePath={workspaceAbsPath}
+                            workspaceIdentity={workspaceIdentity}
+                            workspaceRemoteSessionId={workspaceRemoteSessionId}
+                            isDesktop={isDesktop}
+                            onClose={() => onCloseTab(tab.id)}
+                            onOpenBrowserUrl={onOpenBrowserUrl}
+                            onOpenPreview={onOpenCodeViewer}
                           />
                         ) : tab.type === "git" ? (
                           <GitPane

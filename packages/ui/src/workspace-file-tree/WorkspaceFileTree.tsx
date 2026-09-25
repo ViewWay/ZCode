@@ -10,6 +10,7 @@ import {
 } from "react";
 import {
   ArrowLeft,
+  BookOpen,
   Copy,
   Ellipsis,
   FolderOpen,
@@ -94,6 +95,7 @@ export function WorkspaceFileTree({
   temporaryExternalDirectory = false,
   canOpenLocalFileManager = false,
   activePreviewPath,
+  onOpenRepoWiki,
   onClose,
   onOpenBrowserUrl,
   onOpenPreview,
@@ -663,6 +665,22 @@ export function WorkspaceFileTree({
             {workspaceTitle}
           </h3>
         </div>
+        {onOpenRepoWiki ? (
+          <ControlHintTooltip
+            title={intl.formatMessage({ id: "repoWiki.openFromTree" })}
+          >
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="text-foreground-subtle hover:bg-surface-hover hover:text-foreground"
+              aria-label={intl.formatMessage({ id: "repoWiki.openFromTree" })}
+              onClick={onOpenRepoWiki}
+            >
+              <BookOpen className="size-3.5" />
+            </Button>
+          </ControlHintTooltip>
+        ) : null}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button

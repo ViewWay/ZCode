@@ -33,6 +33,18 @@ export interface IFileService {
   createDefaultWorkspace(): Promise<{ path: string }>;
   createScratchWorkspace(params: { name: string }): Promise<{ path: string }>;
   readTextFile(params: { path: string; offset?: number; length?: number }): Promise<FileTextSlice>;
+  /**
+   * 以 utf-8 覆写文件内容（原子写：同目录 tmp + rename）。供预览面板编辑保存使用，
+   * 与 readTextFile 走同一 service channel，远程 workspace 由远程 Host 执行。
+   * v1 语义是「保存即覆盖」：调用方自行保证基线来源，不做冲突检测。
+   */
+  writeTextFile(params: { path: string; content: string }): Promise<{ bytesWritten: number }>;
+  /**
+   * 删除单个文件（不递归；目标不存在时返回 deleted=false 而不是报错）。
+   * 供「删除 Wiki」这类显式清理动作使用，与读写同一 service channel，
+   * 远程 workspace 由远程 Host 执行。
+   */
+  deleteFile(params: { path: string }): Promise<{ deleted: boolean }>;
   readMediaPreview(params: { path: string; maxBytes?: number }): Promise<FileMediaPreview>;
   /**
    * 按偏移读取文件的一段原始字节，供大二进制文件（如 PDF）按需分段加载。

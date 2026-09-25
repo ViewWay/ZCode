@@ -33,6 +33,15 @@ export interface GitSidePaneTab {
   openedAt?: number;
 }
 
+/** workspace 级单例：侧边面板内的项目文件树，选中文件经 code-viewer 标签页打开。 */
+export interface FileExplorerSidePaneTab {
+  id: "file-explorer";
+  type: "file-explorer";
+  ownerTaskId?: string | null;
+  workspaceKey?: string | null;
+  openedAt?: number;
+}
+
 export interface CodeViewerSidePaneTab {
   id: string;
   type: "code-viewer";
@@ -518,6 +527,7 @@ export type WorkspaceSidePaneTab =
   | BrowserSidePaneTab
   | GitSidePaneTab
   | CodeViewerSidePaneTab
+  | FileExplorerSidePaneTab
   | TreemappingSidePaneTab
   | WhiteboardSidePaneTab
   | ModelTrajectorySidePaneTab
@@ -1054,6 +1064,7 @@ export function sidePaneOwnerKey(taskId: string | null | undefined): string {
 const WORKSPACE_GLOBAL_SIDE_PANE_TAB_TYPES = new Set<WorkspaceSidePaneTab["type"]>([
   "git",
   "developer-tools",
+  "file-explorer",
   "treemapping",
 ]);
 
@@ -1568,6 +1579,21 @@ export function openWhiteboardSidePane(
   },
 ): WorkspaceSidePaneState {
   return activateSidePaneTab(current, createWhiteboardSidePaneTab(options));
+}
+
+function createFileExplorerSidePaneTab(): FileExplorerSidePaneTab {
+  return {
+    id: "file-explorer",
+    type: "file-explorer",
+    openedAt: Date.now(),
+  };
+}
+
+/** 打开（或激活既有）文件浏览面板；workspace 级单例，跨对话复用。 */
+export function openFileExplorerSidePane(
+  current: WorkspaceSidePaneState | null,
+): WorkspaceSidePaneState {
+  return activateSidePaneTab(current, createFileExplorerSidePaneTab());
 }
 
 export function openModelTrajectorySidePane(

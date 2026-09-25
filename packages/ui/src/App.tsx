@@ -208,6 +208,10 @@ export function App({
     (state) => state.getWorkspaceState(workspaceAbsPath, workspaceIdentity).draftSessionId,
   );
   const sidePaneOwnerId = activeTaskId ?? draftSessionId ?? null;
+  // Repo Wiki 现在是主工作区视图（文档语义：接管主区）；入口统一切主视图。
+  const handleOpenRepoWikiTab = useCallback(() => {
+    setWorkspaceMainView("repo-wiki");
+  }, []);
   const [summaryPanelVariantOverride, setSummaryPanelVariantOverride] =
     useState<ChatViewSummaryPanelVariant | null>(null);
   const draftFocusVersion = workspaceShellZCodeState.draftFocusVersion;
@@ -232,6 +236,7 @@ export function App({
     handleOpenWhiteboard,
     handleOpenDeveloperTools,
     handleOpenTerminalTab,
+    handleOpenFileExplorerTab,
     handleOpenSubagentSession,
     handleOpenBackgroundBash,
     handleOpenSubagentDirectory,
@@ -1032,6 +1037,8 @@ export function App({
           toggleTerminal: () => runVisibleWorkspaceCommand(handleToggleTerminalIfWritable),
           togglePreview: () => runVisibleWorkspaceCommand(handleToggleBrowser),
           openTerminalTab: () => runVisibleWorkspaceCommand(handleOpenTerminalTabIfWritable),
+          openFileExplorerTab: () => runVisibleWorkspaceCommand(handleOpenFileExplorerTab),
+          openRepoWikiTab: () => runVisibleWorkspaceCommand(handleOpenRepoWikiTab),
           openBrowserTab: () => runVisibleWorkspaceCommand(handleOpenBrowserTab),
           openReviewTab: () => runVisibleWorkspaceCommand(handleOpenGitIfWritable),
         },
@@ -1048,6 +1055,8 @@ export function App({
       handleOpenBrowserTab,
       handleOpenGitIfWritable,
       handleOpenTerminalTabIfWritable,
+      handleOpenFileExplorerTab,
+      handleOpenRepoWikiTab,
       handleToggleBrowser,
       handleToggleSidebar,
       handleToggleTerminalIfWritable,
@@ -1245,6 +1254,9 @@ export function App({
         handleOpenWhiteboard={handleOpenWhiteboard}
         handleOpenDeveloperTools={handleOpenDeveloperTools}
         handleOpenTerminalTab={handleOpenTerminalTabIfWritable}
+        handleOpenFileExplorerTab={handleOpenFileExplorerTab}
+        handleOpenRepoWikiTab={handleOpenRepoWikiTab}
+        onOpenRepoWiki={handleOpenRepoWikiTab}
         handleToggleGit={handleToggleGitIfWritable}
         handleToggleSidePane={handleToggleSidePane}
         handleOpenBrowserUrl={handleOpenBrowserUrl}

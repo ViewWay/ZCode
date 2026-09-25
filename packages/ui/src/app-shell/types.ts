@@ -117,7 +117,7 @@ export interface GitChangeSummary {
   removed: number;
 }
 
-export type WorkspaceMainView = "chat" | "automations" | "plugin-store";
+export type WorkspaceMainView = "chat" | "automations" | "plugin-store" | "repo-wiki";
 
 export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackService"> {
   workspaceReadOnlyReason?: string;
@@ -238,6 +238,10 @@ export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackS
   handleOpenWhiteboard: () => void;
   handleOpenDeveloperTools: () => void;
   handleOpenTerminalTab: () => void;
+  handleOpenFileExplorerTab: () => void;
+  handleOpenRepoWikiTab: () => void;
+  /** 打开 Repo Wiki 主工作台（文件树顶部入口）。 */
+  onOpenRepoWiki?: () => void;
   handleToggleGit: () => void;
   handleOpenGitReview: (sourceId?: GitChangeSourceId) => void;
   handleToggleSidePane: () => void;
