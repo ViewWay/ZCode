@@ -34,6 +34,13 @@ export const ZCODE_KNOWN_TOOL_NAMES = [
   // wire 名就是 snake_case 的 submit_result（仓库里唯一一个），下划线必须字面在场：
   // 未登记时 UI identity 退回 unknown，动态工作流 actor 的提交会落到 raw fallback renderer。
   "submit_result",
+  // Agent Teams（specs/agent-teams.md）：团队注册表与共享任务列表，family = team。
+  "TeamCreate",
+  "TeamDelete",
+  "TaskCreate",
+  "TaskUpdate",
+  "TaskGet",
+  "TaskList",
 ] as const;
 
 export type ZCodeKnownToolName = (typeof ZCODE_KNOWN_TOOL_NAMES)[number];
@@ -52,7 +59,8 @@ export type ZCodeToolFamily =
   | "message"
   | "task-control"
   | "node-repl"
-  | "workflow";
+  | "workflow"
+  | "team";
 
 const TOOL_FAMILY_BY_NAME: Record<ZCodeKnownToolName, ZCodeToolFamily> = {
   Read: "file-read",
@@ -89,6 +97,12 @@ const TOOL_FAMILY_BY_NAME: Record<ZCodeKnownToolName, ZCodeToolFamily> = {
   CreateWorkflow: "workflow",
   AmendWorkflow: "workflow",
   submit_result: "workflow",
+  TeamCreate: "team",
+  TeamDelete: "team",
+  TaskCreate: "team",
+  TaskUpdate: "team",
+  TaskGet: "team",
+  TaskList: "team",
 };
 
 const TOOL_NAME_BY_LOWER = new Map<string, ZCodeKnownToolName>(

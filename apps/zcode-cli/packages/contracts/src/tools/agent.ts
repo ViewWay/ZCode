@@ -7,6 +7,7 @@ import { z } from "zod";
 import type { ToolCallId, TraceId } from "../interfaces/shared.js";
 import type { ModelUsage } from "../model/index.js";
 import { toToolJsonSchema } from "./json-schema.js";
+import { TEAM_MEMBER_NAME_MAX_CHARS, teamNameSchema } from "./team.js";
 
 export const AgentType = {
   GeneralPurpose: "general-purpose",
@@ -30,6 +31,17 @@ export const AgentInputSchema = z.object({
     .describe(
       "Set to true to run this agent in the background. You will be notified when it completes.",
     ),
+  // Agent Teams（specs/agent-teams.md）：team_name + name 同时在场时走常驻
+  // teammate 生成路径（不随单任务结束退出），其余入参维持 subagent 语义不变。
+  team_name: teamNameSchema
+    .optional()
+    .describe("Spawn this agent as a named teammate of the given team (created via TeamCreate)."),
+  name: z
+    .string()
+    .min(1)
+    .max(TEAM_MEMBER_NAME_MAX_CHARS)
+    .optional()
+    .describe("Persistent teammate name within the team; required whenever team_name is set."),
 });
 
 export type AgentInput = z.infer<typeof AgentInputSchema>;

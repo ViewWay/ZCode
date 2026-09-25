@@ -54,6 +54,10 @@ export * from "./resolve-workflow-question.js";
 export * from "./workflow-observation-display.js";
 export * from "./tool-result-metadata.js";
 export * from "./performance.js";
+// Agent Teams（specs/agent-teams.md）：名字常量与 TeamFile/共享任务 schema 被 core 的
+// 工具注册、团队存储层与 teammate 路由读走；漏掉这些行消费方会静默拿不到契约。
+export * from "./team.js";
+export * from "./team-task.js";
 
 // Shared types (only once to avoid duplicates)
 export type { DiffHunk, GitDiff } from "./write.js";

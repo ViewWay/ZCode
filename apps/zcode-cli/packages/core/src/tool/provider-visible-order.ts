@@ -24,6 +24,8 @@ const SORTED_PROVIDER_TOOL_NAMES = new Set([
   "TaskOutput",
   "TaskStop",
   "TaskUpdate",
+  "TeamCreate",
+  "TeamDelete",
   "TodoRead",
   "TodoWrite",
   "WebFetch",

@@ -53,10 +53,11 @@ Runtime（`apps/zcode-cli/packages/core`）已具备的底座，本 spec **只�
 
 ### 存储约定（磁盘为唯一事实源）
 
-- 目录：`<home>/.zcode/teams/<workspace-key>/<team-name>/`；`workspace-key` 复用 workspaceIdentity 归一规则（`workspaceIdentity?.trim() || workspacePath`），与 AGENTS.md 一致，不在业务代码手写格式。
+- 目录：`<home>/.zcode/teams/<workspace-key>/<team-name>/`；`workspace-key` 由身份键 `workspaceIdentity?.trim() || workspacePath`（AGENTS.md Workspace Identity 规则）经 sha256 取前 12 位 hex 派生（与 repo-wiki 目录哈希约定一致——身份值可能含文件系统非法字符，不能直接作目录名）。
 - `config.json`（TeamFile）：`{ name, description?, createdAt, leadAgentId, leadSessionId?, members: [{ agentId, name, color?, permissionMode?, cwd, sessionId?, isActive, joinedAt }] }`；`color` 复用 `packages/services/src/subagents/subagentMarkdown.ts` 的 8 色板。
-- `inboxes/<member-name>.json`：消息数组（见下节）；写入使用文件锁（重试 + 指数退避），保证多写者互斥。
+- `inboxes/<member-name>.json`：消息数组（见下节）；`locks/<resource>.lock`：文件锁（O_EXCL 独占创建 + 指数退避重试 + 陈旧锁按 mtime 打破），保证多写者互斥；所有 JSON 落盘一律 tmp → rename 原子写。
 - services 层（`packages/services`）只提供**只读发现/解析**（供 UI roster 与设置页展示），不新增第二条写入路径——写所有权归 runtime。
+- 共享任务解析规则（v1）：Task* 工具作用于 workspace 内**唯一**团队；零个/多个团队时返回明确错误要求先收敛（TeamCreate / TeamDelete），不在工具入参引入第二个 team 选择器。
 
 ### 状态所有者与事件顺序
 
@@ -157,3 +158,12 @@ TeammateA                TeamFile/mailbox              TeammateB
 3. services：只读发现服务（含测试）。
 4. ui：renderer → roster 视图 → badge → i18n。
 5. 每步执行 `pnpm typecheck`、`pnpm lint`、`pnpm architecture:check --changed`；行为改动补对应测试，交互改动补 E2E 场景。
+
+## 实施状态
+
+- **runtime 存储层与团队工具面（已落地，tests: `apps/zcode-cli/packages/core/test/team/`）**：
+  - contracts（`apps/zcode-cli/packages/contracts/src/tools/team.ts` / `team-task.ts`）：TeamCreate/TeamDelete 与 TaskCreate/TaskUpdate/TaskGet/TaskList 的 zod 契约、名字约束（`TEAM_NAME_PATTERN`，跨平台安全由 `isSafeTeamPathSegment` 补 Windows 保留名/分隔符校验）、成员上限 8、shutdown 审批超时 30s。
+  - core（`apps/zcode-cli/packages/core/src/subagent/team/`）：`team-paths.ts`（workspace-key 哈希与目录解析）、`team-lock.ts`（文件锁）、`team-json-file.ts`、`team-store.ts`（TeamFile 幂等创建/成员注册/上限/删除）、`team-mailbox.ts`（单发/确认读/广播隔离）、`team-tasks.ts`（CAS + 状态机）。
+  - handlers（`apps/zcode-cli/packages/core/src/tool/handlers/team-create.ts` / `team-delete.ts` / `team-task.ts`）：注册门 `includeTeam` / `includeTeamTasks`（主会话 `taskType !== "subagent_child"` 且 subagentPort 在场；无嵌套团队）。
+  - TeamDelete v1：清理事实源 + 幂等 `not_found`；`shutdownRequested` 字段先行固定 wire 形状，shutdown 投递随 teammate 运行时接入。
+- **待办**：teammate 常驻生成路径（Agent 工具 `team_name`+`name` 路由，contracts 入参已扩展）、SendMessage 队友路由与广播、teammate 邮箱轮询与 idle 通知、权限徽标（shared origin 扩展）、services 只读发现、UI roster/renderer/i18n。

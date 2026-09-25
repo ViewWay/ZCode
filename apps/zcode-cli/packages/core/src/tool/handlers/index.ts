@@ -52,6 +52,14 @@ import {
 import { askUserQuestionToolEntry } from "./ask-user-question.js";
 import { sendMessageToolEntry } from "./send-message.js";
 import { respondToCoordinatorToolEntry } from "./respond-to-coordinator.js";
+import { teamCreateToolEntry } from "./team-create.js";
+import { teamDeleteToolEntry } from "./team-delete.js";
+import {
+  taskCreateToolEntry,
+  taskGetToolEntry,
+  taskListToolEntry,
+  taskUpdateToolEntry,
+} from "./team-task.js";
 import { createSubmitResultToolEntry, submitResultToolEntry } from "./submit-result.js";
 import { escalateToolEntry } from "./escalate.js";
 import { resolveWorkflowQuestionToolEntry } from "./resolve-workflow-question.js";
@@ -96,6 +104,14 @@ export const builtInTools: ToolEntry[] = [
   askUserQuestionToolEntry,
   sendMessageToolEntry,
   respondToCoordinatorToolEntry,
+  // Agent Teams（specs/agent-teams.md）：团队注册表与共享任务列表工具面。
+  // 注册门在 registerBuiltInTools 的 includeTeam / includeTeamTasks。
+  teamCreateToolEntry,
+  teamDeleteToolEntry,
+  taskCreateToolEntry,
+  taskUpdateToolEntry,
+  taskGetToolEntry,
+  taskListToolEntry,
   submitResultToolEntry,
   // actor 的升级通道。与 submit_result 完全同构：
   // 端口在场即注册（includeEscalate），`tools:"none"` 下由 workflow_child 的 allowlist
@@ -162,6 +178,13 @@ interface RegisterBuiltInToolsOptions {
   includeAgent?: boolean;
   includeSendMessage?: boolean;
   includeRespondToCoordinator?: boolean;
+  /**
+   * Agent Teams 团队管理面（TeamCreate/TeamDelete）：v1 仅主会话（非 subagent_child）
+   * 注册，由 runtime-tools 按端口与 runtimeScope 推导传入。
+   */
+  includeTeam?: boolean;
+  /** Agent Teams 共享任务面（TaskCreate/TaskUpdate/TaskGet/TaskList）：lead 与 teammate 都可用。 */
+  includeTeamTasks?: boolean;
   includeSubmitResult?: boolean;
   /**
    * 在场时 submit_result 以 typed 声明注册（`{ result: <schema> }`，strict 资格），供 dwf mono
@@ -221,6 +244,21 @@ export function registerBuiltInTools(
       continue;
     }
     if (entry.metadata.name === "SendMessage" && options.includeSendMessage !== true) {
+      continue;
+    }
+    if (
+      (entry.metadata.name === "TeamCreate" || entry.metadata.name === "TeamDelete") &&
+      options.includeTeam !== true
+    ) {
+      continue;
+    }
+    if (
+      (entry.metadata.name === "TaskCreate" ||
+        entry.metadata.name === "TaskUpdate" ||
+        entry.metadata.name === "TaskGet" ||
+        entry.metadata.name === "TaskList") &&
+      options.includeTeamTasks !== true
+    ) {
       continue;
     }
     if (
