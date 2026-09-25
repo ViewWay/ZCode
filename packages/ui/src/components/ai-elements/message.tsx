@@ -1365,7 +1365,7 @@ export const MessageResponse = memo(
       [renderZCodeFileCitations, workspaceHomePath, workspacePath],
     );
     const responseClassName = cn(
-      "size-full text-ui-base leading-[1.75] tracking-wide [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+      "appearance-content-font size-full text-ui-base leading-[1.75] tracking-wide [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
       className,
     );
     const fallbackClassName = cn(responseClassName, "whitespace-pre-wrap break-words");

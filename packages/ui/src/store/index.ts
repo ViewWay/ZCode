@@ -4,6 +4,7 @@
  * 需要跨窗口同步的状态通过 BroadcastService 广播。
  * 广播频道前缀 "state:" 表示状态同步类消息。
  */
+/* eslint-disable max-lines -- 全局 store 集中装配各领域切片与广播接线；可外移的切片已外移（见 appearancePreferencesState 等），剩余为必要接线。 */
 import { create } from "zustand";
 import type { IBroadcastService, BroadcastMessage } from "@zcode/services";
 import type { OAuthProviderId, UserInfo } from "@zcode/shared";
@@ -24,6 +25,12 @@ import {
 } from "@/store/codingPlanQuotaResetState.js";
 import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@/lib/codePreviewSettings.js";
 import { readSafeLocalStorage, writeSafeLocalStorage } from "@/lib/browserEnvironment.js";
+import type { AppearancePreferences } from "@/lib/appearancePreferences.js";
+import { applyThemeAndAppearance } from "@/lib/appearanceThemeApply.js";
+import {
+  createAppearancePreferencesState,
+  type AppearancePreferencesState,
+} from "@/store/appearancePreferencesState.js";
 import {
   applyUiFontSizePx,
   loadUiFontSizePx,
@@ -37,7 +44,7 @@ import {
   persistTaskNotificationSoundEnabled,
 } from "@/lib/taskNotificationPreferences.js";
 import type { Theme } from "../useTheme.js";
-import { applyTheme, normalizeThemePreference, resolveTheme } from "../useTheme.js";
+import { normalizeThemePreference, resolveTheme } from "../useTheme.js";
 
 import {
   INTERFACE_MODE_STORAGE_KEY,
@@ -99,7 +106,8 @@ function loadPerformanceMode(): boolean {
 // State 定义
 // ============================================================================
 
-export interface ZCodeState {
+// 外观偏好切片（appearancePreferences / setAppearancePreferences）来自 AppearancePreferencesState。
+export interface ZCodeState extends AppearancePreferencesState {
   /** 展示详情偏好，不改变 Agent 权限或执行能力。 */
   interfaceMode: InterfaceMode;
   setInterfaceMode: (mode: InterfaceMode) => void;
@@ -211,9 +219,17 @@ export interface ZCodeState {
 // 需要广播的字段 —— 只有这些字段的变更会发送给其他窗口
 // ============================================================================
 
-const BROADCAST_FIELDS = new Set(["theme", "locale", "uiFontSizePx", "interfaceMode"]);
+const BROADCAST_FIELD_LIST = [
+  "theme",
+  "locale",
+  "uiFontSizePx",
+  "interfaceMode",
+  "appearancePreferences",
+] as const;
 
-type BroadcastField = "theme" | "locale" | "uiFontSizePx" | "interfaceMode";
+const BROADCAST_FIELDS = new Set<string>(BROADCAST_FIELD_LIST);
+
+type BroadcastField = (typeof BROADCAST_FIELD_LIST)[number];
 
 /** 广播频道名前缀 */
 const STATE_CHANNEL_PREFIX = "state:";
@@ -259,7 +275,8 @@ export function createZCodeStore(
       const normalizedTheme = normalizeThemePreference(theme);
       writeSafeLocalStorage("zcode-theme", normalizedTheme);
       syncSystemThemeListener(normalizedTheme);
-      applyTheme(normalizedTheme);
+      // 主题切换与外观覆盖必须成对应用：外观内联变量按新 resolved 主题重算。
+      applyThemeAndAppearance(normalizedTheme, get().appearancePreferences);
 
       set({ theme: normalizedTheme });
     },
@@ -293,6 +310,10 @@ export function createZCodeStore(
       set({ uiFontSizePx: normalizedFontSizePx });
     },
 
+    ...createAppearancePreferencesState({
+      readState: get,
+      writeState: (updater) => set((state) => updater(state)),
+    }),
     performanceMode: loadPerformanceMode(),
     setPerformanceMode: (enabled: boolean) => {
       writeSafeLocalStorage(PERFORMANCE_MODE_STORAGE_KEY, enabled ? "true" : "false");
@@ -411,9 +432,9 @@ export function createZCodeStore(
         return;
       }
 
-      // system 模式需要持续订阅系统亮暗变化，不能只在切换到 system 的瞬间应用一次。
-      // 否则用户后续切系统主题时，DOM 上的 dark class 不会同步更新，看起来就像“跟随系统失效”。
-      applyTheme("system");
+      // system 模式需持续订阅系统亮暗变化，否则切系统主题时 dark class 不会更新；
+      // 亮暗翻转后外观覆盖也要按新 resolved 主题重算（两步成对应用）。
+      applyThemeAndAppearance("system", useStore.getState().appearancePreferences);
     };
 
     if (typeof mediaQuery.addEventListener === "function") {
@@ -482,19 +503,19 @@ export function createZCodeStore(
         state.setInterfaceMode(normalizeInterfaceMode(msg.payload));
       } else if (field === "uiFontSizePx" && typeof msg.payload === "number") {
         state.setUiFontSizePx(msg.payload);
+      } else if (field === "appearancePreferences" && msg.payload instanceof Object) {
+        state.setAppearancePreferences(msg.payload as Partial<AppearancePreferences>);
       }
     } finally {
       applyingBroadcast = false;
     }
   });
 
-  syncSystemThemeListener(useStore.getState().theme);
-  applyTheme(useStore.getState().theme);
-  applyUiFontSizePx(useStore.getState().uiFontSizePx);
-  document.documentElement.classList.toggle(
-    "dark",
-    resolveTheme(useStore.getState().theme) === "dark",
-  );
+  const initialState = useStore.getState();
+  syncSystemThemeListener(initialState.theme);
+  applyThemeAndAppearance(initialState.theme, initialState.appearancePreferences);
+  applyUiFontSizePx(initialState.uiFontSizePx);
+  document.documentElement.classList.toggle("dark", resolveTheme(initialState.theme) === "dark");
 
   return useStore;
 }

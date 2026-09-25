@@ -103,7 +103,7 @@ import {
   GeneralSectionHeader,
   resolveSettingsSectionForPlatform,
 } from "./settingsPageHelpers.js";
-import { AppearanceSectionContent } from "./settingsCodePreview.js";
+import { AppearanceSectionContent } from "./settingsAppearance.js";
 import type { SettingsSectionId } from "@/lib/settingsNavigation.js";
 import { requestPluginStoreOpen } from "@/lib/pluginStoreNavigation.js";
 import {
@@ -343,6 +343,8 @@ export function SettingsPage({
   const setCodePreviewSettings = useZCodeStore((state) => state.setCodePreviewSettings);
   const uiFontSizePx = useZCodeStore((state) => state.uiFontSizePx);
   const setUiFontSizePx = useZCodeStore((state) => state.setUiFontSizePx);
+  const appearancePreferences = useZCodeStore((state) => state.appearancePreferences);
+  const setAppearancePreferences = useZCodeStore((state) => state.setAppearancePreferences);
   const notificationEnabled = useZCodeStore((state) => state.notificationEnabled);
   const setNotificationEnabled = useZCodeStore((state) => state.setNotificationEnabled);
   const notificationSoundEnabled = useZCodeStore((state) => state.notificationSoundEnabled);
@@ -1803,6 +1805,8 @@ export function SettingsPage({
                                 failureStage: "local_commit",
                               })
                             }
+                            appearancePreferences={appearancePreferences}
+                            setAppearancePreferences={setAppearancePreferences}
                           />
                         ) : activeSection === "shortcuts" ? (
                           <ShortcutSettingsSection isDesktop={Boolean(isDesktop)} />

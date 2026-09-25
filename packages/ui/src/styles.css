@@ -61,6 +61,29 @@ body,
 body {
   margin: 0;
   overflow: hidden;
+  /* 外观偏好「UI 字重」基线；显式 font-medium/semibold 的元素不受影响。 */
+  font-weight: var(--appearance-ui-font-weight, 400);
+}
+
+/* === 外观偏好（appearancePreferences）生效规则 === */
+/* 内容字体：助手 markdown 容器挂 .appearance-content-font，空值回退继承 --font-sans。 */
+.appearance-content-font {
+  font-family: var(--font-content, inherit);
+}
+
+/* 半透明侧边栏：panel/sidebar 的透明化由 appearanceThemeApply 直接写内联变量
+ * （内联优先级高，若走 class 规则会被背景自定义的内联值覆盖而失效），这里只做背景模糊。 */
+html.appearance-translucent-sidebar [data-appearance-translucent] {
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+}
+
+/* 指针光标偏好：显式开启后按钮/下拉/链接使用 pointer。 */
+html.appearance-pointer-cursor button:not(:disabled),
+html.appearance-pointer-cursor [role="button"]:not([aria-disabled="true"]),
+html.appearance-pointer-cursor select:not(:disabled),
+html.appearance-pointer-cursor a {
+  cursor: pointer;
 }
 
 /* 中文模板描述按单字断行会拆开“简报”等词组，并把标点挤到下一行。
