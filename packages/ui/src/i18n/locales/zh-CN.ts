@@ -463,6 +463,7 @@ const zhCN: Record<string, string> = {
   "quickPick.command.logout": "断开连接",
   "commandCenter.placeholder": "搜索操作、任务或文件",
   "commandCenter.open": "搜索",
+  "commandCenter.close": "关闭搜索",
   "commandCenter.noResults": "暂无相关结果",
   "commandCenter.scopeTabs": "命令中心范围",
   "commandCenter.scope.all": "全部",

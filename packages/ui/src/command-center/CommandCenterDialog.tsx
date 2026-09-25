@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- 聚合命令、任务、文件三类搜索结果，后续可按 result section 拆分。 */
-import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { unpackWorkspaceFileEntries } from "@zcode/shared/workspaceFileEntriesCodec";
 import { fetchWorkspaceFileEntriesPacked } from "@/workspace-file-search/fetchWorkspaceFileEntries.js";
 import { Command as CommandPrimitive } from "cmdk";
@@ -12,6 +12,7 @@ import {
   RocketIcon,
   SearchIcon,
   Trash2Icon,
+  XIcon,
 } from "lucide-react";
 import type { WorkspaceFileEntry, ZCodeTaskChangeSummary, ZCodeTaskMeta } from "@zcode/shared";
 import {
@@ -54,6 +55,11 @@ import {
   type CommandCenterSearchHistoryEntry,
   type CommandCenterSearchScope,
 } from "@/command-center/commandCenterSearchHistory.js";
+import {
+  COMMAND_CENTER_DEFAULT_SECTION_ORDER,
+  COMMAND_CENTER_RECENT_TASK_PREVIEW_LIMIT,
+  type CommandCenterDefaultSectionId,
+} from "@/command-center/commandCenterSections.js";
 
 const EMPTY_QUICK_PICK_COMMANDS: QuickPickCommand[] = [];
 const EMPTY_COMMAND_CENTER_WORKSPACE_TABS: WorkspaceTabState[] = [];
@@ -63,15 +69,10 @@ const COMMAND_CENTER_FILE_RESULT_LIMIT = 80;
 const COMMAND_CENTER_TASK_RESULT_LIMIT = 80;
 const commandCenterDialogClassName = cn(
   quickPickDialogClassName,
-  // Linux 桌面端的通用 DialogContent 会给居中弹窗补偿自绘标题栏高度。
-  // Command Center 是顶部搜索浮层，必须在 Linux variant 下重新声明 top，
-  // 否则平台补偿会覆盖 top-16/sm:top-20，导致弹层掉到窗口中部。
-  "top-16 max-h-[calc(100dvh-4.5rem)] -translate-y-0 sm:top-20 sm:max-h-[calc(100dvh-6rem)]",
-  "platform-linux-desktop:top-16 sm:platform-linux-desktop:top-20",
-);
-const commandCenterListClassName = cn(
-  quickPickListClassName,
-  "max-h-[min(440px,calc(100dvh-15rem))]",
+  // ChatGPT 式居中搜索卡：继承 quickPickDialogClassName 的 top-1/2 -translate-y-1/2
+  // 垂直居中，仅加宽卡片。dialog.tsx 的旧 Linux 标题栏避让已移除，
+  // 原顶部锚定布局所需的 Linux top 补偿（platform-linux-desktop:top-*）不再需要。
+  "max-w-2xl",
 );
 
 type CommandCenterSectionId = "commands" | "conversations" | "files";
@@ -485,7 +486,7 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
     collapsedLimit:
       activeScope === "conversations"
         ? COMMAND_CENTER_TASK_RESULT_LIMIT + (activeTaskId ? 1 : 0)
-        : COMMAND_CENTER_CONTEXT_SECTION_LIMIT + (activeTaskId ? 1 : 0),
+        : COMMAND_CENTER_RECENT_TASK_PREVIEW_LIMIT + (activeTaskId ? 1 : 0),
   });
   const workspaceLabelByKey = useMemo(
     () =>
@@ -536,7 +537,7 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
     [activeTaskId, recentTaskList.items],
   );
   const recentTaskPreviewRows = useMemo(
-    () => recentTaskRows.slice(0, COMMAND_CENTER_CONTEXT_SECTION_LIMIT),
+    () => recentTaskRows.slice(0, COMMAND_CENTER_RECENT_TASK_PREVIEW_LIMIT),
     [recentTaskRows],
   );
   useEffect(() => {
@@ -966,14 +967,22 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
         return renderRecentTasksSection({ rows: recentTaskRows, showEmpty: true });
       case "files":
         return renderRecentChangesSection({ rows: recentChangeRows, showEmpty: true });
-      default:
+      default: {
+        // 分区顺序收敛到 commandCenterSections 常量并由单测锁定：
+        // 最近任务列在首位（ChatGPT 式「最近聊天」主位），其次最近变更、快捷入口。
+        const defaultSectionRenderers: Record<CommandCenterDefaultSectionId, () => ReactNode> = {
+          recentTasks: () => renderRecentTasksSection(),
+          recentChanges: () => renderRecentChangesSection(),
+          commands: renderCommandSections,
+        };
         return (
           <>
-            {renderRecentChangesSection()}
-            {renderRecentTasksSection()}
-            {renderCommandSections()}
+            {COMMAND_CENTER_DEFAULT_SECTION_ORDER.map((sectionId) => (
+              <Fragment key={sectionId}>{defaultSectionRenderers[sectionId]()}</Fragment>
+            ))}
           </>
         );
+      }
     }
   };
 
@@ -986,8 +995,9 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
       className={commandCenterDialogClassName}
     >
       <Command shouldFilter={false} loop className={quickPickCommandClassName}>
-        <div className="border-b border-border px-2 pt-2 pb-2">
-          <div className="flex h-8 items-center gap-2 rounded-full border border-input-border bg-input px-2.5 transition-colors hover:border-input-border-hover focus-within:border-input-border-focused focus-within:bg-input-focused">
+        <div className="border-b border-border">
+          {/* ChatGPT 式输入行：无边框输入 + 行尾关闭按钮；点击与 ESC 均可关闭。 */}
+          <div className="flex items-center gap-2.5 py-2.5 pl-4 pr-2.5">
             <SearchIcon className="size-4 shrink-0 text-foreground-subtlest" />
             <CommandPrimitive.Input
               value={rawQuery}
@@ -995,11 +1005,19 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
               placeholder={intl.formatMessage({ id: "commandCenter.placeholder" })}
               className="min-w-0 flex-1 bg-transparent text-ui-base leading-5 text-foreground outline-none placeholder:text-foreground-subtlest"
             />
+            <button
+              type="button"
+              aria-label={intl.formatMessage({ id: "commandCenter.close" })}
+              onClick={closeDialog}
+              className="inline-grid size-7 shrink-0 place-items-center rounded-md text-foreground-subtlest transition-colors hover:bg-surface-hover hover:text-foreground"
+            >
+              <XIcon className="size-4" />
+            </button>
           </div>
           <div
             role="tablist"
             aria-label={intl.formatMessage({ id: "commandCenter.scopeTabs" })}
-            className="-mx-1 mt-1.5 flex gap-1 overflow-x-auto px-1 pb-0.5 scrollbar-hide"
+            className="mt-0.5 flex gap-1 overflow-x-auto px-4 pb-2 scrollbar-hide"
           >
             <CommandCenterScopeButton
               active={activeScope === "all"}
@@ -1031,7 +1049,7 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
             </CommandCenterScopeButton>
           </div>
         </div>
-        <CommandList className={commandCenterListClassName}>
+        <CommandList className={quickPickListClassName}>
           {!hasSearchQuery ? (
             renderDefaultSections()
           ) : hasAnySearchResults || hasSearchStatus ? (
