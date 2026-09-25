@@ -69,3 +69,14 @@ packages/desktop/.e2e-artifacts/
 packages/desktop/.e2e-cache/
 packages/desktop/.e2e-network-capture/
 .zcode-runtime/
+
+# video2code / video-agent 插件在 workspace 落盘的 plugin_root 标记，
+# 根目录与子包内都可能出现，纯本地运行产物。
+.v2c/
+.video_agent/
+# 本机为 scripts/native-search-tools-windows 跑 CMake 生成的根目录构建产物。
+# 仅限根目录：packages/desktop/build/ 是入库的 electron-builder 资源，不能遮蔽。
+/build/
+# ZCode 自动生成的工作区搜索忽略配置（由设置页「从 .gitignore 同步」生成），
+# 各 workspace 各自一份，自定义规则属个人本地配置，不入库。
+.zcodeignore
