@@ -22,6 +22,8 @@ export const TEAM_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9 _-]*$/;
 export const TEAM_MAX_MEMBERS = 8;
 /** TeamDelete 等待 teammate shutdown 审批的窗口；超时视为拒绝并强制终止。 */
 export const TEAM_SHUTDOWN_APPROVAL_TIMEOUT_MS = 30_000;
+/** lead 成员在 TeamFile.members 中的固定名（SendMessage from 与 roster 标识用）。 */
+export const TEAM_LEAD_MEMBER_NAME = "team_lead";
 
 export const teamNameSchema = z
   .string()

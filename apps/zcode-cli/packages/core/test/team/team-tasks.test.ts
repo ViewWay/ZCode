@@ -78,3 +78,154 @@ test("shared tasks reject unknown ids and terminal completion without owner", as
   const missingGet = await getTeamTask(teamTest.deps, "refactor-team", { taskId: "task_missing" });
   assert.match(missingGet.error ?? "", /not found/);
 });
+
+test("task completion notifies the lead inbox (positive feedback loop)", async () => {
+  const { appendTeamInboxMessage, readTeamInbox } = await import("../../src/subagent/team/team-mailbox.js");
+  const { TEAM_LEAD_MEMBER_NAME } = await import("@zcode/contracts");
+  const created = await createTeamTask(teamTest.deps, "refactor-team", {
+    subject: "Ship feedback loop",
+  });
+
+  const sent: string[] = [];
+  const notify = (message: { payload: { kind: string } }): Promise<void> => {
+    sent.push(message.payload.kind);
+    return appendTeamInboxMessage(teamTest.dirs, "refactor-team", TEAM_LEAD_MEMBER_NAME, message as Parameters<typeof appendTeamInboxMessage>[3]);
+  };
+
+  // 认领（pending → in_progress）不通知：lead 只在完成/取消/重开时被打扰
+  const claimed = await updateTeamTask(teamTest.deps, "refactor-team", {
+    taskId: created.task.taskId,
+    owner: "alice",
+    expectedVersion: 0,
+  }, { actor: "alice", notifyStatusChange: notify });
+  assert.equal(claimed.task!.status, "in_progress");
+  assert.deepEqual(sent, []);
+
+  // 完成 → lead 收件箱收到 task_notification，发送方为成员自身
+  const done = await updateTeamTask(teamTest.deps, "refactor-team", {
+    taskId: created.task.taskId,
+    status: "completed",
+  }, { actor: "alice", notifyStatusChange: notify });
+  assert.equal(done.task!.status, "completed");
+  assert.deepEqual(sent, ["task_notification"]);
+
+  const leadInbox = await readTeamInbox(teamTest.dirs, "refactor-team", TEAM_LEAD_MEMBER_NAME);
+  const taskNotes = leadInbox.messages.filter(
+    (message) => message.payload.kind === "task_notification",
+  );
+  assert.equal(taskNotes.length, 1);
+  assert.equal(taskNotes[0]!.from, "alice");
+  const payload = taskNotes[0]!.payload as { kind: string; taskId: string; subject: string; status: string };
+  assert.equal(payload.status, "completed");
+  assert.equal(payload.taskId, created.task.taskId);
+  assert.equal(payload.subject, "Ship feedback loop");
+});
+
+test("blocked tasks: claim before deps complete is rejected, ready and claimable after (P1)", async () => {
+  const { isTaskReady, claimNextReadyTask } = await import("../../src/subagent/team/team-tasks.js");
+  const a = await createTeamTask(teamTest.deps, "refactor-team", { subject: "A: schema" });
+  const b = await createTeamTask(teamTest.deps, "refactor-team", {
+    subject: "B: api",
+    blockedBy: [a.task.taskId],
+  });
+  assert.equal(b.task.blockedBy?.[0], a.task.taskId);
+
+  // A 未完成时认领 B 被拒
+  const blocked = await updateTeamTask(teamTest.deps, "refactor-team", {
+    taskId: b.task.taskId,
+    owner: "alice",
+    expectedVersion: b.task.version,
+  });
+  assert.equal(blocked.errorCode, "team_task_blocked");
+
+  // 自动认领跳过被阻塞的 B，只认领 ready 任务（同文件前序用例可能遗留 ready 任务：排空并逐个断言不是 B）
+  for (let i = 0; i < 20; i++) {
+    const claimed = await claimNextReadyTask(teamTest.deps, "refactor-team", "alice");
+    if (claimed === undefined) break;
+    assert.notEqual(claimed.taskId, b.task.taskId);
+  }
+
+  // A 完成后 B ready 可认领（显式认领不带 CAS 版本号，避免与排空顺序耦合）
+  await updateTeamTask(teamTest.deps, "refactor-team", {
+    taskId: a.task.taskId,
+    owner: "alice",
+    status: "in_progress",
+  });
+  const finishA = await updateTeamTask(teamTest.deps, "refactor-team", {
+    taskId: a.task.taskId,
+    status: "completed",
+  });
+  assert.equal(finishA.task.status, "completed");
+
+  // A 完成后 B ready 可认领；自动认领无可认领返回 undefined
+  assert.equal(isTaskReady((await listTeamTasks(teamTest.deps, "refactor-team")).tasks, { blockedBy: b.task.blockedBy }), true);
+  const claimB = await updateTeamTask(teamTest.deps, "refactor-team", {
+    taskId: b.task.taskId,
+    owner: "bob",
+    expectedVersion: b.task.version,
+  });
+  assert.equal(claimB.task.status, "in_progress");
+  assert.equal(await claimNextReadyTask(teamTest.deps, "refactor-team", "carol"), undefined);
+});
+
+test("review verdict: approve records acceptance, revise reopens with comment and notifies owner (P3)", async () => {
+  const { appendTeamInboxMessage } = await import("../../src/subagent/team/team-mailbox.js");
+  const created = await createTeamTask(teamTest.deps, "refactor-team", { subject: "Reviewable work" });
+  const ownerInbox = [];
+  const notifyMember = (memberName, message) => {
+    ownerInbox.push({ memberName, text: message.payload.text });
+    return appendTeamInboxMessage(teamTest.dirs, "refactor-team", memberName, message);
+  };
+  const claimed = await updateTeamTask(teamTest.deps, "refactor-team", {
+    taskId: created.task.taskId,
+    owner: "alice",
+    expectedVersion: created.task.version,
+  });
+  assert.equal(claimed.task.status, "in_progress");
+  const done = await updateTeamTask(teamTest.deps, "refactor-team", {
+    taskId: created.task.taskId,
+    status: "completed",
+  });
+  assert.equal(done.task.status, "completed");
+
+  // revise 必须带意见
+  const noComment = await updateTeamTask(teamTest.deps, "refactor-team", {
+    taskId: created.task.taskId,
+    reviewVerdict: "revise",
+  });
+  assert.equal(noComment.errorCode, "team_task_review_comment_required");
+
+  // revise:回退 in_progress + attempts+1 + owner 收件箱收到评审意见
+  const revised = await updateTeamTask(teamTest.deps, "refactor-team", {
+    taskId: created.task.taskId,
+    reviewVerdict: "revise",
+    reviewComment: "Edge case missing: empty payload should 4xx.",
+  }, { actor: "team_lead", notifyMember });
+  assert.equal(revised.task.status, "in_progress");
+  assert.equal(revised.task.reviewStatus, "rework");
+  assert.equal(revised.task.attempts, 2);
+  assert.equal(ownerInbox.length, 1);
+  assert.match(ownerInbox[0].text, /REWORK/);
+  assert.match(ownerInbox[0].text, /empty payload/);
+
+  // 返工后再次完成,验收通过
+  const redone = await updateTeamTask(teamTest.deps, "refactor-team", {
+    taskId: created.task.taskId,
+    status: "completed",
+  });
+  assert.equal(redone.task.status, "completed");
+  const approved = await updateTeamTask(teamTest.deps, "refactor-team", {
+    taskId: created.task.taskId,
+    reviewVerdict: "approve",
+  }, { actor: "team_lead", notifyMember });
+  assert.equal(approved.task.reviewStatus, "approved");
+  assert.equal(approved.task.status, "completed");
+
+  // 非 completed 任务不能验收
+  const created2 = await createTeamTask(teamTest.deps, "refactor-team", { subject: "Pending work" });
+  const early = await updateTeamTask(teamTest.deps, "refactor-team", {
+    taskId: created2.task.taskId,
+    reviewVerdict: "approve",
+  });
+  assert.equal(early.errorCode, "team_task_review_requires_completed");
+});

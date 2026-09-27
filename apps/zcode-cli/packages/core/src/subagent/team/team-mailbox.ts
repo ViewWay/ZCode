@@ -6,13 +6,19 @@
 //   - 每个成员一个收件箱文件；写入持文件锁，多写者互斥；
 //   - 投递语义：至多一次 + 确认读（read 标志）；
 //   - 广播对每个成员独立落盘，单成员失败不阻断其他成员；
-//   - 消息载荷：纯文本 / shutdown_request / idle_notification（plan_approval 配对在
-//     teammate 运行时接入时补充，存储 schema 先行承载）。
+//   - 消息载荷：纯文本 / shutdown_request / shutdown_response / idle_notification /
+//     plan_approval_request/response（v1 bridge 同步链路承载，schema 留给 v2 外部后端）。
 
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
-import { TEAM_MEMBER_NAME_MAX_CHARS, type TeamFile, type TeamMember } from "@zcode/contracts";
+import {
+  TEAM_MEMBER_NAME_MAX_CHARS,
+  type TeamFile,
+  type TeamMember,
+  type TeamTaskStatus,
+  type TraceContext,
+} from "@zcode/contracts";
 import type { TeamWorkspaceDirs } from "./team-paths.js";
 import { isSafeTeamPathSegment } from "./team-paths.js";
 import { readJsonFileSafe } from "./team-json-file.js";
@@ -20,10 +26,21 @@ import { withTeamFileLock } from "./team-lock.js";
 
 const INBOX_ATOMIC_TMP_SUFFIX = ".tmp";
 
+/** teammate 空闲原因（cc-haha 语义对齐：available=正常空闲，interrupted/failed 供诊断）。 */
+export type TeamIdleReason = "available" | "interrupted" | "failed";
+
 export type TeamMailboxPayload =
   | { kind: "text"; text: string }
   | { kind: "shutdown_request"; reason?: string }
-  | { kind: "idle_notification" }
+  | { kind: "shutdown_response"; approve: boolean; reason?: string }
+  | { kind: "idle_notification"; idleReason?: TeamIdleReason }
+  | {
+      kind: "task_notification";
+      taskId: string;
+      subject: string;
+      status: TeamTaskStatus;
+      actor: string;
+    }
   | { kind: "plan_approval_request"; requestId: string; planSummary: string }
   | { kind: "plan_approval_response"; requestId: string; approve: boolean };
 
@@ -35,6 +52,8 @@ export interface TeamMailboxMessage {
   payload: TeamMailboxPayload;
   sentAt: string;
   read: boolean;
+  /** 发送方的 trace 上下文：teammate 恢复 turn 时续用，保证 traceId 链不断裂。 */
+  traceContext?: TraceContext;
 }
 
 export interface AppendTeamMessageParams {
@@ -42,6 +61,8 @@ export interface AppendTeamMessageParams {
   to: string;
   payload: TeamMailboxPayload;
   summary?: string;
+  /** 发送方 trace 上下文，随消息落盘供恢复 turn 时续链。 */
+  traceContext?: TraceContext;
   now?: () => Date;
 }
 
@@ -54,11 +75,20 @@ export function buildTeamMailboxMessage(params: AppendTeamMessageParams): TeamMa
     ...(params.summary === undefined ? {} : { summary: params.summary }),
     sentAt: (params.now ?? (() => new Date()))().toISOString(),
     read: false,
+    ...(params.traceContext === undefined ? {} : { traceContext: params.traceContext }),
   };
 }
 
 export interface TeamInboxReadResult {
+  /** 确认读之后的视角：全部消息（read 标志已落盘为 true）。 */
   messages: TeamMailboxMessage[];
+  /**
+   * 本次调用实际新消费的消息（读取前 read=false 的那些）。
+   * 修复依据：`messages` 是「已消费视角」，调用方若直接按它继续消费，会在下一次
+   * 确认读时把历史消息再次消费（teammate-supervisor 双重 resume 的根因）；新增
+   * `newlyRead` 让调用方拿到「本次轮询新到达」的边界，历史已读消息不再重放。
+   */
+  newlyRead: TeamMailboxMessage[];
 }
 
 /** 读取收件箱；markRead 时在同一把锁内回写 read 标志（确认读），返回已消费视角的消息。 */
@@ -73,12 +103,13 @@ export async function readTeamInbox(
   return withTeamFileLock(inboxFile, async () => {
     const messages = await readInboxFile(inboxFile);
     if (options.markRead === true && messages.some((message) => !message.read)) {
+      const newlyRead = messages.filter((message) => !message.read);
       const confirmed = messages.map((message) => ({ ...message, read: true }));
       await writeInboxFile(inboxFile, confirmed);
       // 返回确认读之后的视角：调用方看到的就是「已消费」状态，与磁盘事实一致。
-      return { messages: confirmed };
+      return { messages: confirmed, newlyRead };
     }
-    return { messages };
+    return { messages, newlyRead: [] };
   });
 }
 

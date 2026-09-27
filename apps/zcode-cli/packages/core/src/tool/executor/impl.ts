@@ -73,6 +73,7 @@ export class ToolExecutorImpl implements ToolExecutor {
           options.workingDirectory ??
           "."),
       workspaceIdentity: options.workspaceIdentity,
+      teamMemberIdentity: options.teamMemberIdentity,
       remoteSessionId: options.remoteSessionId,
       clientMode: options.clientMode,
       deliveryKind: options.deliveryKind,

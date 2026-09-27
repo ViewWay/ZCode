@@ -23,11 +23,13 @@ import {
   type TaskGetInput,
   type TaskListInput,
   type TaskUpdateInput,
+  TEAM_LEAD_MEMBER_NAME,
   type ToolPermissionPatternSource,
 } from "@zcode/contracts";
 import type { ToolEntry, ToolHandler } from "../types.js";
 import { resolveTeamWorkspaceDirs } from "../../subagent/team/team-paths.js";
 import { resolveSingleTeamName, TeamStoreError } from "../../subagent/team/team-store.js";
+import { appendTeamInboxMessage } from "../../subagent/team/team-mailbox.js";
 import {
   createTeamTask,
   getTeamTask,
@@ -69,7 +71,15 @@ const taskUpdateHandler: ToolHandler = async (input, context) => {
     const parsed = TaskUpdateInputSchema.parse(input) as TaskUpdateInput;
     const dirs = resolveTaskToolDirs(context);
     const teamName = await resolveSingleTeamName({ dirs });
-    return await updateTeamTask({ dirs }, teamName, parsed);
+    // 正反馈闭环（specs/agent-teams.md v2.1）：任务状态迁到 completed/cancelled/重开时向 lead
+    // 收件箱投递 task_notification；发送方按会话身份解析（teammate=成员名，主会话=team_lead）。
+    return await updateTeamTask({ dirs }, teamName, parsed, {
+      actor: context.teamMemberIdentity?.memberName,
+      notifyStatusChange: (message) =>
+        appendTeamInboxMessage(dirs, teamName, TEAM_LEAD_MEMBER_NAME, message),
+      notifyMember: (memberName, message) =>
+        appendTeamInboxMessage(dirs, teamName, memberName, message),
+    });
   } catch (error) {
     if (error instanceof TeamStoreError) return toTeamTaskFailure(error);
     throw error;

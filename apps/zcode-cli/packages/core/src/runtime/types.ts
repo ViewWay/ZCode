@@ -306,6 +306,15 @@ export interface MemoryRuntimeConfig {
   workspaceIdentity?: string;
 }
 
+// Agent Teams v2（specs/agent-teams.md）：teammate 常驻会话身份。用声明合并追加进
+// AgentRuntimeConfig，避免改动主接口长块；字段只在 methods/subagent.ts 创建
+// teammate 子 runtime 时从 spawn 请求写入，主会话与普通 subagent 不设置。
+// runtime-tools 按它放行 SendMessage/共享任务工具面，send-message 按它解析消息发送方。
+export interface AgentRuntimeConfig {
+  /** 本会话是常驻 teammate 时的团队与成员身份；主会话与普通 subagent 不设置。 */
+  teamMemberIdentity?: { teamName: string; memberName: string };
+}
+
 export interface AgentRuntimeDeps {
   agentTelemetry?: AgentExecutionTelemetryPort;
   agentTelemetryCausation?: AgentTelemetryCausation;

@@ -39,6 +39,11 @@ import {
   type SubagentTaskSnapshot,
   type SubagentWaitOptions,
   type TraceContext,
+  TEAM_LEAD_MEMBER_NAME,
+  TEAMMATE_LAUNCH_STATUS,
+  type SubagentTeamShutdownRequest,
+  type SubagentTeamShutdownResult,
+  type TeammateLaunchedOutput,
 } from "@zcode/contracts";
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -64,6 +69,17 @@ import {
   type RuntimeTaskRegistry,
   type RuntimeTaskSnapshot,
 } from "../runtime-task/registry.js";
+import { resolveTeamWorkspaceDirs } from "./team/team-paths.js";
+import { addTeamMember, removeTeamMember, type TeamStoreDeps } from "./team/team-store.js";
+import { runTeammateSupervisor } from "./team/teammate-supervisor.js";
+import { claimNextReadyTask } from "./team/team-tasks.js";
+import { buildTeamMailboxMessage } from "./team/team-mailbox.js";
+import { runLeadInboxPoller } from "./team/lead-inbox-poller.js";
+import {
+  cleanupSessionTeamRuntime,
+  shutdownTeamRuntime,
+  type TeammateRuntimeHandle,
+} from "./team/team-shutdown.js";
 
 export interface ExploreSubagentRuntimeRequest {
   agentId: string;
@@ -87,6 +103,14 @@ export interface ExploreSubagentRuntimeRequest {
   workingDirectory: string;
   workspaceRoot: string;
   traceContext: TraceContext;
+  /** Agent Teams（AC4）：teammate 生成路径携带，随请求穿线到交互请求 origin。 */
+  teamName?: string;
+  teammateName?: string;
+  /**
+   * Agent Teams v2：teammate 生成路径携带的 workspace 身份（AGENTS.md Workspace Identity）。
+   * 穿线到 child runtime 配置，teammate 与 lead 用同一身份键解析团队目录。
+   */
+  workspaceIdentity?: string;
 }
 
 export interface ExploreSubagentRuntimeResult {
@@ -126,11 +150,106 @@ export interface ExploreSubagentPortOptions {
   inactivityTimeoutMs?: number;
   autoBackgroundMs?: number;
   logger?: Logger;
+  /**
+   * Agent Teams AC7：lead 会话 teardown 信号（beginShutdown 时 abort）。
+   * 首个 teammate spawn 注册监听：abort 即清理本会话创建的团队运行时与目录。
+   */
+  sessionShutdownSignal?: () => AbortSignal | undefined;
 }
 
 export function createExploreSubagentPort(options: ExploreSubagentPortOptions): SubagentPort {
   const registry = options.runtimeTaskRegistry ?? new InMemoryRuntimeTaskRegistry();
   const abortControllers = new Map<string, AbortController>();
+  // Agent Teams 会话级登记（specs/agent-teams.md AC7 + lead 收件箱消费）：
+  // teams 记录本会话创建的团队运行时；leadPollers 是各团队的 lead 收件箱消费循环。
+  const sessionTeams = new Map<
+    string,
+    { dirs: ReturnType<typeof resolveTeamWorkspaceDirs>; deps: TeamStoreDeps; handles: Map<string, TeammateRuntimeHandle & { done: Promise<void> }> }
+  >();
+  const leadPollers = new Map<string, { controller: AbortController; done: Promise<void> }>();
+  let sessionCleanupRegistered = false;
+
+  function ensureSessionTeamEntry(
+    teamName: string,
+    teamDeps: TeamStoreDeps,
+    teamDirs: ReturnType<typeof resolveTeamWorkspaceDirs>,
+  ): void {
+    let entry = sessionTeams.get(teamName);
+    if (!entry) {
+      entry = { deps: teamDeps, dirs: teamDirs, handles: new Map() };
+      sessionTeams.set(teamName, entry);
+    }
+    ensureSessionCleanupListener();
+  }
+
+  function registerSessionTeammate(teamName: string, handle: TeammateRuntimeHandle): void {
+    sessionTeams.get(teamName)?.handles.set(handle.name, handle);
+  }
+
+  function ensureLeadInboxPoller(
+    teamName: string,
+    teamDeps: TeamStoreDeps,
+    teamDirs: ReturnType<typeof resolveTeamWorkspaceDirs>,
+    traceContext: TraceContext,
+  ): void {
+    if (leadPollers.has(teamName)) return;
+    if (!options.enqueueParentTaskNotification) {
+      options.logger?.warn("Lead inbox poller skipped without parent notification queue", {
+        event: "agent-teams.lead_poller.skipped",
+        module: "core.subagent",
+        teamName,
+      });
+      return;
+    }
+    const controller = new AbortController();
+    const poller = runLeadInboxPoller({
+      deps: teamDeps,
+      dirs: teamDirs,
+      teamName,
+      leadName: TEAM_LEAD_MEMBER_NAME,
+      enqueue: options.enqueueParentTaskNotification,
+      baseTraceContext: traceContext,
+      logger: options.logger,
+      signal: controller.signal,
+    });
+    leadPollers.set(teamName, { controller, done: poller.done });
+  }
+
+  function ensureSessionCleanupListener(): void {
+    if (sessionCleanupRegistered) return;
+    const signal = options.sessionShutdownSignal?.();
+    if (!signal) return;
+    sessionCleanupRegistered = true;
+    // AC7：lead 会话 teardown（beginShutdown）时回收全部团队运行时与目录。
+    signal.addEventListener(
+      "abort",
+      () => {
+        void cleanupAllSessionTeams(options.logger);
+      },
+      { once: true },
+    );
+  }
+
+  async function cleanupAllSessionTeams(logger: typeof options.logger): Promise<void> {
+    for (const [teamName, entry] of sessionTeams) {
+      leadPollers.get(teamName)?.controller.abort();
+      try {
+        await cleanupSessionTeamRuntime(
+          { dirs: entry.dirs, listTeammates: () => [...entry.handles.values()] },
+          teamName,
+        );
+      } catch (error) {
+        logger?.warn("Failed to clean up session team", {
+          event: "agent-teams.session_cleanup.failed",
+          module: "core.subagent",
+          teamName,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    leadPollers.clear();
+    sessionTeams.clear();
+  }
   const borrowedForegroundAgentIds = new Set<string>();
   const profiles = normalizeAgentProfiles(options.profiles ?? [], {
     builtInModelSelectionOverrides: options.builtInModelSelectionOverrides,
@@ -525,6 +644,236 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       return output;
     },
 
+    async spawnTeammate(rawRequest, spawnOptions) {
+      // Agent Teams（specs/agent-teams.md）：teammate = 具名常驻后台代理。
+      // 首轮 turn 复用 start 的后台管线（事件/registry/outputFile 全部同源），
+      // 完成后由 teammate-supervisor 接管空闲轮询，消息驱动 resume 管线开新一轮。
+      const { profile, request } = resolveAgentProfileForRequest(profiles, rawRequest);
+      const teamDirs = resolveTeamWorkspaceDirs(
+        {
+          workspaceIdentity: rawRequest.workspaceIdentity,
+          workspacePath: rawRequest.workspaceRoot || rawRequest.workingDirectory,
+        },
+        rawRequest.homeDirResolver,
+      );
+      const teamDeps: TeamStoreDeps = { dirs: teamDirs };
+      const lifecycle = createSubagentLifecycle(options, request, profile);
+      const startedAt = new Date(lifecycle.startedAt);
+      const output: TeammateLaunchedOutput = {
+        status: TEAMMATE_LAUNCH_STATUS,
+        isAsync: true,
+        agentId: lifecycle.agentId,
+        agentType: request.agentType,
+        description: request.description,
+        prompt: request.prompt,
+        childSessionId: lifecycle.childSessionId,
+        backgroundTaskId: lifecycle.agentId,
+        teamName: rawRequest.teamName,
+        teammateName: rawRequest.teammateName,
+        outputFile: lifecycle.outputFile,
+        canReadOutputFile: true,
+      };
+
+      // 先注册成员再启动 turn：roster（TeamFile 事实源）先于 SubagentSpawned 事件，
+      // 与 spec 的 spawn 顺序一致（写 members → 事件）。
+      try {
+        await addTeamMember(teamDeps, rawRequest.teamName, {
+          agentId: lifecycle.agentId,
+          name: rawRequest.teammateName,
+          cwd: request.workingDirectory,
+          isActive: true,
+          joinedAt: new Date().toISOString(),
+          sessionId: lifecycle.childSessionId,
+        });
+      } catch (error) {
+        // 幂等保护（AC2）：同名 teammate 参加过队伍，不覆盖、不启动幽灵任务。
+        throw createCoreError(
+          CoreErrorType.ToolExecutionFailed,
+          `Cannot spawn teammate "${rawRequest.teammateName}" in team "${rawRequest.teamName}": ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          { cause: error instanceof Error ? error : undefined, recoverable: true },
+        );
+      }
+      // 会话团队登记（AC7）：首个 teammate 即登记目录事实与清理责任。
+      ensureSessionTeamEntry(rawRequest.teamName, teamDeps, teamDirs);
+
+      registry.register(
+        createRuntimeTaskSnapshot({
+          isBackgrounded: true,
+          lifecycle,
+          request,
+          startedAt,
+          status: "running",
+        }),
+      );
+      try {
+        await writeAgentMetadataFile(lifecycle, request, "running");
+      } catch (error) {
+        registry.remove(lifecycle.agentId);
+        await removeTeamMember(teamDeps, rawRequest.teamName, rawRequest.teammateName);
+        throw error;
+      }
+
+      const taskAbort = createSubagentTaskAbortController(abortControllers, lifecycle.agentId);
+      if (spawnOptions?.signal?.aborted) {
+        taskAbort.abort(spawnOptions.signal.reason);
+      }
+      const readyGate = createSubagentSessionReadyGate();
+      const startSupervisorAfterFirstTurn = (): void => {
+        const supervisor = runTeammateSupervisor({
+          deps: teamDeps,
+          dirs: teamDirs,
+          teamName: rawRequest.teamName,
+          teammateName: rawRequest.teammateName,
+          leadName: TEAM_LEAD_MEMBER_NAME,
+          logger: options.logger,
+          agentId: lifecycle.agentId,
+          signal: taskAbort.signal,
+          // 自动认领（P1）：空闲时认领无主 ready 任务（CAS 竞争防护），以成员身份唤醒开工。
+          autoClaimTask: async () => {
+            const claimed = await claimNextReadyTask(teamDeps, rawRequest.teamName, rawRequest.teammateName);
+            if (claimed === undefined) return undefined;
+            options.logger?.info("Teammate auto-claimed a ready task", {
+              event: "agent-teams.teammate.auto_claim",
+              module: "core.agent-teams",
+              agentId: lifecycle.agentId,
+              teamName: rawRequest.teamName,
+              teammateName: rawRequest.teammateName,
+              taskId: claimed.taskId,
+              subject: claimed.subject,
+            });
+            return buildTeamMailboxMessage({
+              from: TEAM_LEAD_MEMBER_NAME,
+              to: rawRequest.teammateName,
+              summary: `Auto-claimed: ${claimed.subject}`,
+              payload: {
+                kind: "text",
+                text: "You auto-claimed ready task \"" + claimed.subject + "\" (" + claimed.taskId + "). Work on it now; when done, set status to \"completed\" via TaskUpdate so the lead is notified.",
+              },
+              traceContext: lifecycle.runTraceContext,
+            });
+          },
+          isTaskTerminal: () => {
+            const task = registry.get(lifecycle.agentId);
+            return task === undefined || isTerminalRuntimeTask(task);
+          },
+          resumeTurn: async (message) => {
+            const task = registry.get(lifecycle.agentId);
+            if (!task || isTerminalRuntimeTask(task) === false) {
+              // turn 仍在跑：防御性跳过，消息已 markRead，等下一轮空闲继续消费。
+              return;
+            }
+            const sendRequest: SubagentSendMessageRequest = {
+              sessionId: request.sessionId,
+              turnId: request.turnId,
+              parentToolCallId: request.parentToolCallId,
+              to: lifecycle.agentId,
+              summary: message.summary ?? `Teammate message from ${message.from}`,
+              message:
+                message.payload.kind === "text"
+                  ? message.payload.text
+                  : JSON.stringify(message.payload),
+              workingDirectory: request.workingDirectory,
+              workspaceRoot: request.workspaceRoot,
+              trace: message.traceContext ?? lifecycle.runTraceContext,
+            };
+            await resumeTerminalAgentInBackground(
+              options,
+              profiles,
+              registry,
+              abortControllers,
+              task,
+              sendRequest,
+              {
+                id: message.id,
+                isMeta: true,
+                message: sendRequest.message,
+                origin: { kind: "coordinator", toolCallId: String(request.parentToolCallId) },
+                queuedAt: new Date(message.sentAt),
+                ...(message.summary === undefined ? {} : { summary: message.summary }),
+                ...(message.traceContext === undefined
+                  ? {}
+                  : { traceContext: message.traceContext }),
+              },
+            );
+          },
+          onShutdown: async () => {
+            // 优雅退出：与 TaskStop 同一 AbortController 收口；成员移除由 supervisor 负责。
+            taskAbort.abort(new Error("Teammate shutdown approved"));
+          },
+        });
+        // 监督循环独立运行，其退出（shutdown/abort）只影响本 teammate；
+        // 会话团队表保留句柄，供 TeamDelete 收敛等待与 AC7 会话清理 abort。
+        registerSessionTeammate(rawRequest.teamName, {
+          name: rawRequest.teammateName,
+          abort: () => taskAbort.abort(new Error("Teammate aborted by session/team teardown")),
+          done: supervisor.done,
+        });
+        ensureLeadInboxPoller(rawRequest.teamName, teamDeps, teamDirs, lifecycle.runTraceContext);
+      };
+
+      void runBackgroundAgent(
+        options,
+        request,
+        lifecycle,
+        registry,
+        { signal: taskAbort.signal, ...(spawnOptions?.model ? { model: spawnOptions.model } : {}) },
+        {
+          onSessionReady: async () => {
+            await emitSubagentEvent(
+              options,
+              SessionEventType.SubagentSpawned,
+              request,
+              lifecycle.runTraceContext,
+              {
+                agentId: lifecycle.agentId,
+                agentType: request.agentType,
+                background: true,
+                childSessionId: lifecycle.childSessionId,
+                description: request.description,
+                prompt: request.prompt,
+                parentToolCallId: request.parentToolCallId,
+                status: "running",
+                allowedTools: [...resolveAllowedTools(profile, options)],
+                outputFile: lifecycle.outputFile,
+                model: profile.modelSelection
+                  ? `${profile.modelSelection.providerId}/${profile.modelSelection.modelId}`
+                  : undefined,
+              },
+            );
+            readyGate.resolve();
+          },
+          onSessionStartFailed: readyGate.reject,
+        },
+        () => {
+          // 首轮 turn 结束（含失败）：无论成败都进入空闲监督，失败信息由 registry 承载。
+          startSupervisorAfterFirstTurn();
+        },
+      );
+      try {
+        await readyGate.promise;
+      } catch (error) {
+        taskAbort.abort(error);
+        registry.remove(lifecycle.agentId);
+        await removeTeamMember(teamDeps, rawRequest.teamName, rawRequest.teammateName);
+        throw error;
+      }
+
+      options.logger?.info("Teammate spawned", {
+        ...traceContextToLogContext(lifecycle.runTraceContext),
+        agentId: lifecycle.agentId,
+        agentType: request.agentType,
+        event: "agent-teams.teammate.spawned",
+        module: "core.agent-teams",
+        parentToolCallId: request.parentToolCallId,
+        status: "started",
+        teamName: rawRequest.teamName,
+        teammateName: rawRequest.teammateName,
+      });
+      return output;
+    },
+
     async getTask(taskId: string): Promise<SubagentTaskSnapshot | undefined> {
       return registry.get(taskId);
     },
@@ -577,6 +926,33 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         request,
         sendOptions,
       );
+    },
+
+    async shutdownTeam(
+      shutdownRequest: SubagentTeamShutdownRequest,
+    ): Promise<SubagentTeamShutdownResult> {
+      // TeamDelete 完整语义（AC5）：投递 → 等收敛 → 强制收尾 → 删目录（specs/agent-teams.md）。
+      const teamDirs = resolveTeamWorkspaceDirs(
+        {
+          workspaceIdentity: shutdownRequest.workspaceIdentity,
+          workspacePath: shutdownRequest.workspaceRoot || shutdownRequest.workingDirectory,
+        },
+        shutdownRequest.homeDirResolver,
+      );
+      const entry = sessionTeams.get(shutdownRequest.teamName);
+      const outcome = await shutdownTeamRuntime(
+        {
+          dirs: teamDirs,
+          listTeammates: () => [...(entry?.handles.values() ?? [])],
+          },
+        shutdownRequest.teamName,
+        TEAM_LEAD_MEMBER_NAME,
+      );
+      const poller = leadPollers.get(shutdownRequest.teamName);
+      poller?.controller.abort();
+      leadPollers.delete(shutdownRequest.teamName);
+      sessionTeams.delete(shutdownRequest.teamName);
+      return outcome;
     },
   };
 
@@ -979,6 +1355,12 @@ async function resumeTerminalAgentInBackground(
     workingDirectory: request.workingDirectory,
     workspaceRoot: request.workspaceRoot,
     trace: request.trace,
+    // Agent Teams v2（specs/agent-teams.md）：teammate 身份从快照原样恢复，
+    // 保证首轮之后 resume turn 的工具面门控与 SendMessage 发送方身份不丢失；
+    // 快照仅在 teammate 任务上携带这些字段，普通 subagent resume 行为不变。
+    ...(task.teamName === undefined ? {} : { teamName: task.teamName }),
+    ...(task.teammateName === undefined ? {} : { teammateName: task.teammateName }),
+    ...(task.workspaceIdentity === undefined ? {} : { workspaceIdentity: task.workspaceIdentity }),
   };
   const lifecycle = createSubagentLifecycleFromTask(options, resumeRequest, profile, task);
   if (!lifecycle) {
@@ -1155,6 +1537,13 @@ async function runAgentToCompletion(
       workingDirectory: request.workingDirectory,
       workspaceRoot: request.workspaceRoot,
       traceContext: lifecycle.childTraceContext,
+      // Agent Teams（AC4）：teammate 生成路径携带，普通 subagent 为 undefined。
+      ...(request.teamName === undefined ? {} : { teamName: request.teamName }),
+      ...(request.teammateName === undefined ? {} : { teammateName: request.teammateName }),
+      // Agent Teams v2：workspace 身份穿线到 child runtime，teammate 用与 lead 相同的身份键解析团队目录。
+      ...(request.workspaceIdentity === undefined
+        ? {}
+        : { workspaceIdentity: request.workspaceIdentity }),
     },
     runOptions,
   );
@@ -1465,6 +1854,16 @@ function createRuntimeTaskSnapshot(input: {
     traceContext: input.lifecycle.runTraceContext,
     type: "local_agent",
     turnId: input.request.turnId,
+    // Agent Teams v2（specs/agent-teams.md）：teammate 任务携带团队身份，
+    // resume 路径据此重建带身份的请求，维持工具面门控与消息发送方身份；
+    // 普通 subagent 三个字段均 undefined。
+    ...(input.request.teamName === undefined ? {} : { teamName: input.request.teamName }),
+    ...(input.request.teammateName === undefined
+      ? {}
+      : { teammateName: input.request.teammateName }),
+    ...(input.request.workspaceIdentity === undefined
+      ? {}
+      : { workspaceIdentity: input.request.workspaceIdentity }),
   };
 }
 

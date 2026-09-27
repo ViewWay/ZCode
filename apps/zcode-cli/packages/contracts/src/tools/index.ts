@@ -58,6 +58,8 @@ export * from "./performance.js";
 // 工具注册、团队存储层与 teammate 路由读走；漏掉这些行消费方会静默拿不到契约。
 export * from "./team.js";
 export * from "./team-task.js";
+export * from "./teammate-spawn.js";
+export * from "./team-knowledge.js";
 
 // Shared types (only once to avoid duplicates)
 export type { DiffHunk, GitDiff } from "./write.js";

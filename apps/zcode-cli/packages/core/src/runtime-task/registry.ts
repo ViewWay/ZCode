@@ -65,6 +65,14 @@ export interface RuntimeTaskSnapshot extends SubagentTaskSnapshot {
   traceContext?: TraceContext;
   turnId?: TurnId;
   usage?: RuntimeTaskUsageSnapshot;
+  /**
+   * Agent Teams v2（specs/agent-teams.md）：teammate 任务的团队身份与 workspace 身份。
+   * 事实源是 spawn 请求，仅 teammate 任务携带；resume 路径据此原样恢复身份，
+   * 保证工具面门控与 SendMessage 发送方身份在首轮之后不丢失。
+   */
+  teamName?: string;
+  teammateName?: string;
+  workspaceIdentity?: string;
 }
 
 export interface RuntimeTaskRegistry {

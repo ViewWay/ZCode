@@ -218,6 +218,8 @@ export class AgentRuntime {
   // activeTurn.pendingInputs 做行内 drain，否则新入队消息会越过仍留在投影中的旧暂停项。
   private queueExternalDrainActive = false;
   private shuttingDown = false;
+  /** Agent Teams AC7：beginShutdown 时 abort 的会话 teardown 信号（懒创建）。 */
+  private sessionTeardownController?: AbortController;
   private backgroundTaskNotificationsSealed = false;
   private backgroundTaskNotificationSealReason?: "subagent_terminal" | "subagent_cancelled";
   private pendingModelChangeTimeline?: PendingModelChangeTimeline;
@@ -304,7 +306,10 @@ export class AgentRuntime {
       runtime.initializeMessageHistoryFromContext(this.contextBuilder, this.rootTraceContext);
       this.contextInitialized = true;
     }
-    runtime.startMcpStartup(this.rootTraceContext);
+    // MCP 懒连接（specs/desktop-dev-performance.md 改动四）：构造器不再急切拉起
+    // MCP server——空闲会话（打开不发消息）不再常驻 3 个子进程 ≈ 300-500MB。
+    // 连接由首次真实使用触发：ensureContextInitialized（首个 turn）与 initializeMcp
+    // （turn-loop 首个 provider 请求前必等）幂等触发，工具注册时序不变。
   }
 
   async closeBrowserSession(): Promise<void> {
@@ -324,10 +329,19 @@ export class AgentRuntime {
     }
   }
 
+  /** Agent Teams AC7：会话 teardown 信号；beginShutdown 之后 aborted，此前为 undefined。 */
+  getSessionTeardownSignal(): AbortSignal | undefined {
+    return this.sessionTeardownController?.signal;
+  }
+
   beginShutdown(): void {
     // ExecutionPort.close() 会把后台 Bash 收口为 cancelled；若允许
     // teardown terminal event 再唤醒模型，并与随后关闭的 session store 竞态。
     this.shuttingDown = true;
+    // Agent Teams AC7（specs/agent-teams.md）：会话 teardown 时 abort 信号，
+    // runner 据此清理本会话创建的团队运行时与目录，孤儿团队不跨会话残留。
+    this.sessionTeardownController ??= new AbortController();
+    this.sessionTeardownController.abort();
     // 关闭单个 session 后进程仍存活，
     // 因此必须先终止该 runtime 的 Extraction，不能只在超时后放弃等待。
     this.memoryExtractionScheduler?.shutdown();
@@ -337,6 +351,8 @@ export class AgentRuntime {
 export interface AgentRuntime {
   lastPermissionGrantId?: string;
   beginShutdown(): void;
+  /** Agent Teams AC7：会话 teardown 信号；beginShutdown 之后 aborted。 */
+  getSessionTeardownSignal(): AbortSignal | undefined;
   closeBrowserSession(): Promise<void>;
   updateConfig(
     patch: Pick<AgentRuntimeConfig, "mode" | "planEnabled" | "language" | "outputStyle">,

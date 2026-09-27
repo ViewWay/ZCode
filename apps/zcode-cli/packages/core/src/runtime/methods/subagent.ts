@@ -1,6 +1,6 @@
 /* eslint-disable max-lines -- subagent runtime wiring 集中衔接 child runtime、tool pool、权限、MCP 与 activity watchdog，拆分需单独迁移。 */
 import { RESPOND_TO_COORDINATOR_TOOL_NAME } from "@zcode/contracts";
-import type { SubagentRunOptions } from "@zcode/contracts";
+import type { SubagentRunOptions, WorkspaceId } from "@zcode/contracts";
 import {
   defaultScheduler,
   PermissionService,
@@ -66,6 +66,8 @@ export function createDefaultSubagentPort(
 
   return createExploreSubagentPort({
     logger: this.logger,
+    // Agent Teams AC7：teardown 信号透传，runner 据此回收本会话创建的团队。
+    sessionShutdownSignal: () => this.getSessionTeardownSignal(),
     inactivityTimeoutMs: this.config.subagents?.inactivityTimeoutMs,
     autoBackgroundMs: this.config.subagents?.autoBackgroundMs,
     outputRootDir: this.config.subagents?.outputRootDir,
@@ -138,7 +140,11 @@ export function createDefaultSubagentPort(
       });
       // 空 agent prompt 不是一个语义段；先硬拼 `\n\n` 会把缺失段的边界
       // 泄漏到 persistent Memory 开头。这里只组合非空正文，block 左边界由 builder 统一添加。
-      const agentPrompt = [baseAgentPrompt, persistentMemory?.prompt]
+      const agentPrompt = [
+        baseAgentPrompt,
+        persistentMemory?.prompt,
+        buildTeammateSystemSection(request),
+      ]
         .filter((part): part is string => typeof part === "string" && part.length > 0)
         .join("\n\n");
       const childRuntimeEnvInfo = {
@@ -219,6 +225,10 @@ export function createDefaultSubagentPort(
           description: request.description,
           parentSessionId: this.sessionId,
           parentToolCallId,
+          // Agent Teams（AC4）：teammate 生成路径带团队身份，权限请求 origin 据此
+          // 显示「队友 · 团队」徽标；普通 subagent 两字段为 undefined，不落 origin。
+          ...(request.teamName === undefined ? {} : { teamName: request.teamName }),
+          ...(request.teammateName === undefined ? {} : { teammateName: request.teammateName }),
           ...(request.traceContext.turnId === undefined
             ? {}
             : { parentTurnId: request.traceContext.turnId }),
@@ -239,6 +249,27 @@ export function createDefaultSubagentPort(
       const childRuntime = new AgentRuntime(
         request.sessionId,
         {
+          // Agent Teams v2（specs/agent-teams.md）：teammate 常驻会话穿线 workspace 身份与团队身份。
+          // 前者保证 teammate 用与 lead 相同的身份键解析团队目录（AGENTS.md Workspace Identity），
+          // 否则 lead 按身份键、teammate 按路径 fallback 会解析到不同团队目录；后者供
+          // runtime-tools 门控放行 SendMessage/共享任务，并作为 SendMessage 发送方身份。
+          // 普通 subagent 两字段皆 undefined，工具面与行为不变。
+          ...(request.workspaceIdentity === undefined
+            ? {}
+            : {
+                // AGENTS.md Workspace Identity:ToolContext.workspaceIdentity 本就是 lead 的
+                // WorkspaceId 字符串投影,此处按原值回铸。不经 createWorkspaceId——它会额外
+                // 加 ws_ 前缀,导致 teammate 与 lead 解析到不同的团队目录键。
+                workspaceIdentity: request.workspaceIdentity as WorkspaceId,
+              }),
+          ...(request.teamName === undefined || request.teammateName === undefined
+            ? {}
+            : {
+                teamMemberIdentity: {
+                  teamName: request.teamName,
+                  memberName: request.teammateName,
+                },
+              }),
           // 旧 plan 枚举不包含基础权限；拆分后继承完整状态，避免被构造器回退成 build。
           mode: childMode === "plan" ? this.config.mode : childMode,
           planEnabled: childMode === "plan",
@@ -468,6 +499,30 @@ function createSubagentOverrideModelFactory(
       requestDependencies: override.requestDependencies,
     });
   };
+}
+
+/**
+ * Agent Teams v2（specs/agent-teams.md）：teammate 系统提示词中的协作契约。
+ * 修复依据：v1 teammate 只能收消息不能发消息（SendMessage 不在子会话工具面），
+ * 成员汇报与互聊是死信；v2 放行工具面后，把协作契约写进成员系统提示词：
+ * 主动用 SendMessage 汇报/求助，按身份认领共享任务，空闲可被自动派发 ready 任务。
+ */
+function buildTeammateSystemSection(
+  request: Pick<ExploreSubagentRuntimeRequest, "teamName" | "teammateName">,
+): string | undefined {
+  if (request.teamName === undefined || request.teammateName === undefined) return undefined;
+  return [
+    "# Agent Teammate Collaboration",
+    "",
+    `You are teammate "${request.teammateName}" of team "${request.teamName}".`,
+    "- Plain-text output is invisible to lead and teammates; proactively report progress, ask for help, and hand off via SendMessage:",
+    "  `to` takes a teammate name or \"team_lead\" for direct send, `to: \"*\"` for broadcast (use sparingly).",
+    "- The shared task list (TaskCreate/TaskUpdate/TaskGet/TaskList) is the single source of truth for team tasks: when claiming, use TaskUpdate",
+    `  to set owner="${request.teammateName}" and include expectedVersion to prevent double-claiming; on completion, set status to "completed".`,
+    "- When idle you may be auto-dispatched a ready task (all blockedBy completed) and woken by a message to start work; accept and execute directly.",
+    "- When stuck, search the team knowledge base first (TeamKnowledgeSearch) for a teammate's prior solution; then ask lead via SendMessage (\"team_lead\").",
+    "- After solving something non-obvious, pay it forward: TeamKnowledgeWrite the reusable how-to so the whole team inherits it.",
+  ].join("\n");
 }
 
 function resolveSubagentPermissionMode(

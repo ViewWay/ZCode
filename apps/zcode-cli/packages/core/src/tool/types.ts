@@ -192,9 +192,20 @@ export interface ToolExecutionContext {
   deliveryKind?: "desktop-continuous" | "web-remote-replayable";
   memoryRoot?: string;
   runtimeScope?: ToolRuntimeScope;
+  /** Agent Teams v2：本会话是常驻 teammate 时携带团队与成员身份（teammate 工具面门控、SendMessage 发送方解析）。 */
+  teamMemberIdentity?: TeamMemberRuntimeIdentity;
   providerVisibleToolNames?: readonly string[];
   sessionId: SessionId;
   turnId?: TurnId;
+}
+
+/**
+ * Agent Teams v2（specs/agent-teams.md）：teammate 在团队内的身份。
+ * executor 穿线到每次工具调用上下文，send-message 用它解析消息发送方。
+ */
+export interface TeamMemberRuntimeIdentity {
+  teamName: string;
+  memberName: string;
 }
 
 export interface ToolEmbeddedSearchContext {

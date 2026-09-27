@@ -46,6 +46,18 @@ export const TeamTaskSchema = z.object({
   owner: z.string().optional(),
   /** CAS 版本号：每次成功更新 +1；冲突返回明确错误，调用方重读后重试。 */
   version: z.number().int().nonnegative(),
+  /** 任务依赖（P1）：taskId 列表，全部 completed 才 ready；缺失的依赖任务视为不满足。 */
+  blockedBy: z.array(z.string().min(1).max(128)).optional(),
+  /** 正反馈计数（P1）：owner 变更或终态重开时 +1，供 lead 派发参考；客观计数，无主观评分。 */
+  attempts: z.number().int().nonnegative().optional(),
+  /** 最近一次 owner 变更时间。 */
+  reassignedAt: z.string().optional(),
+  /** 验收结果(P3 质量门轻量):approved=验收通过;rework=需返工。 */
+  reviewStatus: z.enum(["approved", "rework"]).optional(),
+  /** 验收意见;revise 时必填,并作为消息送达 owner 收件箱。 */
+  reviewComment: z.string().max(2_000).optional(),
+  /** 验收人身份。 */
+  reviewedBy: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -66,6 +78,8 @@ export const TaskCreateInputSchema = z
   .object({
     subject: z.string().min(1).max(TEAM_TASK_SUBJECT_MAX_CHARS),
     description: z.string().max(TEAM_TASK_DESCRIPTION_MAX_CHARS).optional(),
+    /** 任务依赖：taskId 列表，全部 completed 后任务才可认领/开始。 */
+    blockedBy: z.array(z.string().min(1).max(128)).optional(),
   })
   .strict();
 export type TaskCreateInput = z.infer<typeof TaskCreateInputSchema>;
@@ -83,6 +97,10 @@ export const TaskUpdateInputSchema = z
     description: z.string().max(TEAM_TASK_DESCRIPTION_MAX_CHARS).optional(),
     /** 乐观锁：调用方读到的 version；不匹配返回 team_task_conflict。 */
     expectedVersion: z.number().int().nonnegative().optional(),
+    /** 验收判定(P3):仅适用于 status=completed 的任务。approve=通过;revise=返工(自动回退 in_progress)。 */
+    reviewVerdict: z.enum(["approve", "revise"]).optional(),
+    /** 验收意见;revise 时必填,并作为消息送达 owner 收件箱。 */
+    reviewComment: z.string().max(2_000).optional(),
   })
   .strict();
 export type TaskUpdateInput = z.infer<typeof TaskUpdateInputSchema>;

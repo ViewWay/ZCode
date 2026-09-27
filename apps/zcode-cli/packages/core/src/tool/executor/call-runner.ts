@@ -428,6 +428,7 @@ async function executeToolCallImpl(
       workingDirectory: deps.getWorkingDirectory(),
       workspaceRoot: deps.getWorkspaceRoot(),
       workspaceIdentity: deps.workspaceIdentity,
+      teamMemberIdentity: deps.teamMemberIdentity,
       remoteSessionId: deps.remoteSessionId,
       clientMode: deps.clientMode,
       deliveryKind: deps.deliveryKind,

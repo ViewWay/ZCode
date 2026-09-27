@@ -64,7 +64,7 @@ function formatTeamCreateModelContent(output: unknown): string {
     result.status === "created"
       ? `Team "${result.team.name}" created.`
       : `Team "${result.team.name}" already exists; returning it unchanged.`;
-  return `${head}\nMembers: ${memberNames}\nSpawn teammates with Agent({ team_name: "${result.team.name}", name: "<teammate>", ... }).`;
+  return `${head}\nMembers: ${memberNames}\nSpawn teammates with Agent({ team_name: "${result.team.name}", name: "<teammate>", ... }).\nAs lead, coordinate rather than implement: dispatch tasks (TaskCreate/TaskUpdate), review delivered work, and unblock blockers — avoid editing files yourself while teammates are active.`;
 }
 
 export const teamCreateToolEntry: ToolEntry = {

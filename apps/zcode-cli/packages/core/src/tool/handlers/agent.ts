@@ -9,9 +9,13 @@ import {
   AgentOutputSchema,
   AgentType,
   CoreErrorType,
+  TeammateLaunchedOutputJsonSchema,
+  TeammateLaunchedOutputSchema,
   createCoreError,
+  isTeammateAgentInput,
   type AgentInput,
   type AgentOutput,
+  type TeammateLaunchedOutput,
   type TraceContext,
 } from "@zcode/contracts";
 import { TASK_TOOL_NAME } from "../compat.js";
@@ -78,6 +82,8 @@ const AGENT_TOOL_OUTPUT_SCHEMA = {
       required: ["status", "agentId", "description", "prompt", "outputFile"],
       additionalProperties: false,
     },
+    // Agent Teams：常驻 teammate 生成结果（specs/agent-teams.md）。
+    TeammateLaunchedOutputJsonSchema,
   ],
 };
 
@@ -128,6 +134,18 @@ function buildAgentProviderDescription(
 const AGENT_PROVIDER_DESCRIPTION = buildAgentProviderDescription();
 
 function formatAgentOutputForModel(output: unknown): string {
+  const teammateParsed = TeammateLaunchedOutputSchema.safeParse(output);
+  if (teammateParsed.success) {
+    const data = teammateParsed.data as TeammateLaunchedOutput;
+    // teammate 的产出经后台完成通知回到会话；这里只描述 spawn 事实与协作入口。
+    return [
+      `Teammate "${data.teammateName}" launched in team "${data.teamName}".`,
+      `agentId: ${data.agentId} (internal ID - do not mention to user.)`,
+      "The teammate runs its first task now and then stays idle waiting for messages. It will remain available until TeamDelete or shutdown.",
+      "Message teammates with SendMessage: `to` = teammate name (or `*` to broadcast to the whole team). Coordinate work with TaskCreate/TaskUpdate/TaskList.",
+    ].join("\n");
+  }
+
   const parsed = AgentOutputSchema.safeParse(output);
   if (!parsed.success) {
     return typeof output === "string" ? output : (JSON.stringify(output) ?? String(output));
@@ -188,6 +206,49 @@ const agentHandler: ToolHandler = async (input, context) => {
         recoverable: false,
       },
     );
+  }
+
+  // Agent Teams：team_name + name 同时在场 → 常驻 teammate 生成路径（specs/agent-teams.md）。
+  // 与 run_in_background 互斥（schema 层 isTeammateAgentInput 兜底），teammate 本身即常驻形态。
+  if (isTeammateAgentInput(parsed)) {
+    if (!context.subagentPort.spawnTeammate) {
+      throw createCoreError(
+        CoreErrorType.ConfigurationError,
+        "SubagentPort.spawnTeammate is not configured for teammate spawning",
+        {
+          context: {
+            code: AgentErrorCode.SUBAGENT_UNAVAILABLE,
+            toolCallId: context.toolCallId,
+            toolName: "Agent",
+          },
+          recoverable: false,
+        },
+      );
+    }
+    return context.subagentPort.spawnTeammate(
+      {
+        sessionId: context.sessionId,
+        turnId: context.turnId,
+        parentToolCallId: context.toolCallId,
+        agentType,
+        description: parsed.description,
+        prompt: parsed.prompt,
+        callerCanReadOutputFile: canReadBackgroundOutputFile(context.providerVisibleToolNames),
+        workingDirectory: context.workingDirectory,
+        workspaceRoot: context.workspaceRoot,
+        teamName: parsed.team_name!.trim(),
+        teammateName: parsed.name!.trim(),
+        workspaceIdentity: context.workspaceIdentity,
+        trace: {
+          traceId: context.traceId,
+          spanId: context.spanId,
+          parentSpanId: context.parentSpanId,
+          sessionId: context.sessionId,
+          turnId: context.turnId,
+        } as TraceContext,
+      },
+      { signal: context.abortSignal },
+    ) satisfies Promise<TeammateLaunchedOutput>;
   }
 
   const request = {

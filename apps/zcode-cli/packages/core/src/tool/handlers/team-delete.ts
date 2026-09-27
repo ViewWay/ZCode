@@ -2,10 +2,10 @@
 // TeamDelete Tool Handler - 解散团队并清理磁盘事实
 // ============================================================
 //
-// specs/agent-teams.md：TeamDelete 向全部存活 teammate 发 shutdown_request，
-// 等待审批后删除 TeamFile 与 mailbox。teammate 运行时（shutdown 投递）在后续
-// 提交接入；本版本先落「清理事实源 + 幂等 not_found」语义（AC5 的清理半边），
-// shutdownRequested 恒为 0，字段先行保证协议稳定，不因后续增量改 wire 形状。
+// specs/agent-teams.md（AC5 完整语义）：TeamDelete 优先经 SubagentPort.shutdownTeam
+// 执行「shutdown_request 投递 → 等成员收敛（上限 30s）→ 强制终止残留 → 删目录」；
+// shutdownRequested 即真实投递数。端口/teammate 运行时缺失时回退为「仅删目录」
+// （幂等 not_found 语义不变），保证无 subagent runtime 的最小部署仍可清理磁盘事实。
 
 import {
   TEAM_DELETE_TOOL_NAME,
@@ -37,6 +37,24 @@ const TEAM_DELETE_PROVIDER_DESCRIPTION = [
 
 const teamDeleteHandler: ToolHandler = async (input, context) => {
   const parsed = TeamDeleteInputSchema.parse(input) as TeamDeleteInput;
+  // 完整语义路径：runtime 端口在场时由唯一写入者（runner）执行关停编排。
+  const shutdownTeam = context.subagentPort?.shutdownTeam;
+  if (shutdownTeam) {
+    const result = await shutdownTeam.call(context.subagentPort, {
+      teamName: parsed.name,
+      workspaceIdentity: context.workspaceIdentity,
+      workspaceRoot: context.workspaceRoot,
+      workingDirectory: context.workingDirectory,
+    });
+    return TeamDeleteOutputSchema.parse({
+      status: result.status,
+      shutdownRequested: result.requested,
+      ...(result.status === "deleted"
+        ? {}
+        : { message: `Team "${parsed.name}" does not exist in this workspace.` }),
+    }) satisfies TeamDeleteOutput;
+  }
+  // 回退路径：无 teammate 运行时（最小部署）仅清理磁盘事实。
   const dirs = resolveTeamWorkspaceDirs({
     workspaceIdentity: context.workspaceIdentity,
     workspacePath: context.workspaceRoot || context.workingDirectory,

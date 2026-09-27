@@ -33,11 +33,17 @@ export const SendMessageOutputSchema = z
     status: z.enum(["success", "failed"]),
     messageId: z.string(),
     agentId: z.string().optional(),
-    delivery: z.enum(["queued", "steered", "resumed_background"]).optional(),
+    delivery: z.enum(["queued", "steered", "resumed_background", "teammate_mailbox"]).optional(),
     error: z.string().optional(),
     message: z.string().optional(),
     outputFile: z.string().optional(),
     taskId: z.string().optional(),
+    // Agent Teams（specs/agent-teams.md）：队友邮箱路由的投递事实，UI timeline 展示用。
+    teammate: z.string().optional(),
+    broadcastTo: z.array(z.string()).optional(),
+    broadcastFailures: z
+      .array(z.object({ member: z.string(), error: z.string() }).strict())
+      .optional(),
   })
   .strict();
 

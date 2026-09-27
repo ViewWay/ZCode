@@ -51,12 +51,16 @@ function registerRuntimeBuiltInTools(runtime: AgentRuntimeInternal, deps: AgentR
     bashTimeoutPolicy: runtime.config.bashTimeoutPolicy,
     includeSkill: Boolean(runtime.skillPort),
     includeAgent: Boolean(runtime.subagentPort),
-    includeSendMessage: runtime.subagentPort?.sendMessage !== undefined,
+    includeSendMessage:
+      runtime.subagentPort?.sendMessage !== undefined ||
+      resolveTeammateIdentity(runtime.config) !== undefined,
     // Agent Teams（specs/agent-teams.md）：v1 只在主会话暴露团队面；
     // 子代理会话（taskType subagent_child）不允许再建团队（无嵌套团队）。
     includeTeam: isMainRuntimeTeamScope(runtime) && Boolean(runtime.subagentPort),
     // 共享任务列表随团队一起只在主会话可用；teammate 常驻会话接入后按其团队身份单独放行。
-    includeTeamTasks: isMainRuntimeTeamScope(runtime) && Boolean(runtime.subagentPort),
+    includeTeamTasks:
+      (isMainRuntimeTeamScope(runtime) && Boolean(runtime.subagentPort)) ||
+      resolveTeammateIdentity(runtime.config) !== undefined,
     includeRespondToCoordinator:
       runtime.config.taskType === "subagent_child" && Boolean(deps.coordinatorResponsePort),
     // submit_result 只在注入了 workflowSubmitPort 的 workflow actor 会话注册。以端口存在为门，
@@ -222,6 +226,7 @@ function createRuntimeToolExecutor(
     setWorkingDirectory: runtime.setWorkingDirectory.bind(runtime),
     getWorkspaceRoot: () => runtime.workspaceRoot,
     workspaceIdentity: runtime.config.workspaceIdentity?.toString(),
+    teamMemberIdentity: resolveTeammateIdentity(runtime.config),
     remoteSessionId: runtime.config.remoteSessionId,
     clientMode: runtime.config.clientMode,
     deliveryKind: runtime.config.deliveryKind,
@@ -248,6 +253,17 @@ function resolveRuntimeBrowserUseEnabled(
 /** Agent Teams 工具面的会话范围门：主会话才可建团/用共享任务（v1 无嵌套团队）。 */
 function isMainRuntimeTeamScope(runtime: AgentRuntimeInternal): boolean {
   return runtime.config.taskType !== "subagent_child";
+}
+
+/**
+ * Agent Teams v2（specs/agent-teams.md）：teammate 常驻会话按身份放行工具面。
+ * 主会话/普通 subagent 的 config.teamMemberIdentity 为 undefined，门控行为不变；
+ * teammate 会话据此获得 SendMessage 与共享任务列表（TeamCreate/TeamDelete 仍主会话专属）。
+ */
+export function resolveTeammateIdentity(config: {
+  teamMemberIdentity?: { teamName: string; memberName: string };
+}): { teamName: string; memberName: string } | undefined {
+  return config.teamMemberIdentity;
 }
 
 function shouldEnqueueRuntimeBackgroundTaskNotification(

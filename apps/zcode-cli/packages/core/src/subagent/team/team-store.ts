@@ -11,6 +11,7 @@ import { mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   TeamFileSchema,
+  TEAM_LEAD_MEMBER_NAME,
   TEAM_MAX_MEMBERS,
   type TeamFile,
   type TeamMember,
@@ -124,7 +125,7 @@ export async function createOrGetTeam(
     const now = (params.now ?? (() => new Date()))().toISOString();
     const leadMember: TeamMember = {
       agentId: params.leadAgentId,
-      name: "team_lead",
+      name: TEAM_LEAD_MEMBER_NAME,
       cwd: params.leadWorkingDirectory,
       isActive: true,
       joinedAt: now,

@@ -139,6 +139,8 @@ export interface AgentRuntimeInternal
   queueAutoDrain: boolean;
   queueExternalDrainActive: boolean;
   shuttingDown: boolean;
+  /** Agent Teams AC7：会话 teardown 信号访问器（实现见 agent-runtime.ts）。 */
+  getSessionTeardownSignal(): AbortSignal | undefined;
   backgroundTaskNotificationsSealed: boolean;
   backgroundTaskNotificationSealReason?: BackgroundTaskNotificationSealReason;
   pendingModelChangeTimeline?: PendingModelChangeTimeline;

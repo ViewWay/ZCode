@@ -124,6 +124,8 @@ export interface ToolExecutorOptions {
   workingDirectory?: string;
   workspaceRoot?: string;
   workspaceIdentity?: string;
+  /** Agent Teams v2：本会话是常驻 teammate 时的身份（透传到工具上下文）。 */
+  teamMemberIdentity?: { teamName: string; memberName: string };
   remoteSessionId?: string;
   clientMode?: "desktop-continuous" | "web-remote-replayable";
   deliveryKind?: "desktop-continuous" | "web-remote-replayable";
@@ -230,6 +232,8 @@ export interface ToolExecutorDeps {
   setWorkingDirectory?: (cwd: string) => Promise<void> | void;
   getWorkspaceRoot: () => string;
   workspaceIdentity?: string;
+  /** Agent Teams v2：本会话是常驻 teammate 时的身份（deps 保留，call-runner 透传到工具上下文）。 */
+  teamMemberIdentity?: { teamName: string; memberName: string };
   remoteSessionId?: string;
   clientMode?: "desktop-continuous" | "web-remote-replayable";
   deliveryKind?: "desktop-continuous" | "web-remote-replayable";

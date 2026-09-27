@@ -60,6 +60,10 @@ import {
   taskListToolEntry,
   taskUpdateToolEntry,
 } from "./team-task.js";
+import {
+  teamKnowledgeSearchToolEntry,
+  teamKnowledgeWriteToolEntry,
+} from "./team-knowledge.js";
 import { createSubmitResultToolEntry, submitResultToolEntry } from "./submit-result.js";
 import { escalateToolEntry } from "./escalate.js";
 import { resolveWorkflowQuestionToolEntry } from "./resolve-workflow-question.js";
@@ -112,6 +116,8 @@ export const builtInTools: ToolEntry[] = [
   taskUpdateToolEntry,
   taskGetToolEntry,
   taskListToolEntry,
+  teamKnowledgeWriteToolEntry,
+  teamKnowledgeSearchToolEntry,
   submitResultToolEntry,
   // actor 的升级通道。与 submit_result 完全同构：
   // 端口在场即注册（includeEscalate），`tools:"none"` 下由 workflow_child 的 allowlist
@@ -256,7 +262,9 @@ export function registerBuiltInTools(
       (entry.metadata.name === "TaskCreate" ||
         entry.metadata.name === "TaskUpdate" ||
         entry.metadata.name === "TaskGet" ||
-        entry.metadata.name === "TaskList") &&
+        entry.metadata.name === "TaskList" ||
+        entry.metadata.name === "TeamKnowledgeWrite" ||
+        entry.metadata.name === "TeamKnowledgeSearch") &&
       options.includeTeamTasks !== true
     ) {
       continue;

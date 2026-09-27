@@ -3,6 +3,7 @@
 // ============================================================
 
 import type { AgentBackgroundedOutput, AgentOutput } from "../tools/agent.js";
+import type { TeammateLaunchedOutput } from "../tools/teammate-spawn.js";
 import type { Model, ModelSelection } from "../model/index.js";
 import type { ModelRequestDependencies } from "../model/invocation-context.js";
 import type { SessionId, ToolCallId, TurnId } from "./shared.js";
@@ -19,6 +20,18 @@ export interface SubagentRunRequest {
   workingDirectory: string;
   workspaceRoot: string;
   trace: TraceContext;
+  /**
+   * Agent Teams（specs/agent-teams.md AC4）：仅 teammate 生成路径携带。随请求穿线到
+   * 交互请求 origin，UI 据此显示「队友 · 团队」来源徽标；普通 subagent 不携带。
+   */
+  teamName?: string;
+  teammateName?: string;
+  /**
+   * Agent Teams v2：teammate 生成路径携带的 workspace 身份（AGENTS.md Workspace Identity）。
+   * 随请求穿线到 child runtime 配置，teammate 与 lead 用同一身份键解析团队目录；
+   * 普通 subagent 不携带，按路径 fallback 解析，行为不变。
+   */
+  workspaceIdentity?: string;
 }
 
 export interface SubagentRunOptions {
@@ -40,6 +53,35 @@ export interface SubagentLaunchRequest extends SubagentRunRequest {
 export type SubagentLaunchOptions = SubagentRunOptions;
 
 export type SubagentStartRequest = SubagentRunRequest;
+
+/** teammate 生成请求：在 start 语义之上追加团队关停与 workspace 归一事实。 */
+export interface SubagentTeammateSpawnRequest extends SubagentStartRequest {
+  teamName: string;
+  teammateName: string;
+  /** Workspace Identity（AGENTS.md）：团队目录按身份键隔离，不按裸路径。 */
+  workspaceIdentity?: string;
+  /** 家目录解析注入点；生产缺省取 agent 进程的 os.homedir()。 */
+  homeDirResolver?: () => string;
+}
+
+/** TeamDelete 请求：解散团队（specs/agent-teams.md AC5 完整语义）。 */
+export interface SubagentTeamShutdownRequest {
+  teamName: string;
+  /** 团队目录定位事实（AGENTS.md Workspace Identity：身份键隔离）。 */
+  workspaceIdentity?: string;
+  workspaceRoot: string;
+  workingDirectory: string;
+  /** 家目录解析注入点；生产缺省取 agent 进程的 os.homedir()。 */
+  homeDirResolver?: () => string;
+}
+
+/** TeamDelete 结果：requested = 收到 shutdown_request 的成员数（lead 除外）。 */
+export interface SubagentTeamShutdownResult {
+  status: "deleted" | "not_found";
+  requested: number;
+  /** 等待窗口内自愿退出的成员数；其余按 spec 30s 超时强制终止。 */
+  exited: number;
+}
 
 export interface SubagentStartOptions {
   signal?: AbortSignal;
@@ -71,7 +113,7 @@ export interface SubagentSendMessageOptions {
   signal?: AbortSignal;
 }
 
-export type SubagentSendMessageDelivery = "queued" | "steered" | "resumed_background";
+export type SubagentSendMessageDelivery = "queued" | "steered" | "resumed_background" | "teammate_mailbox";
 
 export interface SubagentSendMessageResult {
   status: "success" | "failed";
@@ -82,6 +124,10 @@ export interface SubagentSendMessageResult {
   agentId?: string;
   taskId?: string;
   outputFile?: string;
+  /** 命中队友邮箱路由时的收件成员名；广播为成员列表。 */
+  teammate?: string;
+  broadcastTo?: string[];
+  broadcastFailures?: { member: string; error: string }[];
 }
 
 export type SubagentTaskStatus =
@@ -117,6 +163,24 @@ export interface SubagentPort {
     request: SubagentStartRequest,
     options?: SubagentStartOptions,
   ): Promise<AgentBackgroundedOutput>;
+  /**
+   * Agent Teams：生成具名常驻 teammate（specs/agent-teams.md）。
+   * 与 start 的差异：首个 turn 完成后不终态化，teammate 空闲待命轮询团队邮箱，
+   * 收到消息即恢复新一轮；仅随 shutdown / TeamDelete / 会话终止而退出。
+   */
+  spawnTeammate?(
+    request: SubagentTeammateSpawnRequest,
+    options?: SubagentStartOptions,
+  ): Promise<TeammateLaunchedOutput>;
+  /**
+   * Agent Teams（AC5 完整语义）：向全部存活 teammate 投递 shutdown_request，
+   * 等待成员收敛（上限 30s）后强制终止残留者并删除团队目录。
+   * 端口未实现（无 teammate 运行时）时调用方回退为「仅删目录」。
+   */
+  shutdownTeam?(
+    request: SubagentTeamShutdownRequest,
+    options?: SubagentStopOptions,
+  ): Promise<SubagentTeamShutdownResult>;
   backgroundTask?(taskId: string): Promise<SubagentTaskSnapshot | undefined>;
   getTask?(taskId: string): Promise<SubagentTaskSnapshot | undefined>;
   waitForTask?(
