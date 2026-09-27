@@ -47,6 +47,7 @@ import { SendMessageToolCallBlock } from "@/ToolCallBlocks/renderers/send-messag
 import { SkillToolCallBlock } from "@/ToolCallBlocks/renderers/skill.js";
 import { SubmitResultToolCallBlock } from "@/ToolCallBlocks/renderers/submit-result.js";
 import { SwitchModeToolCallBlock } from "@/ToolCallBlocks/renderers/switch-mode.js";
+import { TeamToolCallBlock } from "@/ToolCallBlocks/renderers/team.js";
 import { TaskOutputToolCallBlock } from "@/ToolCallBlocks/renderers/task-output.js";
 import { TaskStopToolCallBlock } from "@/ToolCallBlocks/renderers/task-stop.js";
 import { TodoToolCallBlock } from "@/ToolCallBlocks/renderers/todo.js";
@@ -151,6 +152,9 @@ export function resolveToolCallRenderer(context: ToolCallBlockRenderContext) {
       return identity.toolName === "submit_result"
         ? SubmitResultToolCallBlock
         : CreateWorkflowToolCallBlock;
+    case "team":
+      // Agent Teams（specs/agent-teams.md）：6 个团队/共享任务工具共用一张卡。
+      return TeamToolCallBlock;
     case "session-context":
       return ReadSessionContextToolCallBlock;
     case "file-read":

@@ -131,6 +131,8 @@ export const ServiceChannels = {
   PluginManagement: "plugin-management",
   /** Subagents 管理服务 */
   Subagents: "subagents",
+  /** Agent Teams 只读发现服务（specs/agent-teams.md：roster 数据事实源在 runtime） */
+  Teams: "teams",
   /** Commands 管理服务 */
   Commands: "commands",
   /** Hooks 管理服务 */

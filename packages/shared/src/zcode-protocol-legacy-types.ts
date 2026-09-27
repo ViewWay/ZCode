@@ -162,6 +162,10 @@ export const zcodeInteractionRequestOriginSchema = z
     parentSessionId: nonEmptyString,
     parentToolCallId: nonEmptyString.optional(),
     parentTurnId: nonEmptyString.optional(),
+    // Agent Teams（specs/agent-teams.md AC4）：teammate 发起的交互请求带团队与
+    // 成员身份，UI 据此显示「队友 · 团队」来源徽标；普通 subagent 不携带。
+    teamName: nonEmptyString.optional(),
+    teammateName: nonEmptyString.optional(),
   })
   .strict();
 export type ZCodeInteractionRequestOrigin = z.infer<typeof zcodeInteractionRequestOriginSchema>;

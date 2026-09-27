@@ -30,6 +30,7 @@ import type { IPluginSyncService } from "./plugin-sync/pluginSync.js";
 import type { IPluginsService } from "./plugins/plugins.js";
 import type { IPluginManagementService } from "./plugins/pluginManagement.js";
 import type { ISubagentsService } from "./subagents/subagents.js";
+import type { ITeamsService } from "./teams/teams.js";
 import type { ICommandsService } from "./commands/commands.js";
 import type { IHooksService } from "./hooks/hooks.js";
 import type { IMemoryService } from "./memory/memory.js";
@@ -82,6 +83,8 @@ export interface IServiceAccessor {
   /** 设置页插件管理（UI 不再直触 zcodeAgentService 的 plugins/* 面） */
   readonly pluginManagementService: IPluginManagementService;
   readonly subagentsService: ISubagentsService;
+  /** Agent Teams 只读发现（roster）；写事实源在 agent runtime。 */
+  readonly teamsService: ITeamsService;
   readonly commandsService: ICommandsService;
   readonly hooksService: IHooksService;
   readonly memoryService: IMemoryService;

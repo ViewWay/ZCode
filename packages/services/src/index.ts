@@ -277,6 +277,9 @@ export { IPluginManagementService } from "./plugins/pluginManagement.js";
 // Subagents service — ISubagentsService is both a type (interface) and value (descriptor)
 export { ISubagentsService } from "./subagents/subagents.js";
 
+// Agent Teams discovery descriptor — factory lives in the node entry (fs-bound impl)
+export { ITeamsService } from "./teams/teams.js";
+
 // Commands service — ICommandsService is both a type (interface) and value (descriptor)
 export { ICommandsService } from "./commands/commands.js";
 

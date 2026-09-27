@@ -9,6 +9,9 @@
 export { ServiceProvider, useServices } from "./useServices.js";
 export { useBaseWorkspaceServices, useWorkspaceServices } from "./useWorkspaceServices.js";
 
+// Agent Teams roster（specs/agent-teams.md）
+export { useTeamRoster } from "./useTeamRoster.js";
+
 // 平台操作上下文
 export {
   PlatformProvider,

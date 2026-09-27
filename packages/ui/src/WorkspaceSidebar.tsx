@@ -113,6 +113,7 @@ import type { RemoteConnectionLogEntry } from "@/hooks/useRemoteConnectionLogs.j
 import type { CodeViewerSource } from "@/lib/codeViewer.js";
 import { WorkspaceFileTree } from "@/WorkspaceFileTree.js";
 import { WorkspaceArchivedTasksFlatSection } from "@/WorkspaceArchivedTasksFlatSection.js";
+import { TeamRosterSection } from "@/WorkspaceSidebar/TeamRosterSection.js";
 import { WorkspaceSidebarFooter } from "@/WorkspaceSidebarFooter.js";
 import { WorkspacePinnedTasksSection } from "@/WorkspacePinnedTasksSection.js";
 import { WorkspaceTimelineTasksSection } from "@/WorkspaceTimelineTasksSection.js";
@@ -1377,6 +1378,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                   }}
                 />
               ) : null}
+              <TeamRosterSection
+                workspacePath={workspacePath}
+                workspaceIdentity={workspaceIdentity}
+              />
               <div className="flex min-h-0 flex-col gap-3 px-2">
                 {taskViewMode === "archived" ? (
                   <WorkspaceArchivedTasksFlatSection
