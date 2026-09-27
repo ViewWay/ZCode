@@ -73,12 +73,21 @@ const taskUpdateHandler: ToolHandler = async (input, context) => {
     const teamName = await resolveSingleTeamName({ dirs });
     // 正反馈闭环（specs/agent-teams.md v2.1）：任务状态迁到 completed/cancelled/重开时向 lead
     // 收件箱投递 task_notification；发送方按会话身份解析（teammate=成员名，主会话=team_lead）。
+    // 自通知过滤（P3 修复）：lead 主会话自己的任务操作不回写 lead 收件箱（噪声）；
+    // 成员操作才注入完成/重开通知。评审意见同理：不给评审人自己发。
+    const actorName = context.teamMemberIdentity?.memberName;
     return await updateTeamTask({ dirs }, teamName, parsed, {
-      actor: context.teamMemberIdentity?.memberName,
-      notifyStatusChange: (message) =>
-        appendTeamInboxMessage(dirs, teamName, TEAM_LEAD_MEMBER_NAME, message),
+      ...(actorName === undefined ? {} : { actor: actorName }),
+      ...(actorName === undefined
+        ? {}
+        : {
+            notifyStatusChange: (message) =>
+              appendTeamInboxMessage(dirs, teamName, TEAM_LEAD_MEMBER_NAME, message),
+          }),
       notifyMember: (memberName, message) =>
-        appendTeamInboxMessage(dirs, teamName, memberName, message),
+        memberName === actorName
+          ? Promise.resolve()
+          : appendTeamInboxMessage(dirs, teamName, memberName, message),
     });
   } catch (error) {
     if (error instanceof TeamStoreError) return toTeamTaskFailure(error);

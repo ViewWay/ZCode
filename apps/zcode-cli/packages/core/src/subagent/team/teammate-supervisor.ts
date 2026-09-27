@@ -62,6 +62,16 @@ export interface TeammateSupervisorInput {
    * undefined = 没有可认领任务，照常进入空闲通知。生产由 runner 绑定 claimNextReadyTask，测试可注入桩。
    */
   autoClaimTask?: () => Promise<TeamMailboxMessage | undefined>;
+  /**
+   * 孤儿任务防护（P3 修复）：成员被中止（TaskStop/中止信号）时释放其未完成任务回任务池。
+   * 生产由 runner 绑定 releaseMemberTasks；缺省不释放。
+   */
+  releaseTasks?: () => Promise<void>;
+  /**
+   * 关停审批注入点（v2.6）：缺省自动同意（TeamDelete 为 lead 权威语义）；
+   * 未来接 UI 审批时注入，返回 false 即拒绝（回执 reject，成员继续运行）。
+   */
+  onShutdownRequest?: () => Promise<boolean>;
 }
 
 export interface TeammateSupervisorHandle {
@@ -125,6 +135,18 @@ async function supervise(
         message.payload.kind === "shutdown_request",
     );
     if (shutdown) {
+      // 关停审批注入点（v2.6）：缺省自动同意（TeamDelete 为 lead 权威语义，spec 已修正描述）；
+      // 未来接 UI 审批时注入返回 false 即拒绝（回执 reject，成员继续运行）。
+      const approved = input.onShutdownRequest ? await input.onShutdownRequest() : true;
+      if (!approved) {
+        await notifyLead(input, {
+          kind: "shutdown_response",
+          approve: false,
+          ...(shutdown.payload.reason === undefined ? {} : { reason: shutdown.payload.reason }),
+        });
+        await sleep(pollMs);
+        continue;
+      }
       await input.onShutdown();
       // 关停回执（specs/agent-teams.md AC5 闭环）：teammate 批准后向 lead 收件箱回
       // shutdown_response，lead 消费循环将其转为通知，lead agent 由此确认关停结果。
@@ -154,7 +176,15 @@ async function supervise(
     }
     await sleep(pollMs);
   }
-  // signal abort（TeamDelete/会话终止）：不读邮箱，直接摘除成员记录。
+  // signal abort（TeamDelete/会话终止）：不读邮箱，直接摘除成员记录；释放其未完成任务
+  // 回任务池（P3 修复：防孤儿任务卡 in_progress——如 TaskStop 停掉单个成员时，团队与任务板仍存活）。
+  if (input.releaseTasks !== undefined) {
+    try {
+      await input.releaseTasks();
+    } catch {
+      // 释放失败不阻断成员摘除（成员摘除是 TeamDelete/清理语义的硬要求）。
+    }
+  }
   await removeTeamMember(input.deps, input.teamName, input.teammateName);
 }
 

@@ -336,7 +336,10 @@ function validateBlockedBy(blockedBy: readonly string[], tasks: readonly TeamTas
 export function isTaskReady(tasks: readonly TeamTask[], task: Pick<TeamTask, "blockedBy">): boolean {
   return (task.blockedBy ?? []).every((id) => {
     const dependency = tasks.find((candidate) => candidate.taskId === id);
-    return dependency?.status === "completed";
+    // v2.6:cancelled 视为解除阻塞（依赖被砍=不再阻塞，是否重排由 lead 决定）；
+    // 缺失的依赖任务视为不满足。环防御：blockedBy 创建后不可变（不可引用未来任务），
+    // 当前无环可能；未来若开放依赖修改，必须在此加环检测（specs/agent-teams.md v2.6）。
+    return dependency !== undefined && (dependency.status === "completed" || dependency.status === "cancelled");
   });
 }
 
@@ -365,6 +368,61 @@ export async function claimNextReadyTask(
     { actor: memberName },
   );
   return result.task;
+}
+
+/**
+ * 孤儿任务防护（P3 修复，specs/agent-teams.md v2.6）：成员被中止（TaskStop/中止信号）时，
+ * 把其名下 in_progress 任务释放回任务池（清 owner、attempts+1 记一次作废派发），
+ * 并通知 lead 重新调度（best-effort）。TeamDelete 整队删除场景无需释放（目录随删）。
+ */
+export async function releaseMemberTasks(
+  deps: TeamTasksDeps,
+  teamName: string,
+  memberName: string,
+  options?: { notifyStatusChange?: (message: TeamMailboxMessage) => Promise<unknown> },
+): Promise<TeamTask[]> {
+  const tasksFile = deps.dirs.teamTasksFile(teamName);
+  return withTeamFileLock(tasksFile, async () => {
+    const file = await loadTaskListFile(deps, teamName);
+    const now = new Date().toISOString();
+    const released: TeamTask[] = [];
+    const tasks = file.tasks.map((task) => {
+      if (task.owner !== memberName || task.status !== "in_progress") return task;
+      const { owner: _dropped, ...rest } = task;
+      const releasedTask: TeamTask = {
+        ...rest,
+        status: "pending",
+        attempts: (task.attempts ?? 1) + 1,
+        updatedAt: now,
+      };
+      released.push(releasedTask);
+      return releasedTask;
+    });
+    if (released.length === 0) return [];
+    await saveTaskListFile(deps, teamName, { ...file, tasks });
+    if (options?.notifyStatusChange) {
+      for (const task of released) {
+        try {
+          await options.notifyStatusChange(
+            buildTeamMailboxMessage({
+              from: memberName,
+              to: TEAM_LEAD_MEMBER_NAME,
+              payload: {
+                kind: "task_notification",
+                taskId: task.taskId,
+                subject: task.subject,
+                status: "pending",
+                actor: memberName,
+              },
+            }),
+          );
+        } catch {
+          // 通知 best-effort:释放本身已落盘。
+        }
+      }
+    }
+    return released;
+  });
 }
 
 export { TEAM_TASK_STATUSES };

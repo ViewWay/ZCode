@@ -72,8 +72,8 @@ import {
 import { resolveTeamWorkspaceDirs } from "./team/team-paths.js";
 import { addTeamMember, removeTeamMember, type TeamStoreDeps } from "./team/team-store.js";
 import { runTeammateSupervisor } from "./team/teammate-supervisor.js";
-import { claimNextReadyTask } from "./team/team-tasks.js";
-import { buildTeamMailboxMessage } from "./team/team-mailbox.js";
+import { claimNextReadyTask, releaseMemberTasks } from "./team/team-tasks.js";
+import { appendTeamInboxMessage, buildTeamMailboxMessage } from "./team/team-mailbox.js";
 import { runLeadInboxPoller } from "./team/lead-inbox-poller.js";
 import {
   cleanupSessionTeamRuntime,
@@ -753,6 +753,25 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
               },
               traceContext: lifecycle.runTraceContext,
             });
+          },
+          // 孤儿任务防护（P3 修复）：成员被停/中止时，其未完成任务释放回任务池并通知 lead。
+          releaseTasks: async () => {
+            const released = await releaseMemberTasks(teamDeps, rawRequest.teamName, rawRequest.teammateName, {
+              notifyStatusChange: async (message) => {
+                await appendTeamInboxMessage(teamDeps.dirs, rawRequest.teamName, TEAM_LEAD_MEMBER_NAME, message);
+              },
+            });
+            for (const task of released) {
+              options.logger?.info("Teammate tasks released back to pool", {
+                event: "agent-teams.teammate.tasks_released",
+                module: "core.agent-teams",
+                agentId: lifecycle.agentId,
+                teamName: rawRequest.teamName,
+                teammateName: rawRequest.teammateName,
+                taskId: task.taskId,
+                subject: task.subject,
+              });
+            }
           },
           isTaskTerminal: () => {
             const task = registry.get(lifecycle.agentId);

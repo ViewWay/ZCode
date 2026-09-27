@@ -229,3 +229,58 @@ test("review verdict: approve records acceptance, revise reopens with comment an
   });
   assert.equal(early.errorCode, "team_task_review_requires_completed");
 });
+
+test("readiness: cancelled deps unblock; release returns member tasks to pool (v2.6)", async () => {
+  const { isTaskReady, releaseMemberTasks } = await import("../../src/subagent/team/team-tasks.js");
+  const { appendTeamInboxMessage, readTeamInbox } = await import("../../src/subagent/team/team-mailbox.js");
+  const { TEAM_LEAD_MEMBER_NAME } = await import("@zcode/contracts");
+
+  const a = await createTeamTask(teamTest.deps, "refactor-team", { subject: "A: base" });
+  const b = await createTeamTask(teamTest.deps, "refactor-team", {
+    subject: "B: depends on A",
+    blockedBy: [a.task.taskId],
+  });
+
+  // 依赖 A 未完成 → B 不 ready
+  assert.equal(
+    isTaskReady((await listTeamTasks(teamTest.deps, "refactor-team")).tasks, { blockedBy: b.task.blockedBy }),
+    false,
+  );
+
+  // 取消 A → 解除阻塞,B ready(v2.6:cancelled 视为解除阻塞)
+  await updateTeamTask(teamTest.deps, "refactor-team", {
+    taskId: a.task.taskId,
+    owner: "alice",
+    expectedVersion: a.task.version,
+  });
+  const cancelled = await updateTeamTask(teamTest.deps, "refactor-team", {
+    taskId: a.task.taskId,
+    status: "cancelled",
+  });
+  assert.equal(cancelled.task.status, "cancelled");
+  assert.equal(
+    isTaskReady((await listTeamTasks(teamTest.deps, "refactor-team")).tasks, { blockedBy: b.task.blockedBy }),
+    true,
+  );
+
+  // release:用全新成员 zara 认领 B 后中止 → 任务回池(成员名与前序用例解耦,避免把遗留任务一起释放)
+  await updateTeamTask(teamTest.deps, "refactor-team", {
+    taskId: b.task.taskId,
+    owner: "zara",
+    status: "in_progress",
+  });
+  const released = await releaseMemberTasks(teamTest.deps, "refactor-team", "zara", {
+    notifyStatusChange: (message) =>
+      appendTeamInboxMessage(teamTest.dirs, "refactor-team", TEAM_LEAD_MEMBER_NAME, message),
+  });
+  assert.equal(released.length, 1);
+  assert.equal(released[0].taskId, b.task.taskId);
+  assert.equal(released[0].status, "pending");
+  assert.equal(released[0].owner, undefined);
+  const leadInbox = await readTeamInbox(teamTest.dirs, "refactor-team", TEAM_LEAD_MEMBER_NAME);
+  const poolNotes = leadInbox.messages.filter(
+    (message) => message.payload.kind === "task_notification" && message.payload.status === "pending",
+  );
+  assert.equal(poolNotes.length, 1);
+  assert.equal(poolNotes[0].from, "zara");
+});

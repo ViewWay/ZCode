@@ -254,3 +254,12 @@ lead 消费循环由 runner 端口闭包持有：首个 teammate spawn 时启动
 **UI 注册**：`TeamKnowledgeWrite/TeamKnowledgeSearch` 登记进 shared `ZCODE_KNOWN_TOOL_NAMES` 与 team family 映射,UI 复用 `TeamToolCallBlock` 渲染,不再走 unknown fallback。
 
 **单测**：补 `formatLeadInboxNotification` 的 task_notification 格式化分支(完成/重开)。
+
+### v2.6 修复（2026-09-27）
+
+1. **就绪语义**：cancelled 依赖视为解除阻塞（依赖被砍=不再阻塞，是否重排由 lead 决定）；缺失依赖视为不满足。环防御：blockedBy 创建后不可变（不可引用未来任务），当前无环可能；未来开放依赖修改时必须在 isTaskReady 加环检测。
+2. **自通知过滤**：lead 主会话自己的任务操作不回写 lead 收件箱；评审意见不给评审人自己发（handler 侧按 actor 过滤）。
+3. **孤儿任务防护**：成员被中止（TaskStop/中止信号，团队与任务板仍存活）时，`releaseMemberTasks` 将其 in_progress 任务释放回任务池（清 owner、attempts+1）并通知 lead 重新调度；TeamDelete 整队删除场景无需释放。
+4. **关停审批注入点**：shutdown_request 缺省自动同意（TeamDelete 为 lead 权威语义，v1 spec 的「审批」描述据此修正）；supervisor 预留 `onShutdownRequest` 注入点，未来接 UI 审批时返回 false 即拒绝（回执 reject，成员继续运行）。
+
+**backlog 追加**：待验收聚合信号、auto-claim 开关、成员 currentTask 可观测、知识库去重/过期/更新推送、归档目录清理策略、mailbox 上限。

@@ -122,6 +122,9 @@ export function formatLeadInboxNotification(
       if (task.status === "cancelled") {
         return prefix + from + " cancelled task \"" + task.subject + "\" (" + task.taskId + ").";
       }
+      if (task.status === "pending") {
+        return prefix + from + " returned task \"" + task.subject + "\" (" + task.taskId + ") to the pool.";
+      }
       return prefix + from + " reopened task \"" + task.subject + "\" (" + task.taskId + ") for rework.";
     }
     case "plan_approval_request":

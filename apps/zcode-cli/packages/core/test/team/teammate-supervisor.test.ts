@@ -217,3 +217,56 @@ test("supervisor auto-claims a ready task when idle (P1)", async () => {
   assert.equal(resumed.length, 1);
   assert.match(resumed[0], /Auto work/);
 });
+
+test("supervisor honors shutdown rejection and releases tasks on abort (v2.6)", async () => {
+  const { appendTeamInboxMessage, readTeamInbox } = await import("../../src/subagent/team/team-mailbox.js");
+  await seedTeammate("sup-team", "eve");
+  await appendTeamInboxMessage(
+    teamTest.dirs,
+    "sup-team",
+    "eve",
+    buildTeamMailboxMessage({
+      from: "team_lead",
+      to: "eve",
+      payload: { kind: "shutdown_request", reason: "bye" },
+    }),
+  );
+  let shutdowns = 0;
+  let releases = 0;
+  const controller = new AbortController();
+  const supervisor = runTeammateSupervisor({
+    deps: teamTest.deps,
+    dirs: teamTest.dirs,
+    teamName: "sup-team",
+    teammateName: "eve",
+    leadName: "team_lead",
+    agentId: "agent_eve",
+    signal: controller.signal,
+    isTaskTerminal: () => true,
+    onShutdownRequest: async () => false,
+    resumeTurn: async () => assert.fail("rejected shutdown must not resume"),
+    onShutdown: async () => {
+      shutdowns += 1;
+    },
+    releaseTasks: async () => {
+      releases += 1;
+    },
+    pollIntervalMs: 5,
+    activeProbeIntervalMs: 5,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 40));
+
+  // 拒绝:成员仍在(onShutdown 未触发),回执 reject
+  const leadInbox = await readTeamInbox(teamTest.dirs, "sup-team", "team_lead");
+  const rejects = leadInbox.messages.filter(
+    (message) => message.payload.kind === "shutdown_response" && message.payload.approve === false,
+  );
+  assert.equal(rejects.length, 1);
+  assert.equal(shutdowns, 0);
+
+  // abort:成员摘除 + 任务释放
+  controller.abort();
+  await supervisor.done;
+  assert.equal(releases, 1);
+  assert.equal(shutdowns, 0);
+});
