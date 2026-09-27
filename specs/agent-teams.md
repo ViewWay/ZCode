@@ -21,7 +21,7 @@ Runtime（`apps/zcode-cli/packages/core`）已具备的底座，本 spec **只�
 
 1. 命名 teammate 生成路径（常驻、可空闲待命、不随单任务结束退出）。
 2. 团队注册表（TeamFile）：磁盘事实源，记录团队与成员。
-3. teammate 间邮箱消息（peer-to-peer + 广播），与既有 parent→child steering 并存。
+3. teammate 间邮箱消息（peer-to-peer + 广播 + teammate→lead），与既有 parent→child steering 并存。
 4. 共享任务列表工具组（TaskCreate/TaskUpdate/TaskGet/TaskList）。
 5. 团队级权限路径与 UI roster 视图。
 
@@ -30,7 +30,7 @@ Runtime（`apps/zcode-cli/packages/core`）已具备的底座，本 spec **只�
 - **Lead**：创建团队的会话（主 agent），团队唯一协调者。
 - **Teammate**：具名常驻代理，由 `Agent({ team_name, name })` 生成，有自己的消息循环，空闲时待命不退出。
 - **TeamFile**：团队注册表 JSON（磁盘事实源）。
-- **Mailbox**：teammate 收件箱队列（按成员命名的 JSON 文件，文件锁互斥写入）。
+- **Mailbox**：成员收件箱队列（按成员命名的 JSON 文件，文件锁互斥写入）；lead 的收件箱（`inboxes/team_lead.json`）由 runtime 的 lead 邮箱消费循环读取，teammate→lead 消息不再是死信。
 - **共享任务列表**：团队内所有成员可读写的任务集合；与个人 `TodoWrite`（会话私有）严格区分。
 
 ## 非目标（v1 边界）
@@ -49,7 +49,7 @@ Runtime（`apps/zcode-cli/packages/core`）已具备的底座，本 spec **只�
 - `Agent` 工具新增路由：入参同时含 `team_name` 与 `name` 时走 teammate 生成路径（沿用 `spawnTeammate` 语义），否则维持现状（subagent / 后台 / 同步）。
 - teammate 拥有独立 abort 生命周期：**不随 lead 单轮中断而取消**，仅随 lead 会话终止 / TeamDelete / shutdown 审批通过而终止。
 - 成员状态 `isActive: boolean`：执行 turn 中为 true，空闲待命为 false；状态变化以事件广播给 UI（roster 用）。
-- 新增工具 `TeamDelete({ name })`：向全部存活 teammate 发 shutdown_request，等待审批结果（有 UI bridge 时弹确认，超时 30s 视为拒绝并强制终止），随后删除 TeamFile 与 mailbox。
+- 新增工具 `TeamDelete({ name })`：向全部存活 teammate 发 shutdown_request，等待审批结果（有 UI bridge 时弹确认，超时 30s 视为拒绝并强制终止），随后删除 TeamFile 与 mailbox。实现收敛在 `SubagentPort.shutdownTeam`（runtime 单一写入者）：写 shutdown_request → 轮询 TeamFile 等成员收敛到仅剩 lead（上限 30s）→ 强制 abort 未退出 teammate → 删除团队目录并停止 lead 消费循环。工具 handler 优先走端口实现，端口/teammate 运行时缺失时回退为「仅删目录」。
 
 ### 存储约定（磁盘为唯一事实源）
 
@@ -87,11 +87,12 @@ to = 当前 in-process 子代理（既有 agentNameRegistry）→ 维持既有 s
 | 类型 | 载荷 | 处理 |
 | --- | --- | --- |
 | 纯文本 | `string` | 注入为 teammate 新对话轮（复用 turn-loop 传入消息通道） |
-| `shutdown_request` | `{ type, reason }` | teammate 弹 UI 确认；approve → 优雅退出并从 roster 移除；reject → 回执拒绝，继续运行 |
-| `plan_approval_request/response` | `{ type, request_id, approve }` | teammate 计划审批走 lead/用户确认，结果按 request_id 配对回执 |
-| `idle_notification` | — | teammate 空闲时通知 lead（防 lead 盲等） |
+| `shutdown_request` | `{ type, reason }` | teammate 弹 UI 确认；approve → 优雅退出并从 roster 移除，向 lead 邮箱回 `shutdown_response`；reject → 回执拒绝，继续运行 |
+| `shutdown_response` | `{ type, approve }` | 仅 lead 消费：teammate 批准关停的回执，经 lead 邮箱消费循环回灌 lead turn，lead 由此确认关停结果 |
+| `idle_notification` | `{ type, idleReason? }` | teammate active→idle 翻转时写入 lead 邮箱，经消费循环回灌 lead turn（防 lead 盲等） |
+| `plan_approval_request/response` | `{ type, request_id, approve }` | v1 由 UI bridge 同步链路承载（同 AC4 徽标链路），不走邮箱；mailbox schema 保留给 v2 非 in-process 后端，监督循环遇此载荷显式跳过（标记已读，不注入 turn） |
 
-投递语义：至多一次 + 确认读（read 标志）；轮询间隔 1s；广播对每个成员独立落盘，单成员失败不阻断其他成员。
+投递语义：至多一次 + 确认读（read 标志）；轮询间隔 1s；广播对每个成员独立落盘，单成员失败不阻断其他成员；**lead 的收件箱由 runtime 的 lead 邮箱消费循环读取**（首个 teammate spawn 时启动，TeamFile 被删后自停），消费产物经既有父任务通知队列回灌 lead turn——mailbox 仍是消息事实源，消费循环不创建第二个事实源。
 
 ### 时序（消息 + 关停）
 
@@ -108,6 +109,23 @@ TeammateA                TeamFile/mailbox              TeammateB
    │                          │◀────优雅退出/事件───────────│
    │ 删除 TeamFile+mailbox ◀───│                            │
 ```
+
+### 时序（lead 收件箱消费 + idle 通知 + 关停回执）
+
+```text
+TeammateSupervisor            lead mailbox            LeadInboxPoller         父通知队列 → lead turn
+   │ turn 完成 active→idle       │                         │                      │
+   │──idle_notification───────▶│                         │                      │
+   │                            │────1s 读未读(markRead)──▶│                      │
+   │                            │                         │──格式化通知入队──────▶│
+   │ shutdown_request 批准       │                         │                      │
+   │──shutdown_response───────▶│                         │                      │
+   │──removeTeamMember────────▶│                         │                      │
+   │ teammate SendMessage(lead) │                         │                      │
+   │──text─────────────────────▶│                         │                      │
+```
+
+lead 消费循环由 runner 端口闭包持有：首个 teammate spawn 时启动（此时 enqueueParentTaskNotification 必须在场），TeamFile 被删除后自停；lead 会话 beginShutdown 时随 AC7 清理一并终止。
 
 ## 三、共享任务列表（runtime）
 
@@ -166,4 +184,73 @@ TeammateA                TeamFile/mailbox              TeammateB
   - core（`apps/zcode-cli/packages/core/src/subagent/team/`）：`team-paths.ts`（workspace-key 哈希与目录解析）、`team-lock.ts`（文件锁）、`team-json-file.ts`、`team-store.ts`（TeamFile 幂等创建/成员注册/上限/删除）、`team-mailbox.ts`（单发/确认读/广播隔离）、`team-tasks.ts`（CAS + 状态机）。
   - handlers（`apps/zcode-cli/packages/core/src/tool/handlers/team-create.ts` / `team-delete.ts` / `team-task.ts`）：注册门 `includeTeam` / `includeTeamTasks`（主会话 `taskType !== "subagent_child"` 且 subagentPort 在场；无嵌套团队）。
   - TeamDelete v1：清理事实源 + 幂等 `not_found`；`shutdownRequested` 字段先行固定 wire 形状，shutdown 投递随 teammate 运行时接入。
-- **待办**：teammate 常驻生成路径（Agent 工具 `team_name`+`name` 路由，contracts 入参已扩展）、SendMessage 队友路由与广播、teammate 邮箱轮询与 idle 通知、权限徽标（shared origin 扩展）、services 只读发现、UI roster/renderer/i18n。
+- **待办（v1 已全部闭环，2026-09-25 会话）**：teammate 常驻生成路径、SendMessage 队友路由与广播、teammate 邮箱轮询、权限徽标（shared origin 扩展）、services 只读发现、UI roster/renderer/i18n —— 均已落地。
+- **teammate 常驻运行时（已落地，未提交工作区）**：
+  - contracts：`teammate-spawn.ts`（`TeammateLaunchedOutput`）、`subagent.port.ts`（`spawnTeammate` 端口 + `SubagentRunRequest` 可选 `teamName`/`teammateName`）。
+  - `tool/handlers/agent.ts`：`team_name`+`name` 路由 teammate 生成；`tool/handlers/send-message.ts`：`deliverToTeamMailbox` 团队成员寻址 + `*` 广播（单团队解析规则，命中即短路既有 agentId 路由）。
+  - `subagent/runner.ts`：`spawnTeammate`——先写 TeamFile 成员再启动首轮 turn（与 spec spawn 顺序一致），首轮完成交 `teammate-supervisor` 接管；resume 管线续用消息携带的 `traceContext`。
+  - `subagent/team/teammate-supervisor.ts`：终态探测翻转 `isActive`、邮箱轮询消费 `newlyRead`、shutdown_request 审批退出、abort 即摘除成员（TeamDelete/会话终止路径）。
+  - 修复依据（双重 resume）：`readTeamInbox` 返回「已消费视角」，监督循环若按整表消费会在下一轮终态探测重放历史消息；`TeamInboxReadResult` 新增 `newlyRead` 表达「本次轮询新到达」边界（tests: teammate-supervisor 用例 1 回归覆盖）。
+  - traceContext 续链：mailbox 消息携带发送方 trace（`TraceContext`），恢复 turn 时续链，保证 traceId 不断裂。
+- **AC4 权限徽标（已落地）**：shared `zcodeInteractionRequestOriginSchema` 的 `subagent` kind 增加可选 `teamName`/`teammateName`（strict schema 加字段向后兼容）；runtime 经 `SubagentInteractionOriginContext` → `deriveChildClientPorts` 穿线；UI `InteractionRequestOriginBadge` 按「队友 · 团队」分流。
+- **services 只读发现（已落地，tests: `packages/services/test/teamsDiscovery.test.ts`）**：`packages/services/src/teams/`（`ITeamsService` 描述符、`teamsPaths.ts` 与 runtime 同构哈希并钉住样例向量、`teamsDiscoveryService.ts` 宽松归一 + 坏文件跳过）；通道 `ServiceChannels.Teams`；desktop host 注册于 `remoteWorkspaceServiceCollection.ts`，client 经 `remoteServiceAccess.ts` 代理。
+- **UI（已落地）**：family `team` 渲染器（`renderers/team.tsx`，6 工具共用）、侧栏「团队」区块（`WorkspaceSidebar/TeamRosterSection.tsx` + `useTeamRoster` 2.5s 轮询，无团队时隐藏）、roster/i18n 双语键。
+- **cc-haha 对比闭环（2026-09-25 会话，已落地）**：对比 NanmiCoder/cc-haha 仓库（`docs/internals/agent.md`、`agent-internals.md` 与 `src/utils/swarm/` 源码）后确认四类差距并闭环：
+  1. **lead 收件箱消费循环**（`subagent/team/lead-inbox-poller.ts`，新增）：teammate→lead 的消息此前是死信（无人消费 inboxes/team_lead.json）。消费循环在首个 teammate spawn 时启动，TeamFile 删除后自停，每条新消息经既有父任务通知队列（enqueueParentTaskNotification，originMeta.backgroundSource="subagent"）回灌 lead turn；mailbox 仍是唯一事实源，确认读防重放。
+  2. **idle_notification**：监督循环在 active→idle 翻转时向 lead 收件箱写 idle_notification（idleReason=available），lead 不再盲等（对齐 cc-haha Stop-hook 语义）。
+  3. **shutdown_response 回执**（AC5 闭环）：teammate 批准关停后向 lead 收件箱回执，lead agent 据此确认关停结果。
+  4. **TeamDelete 完整语义（AC5）+ AC7 会话清理**：`SubagentPort.shutdownTeam`（contracts 新接口）由 runner 闭包实现：投递 shutdown_request → 轮询 TeamFile 等成员收敛（上限 30s，TEAM_SHUTDOWN_APPROVAL_TIMEOUT_MS）→ 强制 abort 残留者 → 删目录（`subagent/team/team-shutdown.ts`）；TeamDelete handler 优先走端口，无运行时时回退「仅删目录」。AC7：lead runtime `beginShutdown` abort 会话 teardown 信号（`getSessionTeardownSignal`），runner 闭包监听后 abort 全部 teammate 并删除本会话创建的团队目录，孤儿团队不跨会话残留。
+  - **plan_approval 设计决策**：v1 teammate 计划审批由 UI bridge 同步链路承载（同 AC4 徽标链路），不走邮箱——与 cc-haha in-process 队友走共享权限管线同理；cc-haha 的邮箱配对只为 tmux/iTerm2 外部后端服务。mailbox schema 保留，监督循环显式跳过该载荷。
+  - **AC8 验证结论**：事实源半边正确（团队目录按 workspaceIdentity 键隔离，teamsPaths 测试钉住样例向量；远程会话的 CLI 在远端写远端目录，不混写）。发现半边 v1 与 subagents 服务同位注册（remoteWorkspaceServiceCollection；远端 agent 侧 Teams 通道注册缺失，远程窗口 roster 读本地目录——v1 已知边界，client 代理 `RemoteServiceAccess.teamsService` 已就绪，v2 需 agent 连接侧注册通道）。
+- **验证基线**：core team 测试 25 + services discovery 测试 4 全绿；根 `pnpm typecheck` 通过（exit 0）；根 `pnpm lint` 0 errors/70 warnings（基线）；core oxlint 对本次文件 0 新告警（max-lines 类超标如 agent-runtime.ts 677 行为既有基线，改动前 664 行）；`architecture:check --changed` 0 violations。
+
+
+## 实施状态（v2 增量，2026-09-26）
+
+**铺设层（已落地）**：contracts `SubagentRunRequest.workspaceIdentity`；runner `ExploreSubagentRuntimeRequest.workspaceIdentity`、`runExploreAgent` 参数穿线、`resumeRequest` 从任务快照恢复身份、`createRuntimeTaskSnapshot` 写入身份；`RuntimeTaskSnapshot` 增 teamName/teammateName/workspaceIdentity；`AgentRuntimeConfig.teamMemberIdentity`（声明合并）；methods/subagent.ts child runtime 配置穿线两者（workspaceIdentity 按原值回铸 WorkspaceId，不经 createWorkspaceId 以免前缀漂移）。
+
+**收口（本次补丁，源自 agent-teams-v2-patches.json）**：runtime-tools 门控按 `config.teamMemberIdentity` 放行 teammate 会话的 SendMessage 与共享任务列表（TeamCreate/TeamDelete 仍主会话专属）；executor/impl/call-runner 三层透传到工具上下文；`send-message.ts` 发送方身份按会话解析（主会话=team_lead，teammate=成员名），member 未命中时 teammate 会话抛明确业务失败、主会话保持回落 agentId 路由；新增 teammate 身份辅助函数单测。
+
+**语义修正**：第三节「团队内所有成员可读写」在 v1 实现中不成立（v1 门控仅主会话注册 Task* 工具），v2 落地后成立。
+
+**后续路线**：P1 任务依赖（blockedBy/ready）与空闲自动认领、teammate 系统提示词契约、teamAllowedPaths 实际注入；P2 技能/知识共享（团队知识目录或项目 memory，SKILL.md 式文档 + 索引注入，TeamDelete 后归档项目 memory，复用 src/memory extraction/recall）；P3 质量门（评审 verdict + 修复循环）、计划审批走邮箱、DAG 活动面板。
+
+### v2.1 增量（2026-09-26）：任务状态迁移通知 lead
+
+`TaskUpdate` 使任务迁到 completed/cancelled、或从终态重开时，runtime 向 lead 收件箱投递 `task_notification`（发送方=操作者身份：主会话=team_lead，teammate=成员名）；lead-inbox-poller 将其格式化进 lead turn（如 `alice completed task "..." (task_id).`）。认领/进行中不通知以避免噪声；通知为 best-effort，投递失败不回滚状态迁移。这补齐正反馈闭环的输入侧：lead 对成员完成情况拥有一等信号，派发决策不再依赖轮询 TaskList。
+
+### v2.2 增量（2026-09-26，P1：依赖与自动认领）
+
+**任务依赖**：`TeamTask.blockedBy`（taskId 数组，TaskCreate 时设定并校验存在性与去重；全部 completed 即 ready，缺失的依赖任务视为不满足）。
+
+**阻塞语义**：依赖不满足时迁往 `in_progress` 被拒（`team_task_blocked`）；已在 in_progress 的任务不受影响（兼容依赖设定前已认领的任务）。
+
+**自动认领**：空闲 teammate（任务终态）经 `claimNextReadyTask` 认领首个「pending、无 owner、ready」任务（文件锁 + CAS 竞争防护；争抢失败返回 undefined 保持空闲）。认领成功立即 resume 新 turn 且**不发 idle 通知**（马上又开工，通知无意义）；无可认领才进入空闲通知。默认开启；lead 随时可重派（owner 变更 bumps attempts 并记录 reassignedAt）。
+
+**正反馈计数**：owner 变更或终态重开时 attempts+1（客观计数，无主观评分），供 lead 派发参考。
+
+### v2.3 增量（2026-09-26，P2：团队知识库——学会并共享新技能）
+
+**存储**：`<team-dir>/knowledge/<slug>.md`（SKILL.md 式 frontmatter：when_to_use/author/updated_at + 正文）；写入为覆盖语义允许迭代；目录上限 200 篇；slug 走 isSafeTeamPathSegment 校验（跨平台路径安全）。
+
+**工具面**：`TeamKnowledgeWrite({slug, when_to_use, content})` / `TeamKnowledgeSearch({query, limit?})`；注册门与共享任务一致（includeTeamTasks，lead 与 teammate 可用）；写入方身份按会话解析。检索为大小写不敏感子串匹配（Voyager-lite，无 embedding），返回命中行片段。
+
+**协作循环**：成员解决非显然问题后 → TeamKnowledgeWrite 沉淀；任何成员开工前/卡住时 → TeamKnowledgeSearch 先检索复用，再向 lead 求助（已写入 teammate 系统提示词）。
+
+**边界**：TeamDelete 归档（知识不随团队消散）列入后续批次（当前 TeamDelete 仍整目录删除）；UI 未注册专用 renderer，走 unknown fallback（仅显示层，工具功能完整）。
+
+### v2.4 增量（2026-09-26，P3：验收-返工环）
+
+**验收判定**：`TaskUpdate` 新增 `reviewVerdict`(approve/revise)与 `reviewComment`,仅适用于 status=completed 的任务(否则 team_task_review_requires_completed);revise 必须带意见(team_task_review_comment_required)。
+
+**语义**：approve → 记录 reviewStatus=approved,状态不变;revise → 任务自动回退 in_progress(免 owner 变更)、attempts+1,验收意见以文本消息送达 owner 收件箱(owner 的监督循环消费文本并恢复 turn——成员由此知道改什么)。review 通知为 best-effort。
+
+**闭环**：完成通知(v2.1)→ lead 验收(v2.4)→ 返工回派/通过 → 成员收到评审文本——正反馈闭环双向贯通。TeamCreate 输出追加「lead 协调而非施工」提示(Anthropic 多代理工程复盘教训)。
+
+### v2.5 增量（2026-09-27，P2 收尾）：知识归档与 UI 注册
+
+**知识归档**：TeamDelete/会话清理删除团队目录前，`archiveTeamKnowledge` 将 knowledge/ 移入 `<teamsRoot>/_archive/<teamName>-<timestamp>/knowledge`——团队解散,知识不散;归档 best-effort,失败不阻断删除。
+
+**UI 注册**：`TeamKnowledgeWrite/TeamKnowledgeSearch` 登记进 shared `ZCODE_KNOWN_TOOL_NAMES` 与 team family 映射,UI 复用 `TeamToolCallBlock` 渲染,不再走 unknown fallback。
+
+**单测**：补 `formatLeadInboxNotification` 的 task_notification 格式化分支(完成/重开)。
