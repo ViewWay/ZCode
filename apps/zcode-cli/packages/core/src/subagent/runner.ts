@@ -70,10 +70,11 @@ import {
   type RuntimeTaskSnapshot,
 } from "../runtime-task/registry.js";
 import { resolveTeamWorkspaceDirs } from "./team/team-paths.js";
-import { addTeamMember, removeTeamMember, type TeamStoreDeps } from "./team/team-store.js";
+import { addTeamMember, loadTeamFile, removeTeamMember, type TeamStoreDeps } from "./team/team-store.js";
 import { runTeammateSupervisor } from "./team/teammate-supervisor.js";
 import { claimNextReadyTask, releaseMemberTasks } from "./team/team-tasks.js";
 import { appendTeamInboxMessage, buildTeamMailboxMessage } from "./team/team-mailbox.js";
+import { createGitWorktree } from "./team/team-worktree.js";
 import { runLeadInboxPoller } from "./team/lead-inbox-poller.js";
 import {
   cleanupSessionTeamRuntime,
@@ -674,6 +675,37 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         canReadOutputFile: true,
       };
 
+      // worktree 隔离（v2.7）：团队开启 useWorktree 时，成员在独立 worktree 副本工作
+      // （分支 zcode/<team>/<member>），完成由 lead 按分支合并；创建失败降级共享工作区。
+      const teamForWorktree = await loadTeamFile(teamDeps, rawRequest.teamName);
+      if (teamForWorktree?.useWorktree === true) {
+        try {
+          const worktree = await createGitWorktree({
+            repoRoot: rawRequest.workspaceRoot || rawRequest.workingDirectory,
+            teamName: rawRequest.teamName,
+            memberName: rawRequest.teammateName,
+            teamsRoot: teamDirs.teamsRoot,
+          });
+          request.workingDirectory = worktree.path;
+          rawRequest.workingDirectory = worktree.path;
+          options.logger?.info("Teammate worktree created", {
+            event: "agent-teams.worktree.created",
+            module: "core.agent-teams",
+            teamName: rawRequest.teamName,
+            teammateName: rawRequest.teammateName,
+            path: worktree.path,
+            branch: worktree.branch,
+          });
+        } catch (error) {
+          options.logger?.warn("Git worktree creation failed; teammate falls back to shared workspace", {
+            event: "agent-teams.worktree.fallback",
+            module: "core.agent-teams",
+            teamName: rawRequest.teamName,
+            teammateName: rawRequest.teammateName,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
       // 先注册成员再启动 turn：roster（TeamFile 事实源）先于 SubagentSpawned 事件，
       // 与 spec 的 spawn 顺序一致（写 members → 事件）。
       try {

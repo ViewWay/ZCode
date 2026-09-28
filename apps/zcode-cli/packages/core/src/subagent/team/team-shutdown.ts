@@ -105,6 +105,13 @@ export async function shutdownTeamRuntime(
   } catch {
     // ignore:归档失败仍按原语义删除团队目录,由调用方日志兜底。
   }
+  // worktree 清理（v2.7）：成员工作分支保留（lead 合并入口），工作目录移除。
+  try {
+    const { cleanupTeamWorktrees } = await import("./team-worktree.js");
+    await cleanupTeamWorktrees(deps.dirs.teamsRoot, teamName);
+  } catch {
+    // 清理失败不阻断删除（残留目录由 git worktree prune 兜底）。
+  }
   const { deleted } = await deleteTeamDir({ dirs: deps.dirs }, teamName);
   return { status: deleted ? "deleted" : "not_found", requested, exited };
 }
@@ -125,6 +132,13 @@ export async function cleanupSessionTeamRuntime(
     await archiveTeamKnowledge({ dirs: deps.dirs }, teamName);
   } catch {
     // ignore:归档失败不阻断会话清理。
+  }
+  // worktree 清理（v2.7）：会话清理同样移除成员工作目录（分支保留）。
+  try {
+    const { cleanupTeamWorktrees } = await import("./team-worktree.js");
+    await cleanupTeamWorktrees(deps.dirs.teamsRoot, teamName);
+  } catch {
+    // ignore：清理失败不阻断会话收尾。
   }
   await deleteTeamDir({ dirs: deps.dirs }, teamName);
 }

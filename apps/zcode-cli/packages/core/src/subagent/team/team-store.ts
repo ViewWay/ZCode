@@ -104,6 +104,8 @@ export interface CreateTeamParams {
   leadAgentId: string;
   leadSessionId?: string;
   leadWorkingDirectory: string;
+  /** 成员是否在独立 git worktree 副本工作（v2.7）。 */
+  useWorktree?: boolean;
   now?: () => Date;
 }
 
@@ -138,6 +140,7 @@ export async function createOrGetTeam(
       members: [leadMember],
       ...(params.description === undefined ? {} : { description: params.description }),
       ...(params.leadSessionId === undefined ? {} : { leadSessionId: params.leadSessionId }),
+      ...(params.useWorktree === undefined ? {} : { useWorktree: params.useWorktree }),
     };
     await writeTeamFileAtomic(configFile, team);
     return { team, status: "created" as const };

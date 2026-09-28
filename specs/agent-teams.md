@@ -263,3 +263,11 @@ lead 消费循环由 runner 端口闭包持有：首个 teammate spawn 时启动
 4. **关停审批注入点**：shutdown_request 缺省自动同意（TeamDelete 为 lead 权威语义，v1 spec 的「审批」描述据此修正）；supervisor 预留 `onShutdownRequest` 注入点，未来接 UI 审批时返回 false 即拒绝（回执 reject，成员继续运行）。
 
 **backlog 追加**：待验收聚合信号、auto-claim 开关、成员 currentTask 可观测、知识库去重/过期/更新推送、归档目录清理策略、mailbox 上限。
+
+### v2.7 增量（2026-09-27，P2 收尾）：通知聚合与 worktree 隔离
+
+**通知聚合（join 策略对齐 pi-subagents）**：`LeadInboxPollerInput.aggregationWindowMs`（缺省 0=逐条，向后兼容）。>0 时窗口内多条通知合并为一条批量投递（`[Team x] N updates from teammates:` + 逐条格式化行），10 条上限或窗口到期即投递；单条窗口内保持原格式；退出前清空缓冲防丢通知。
+
+**worktree 隔离（对齐 cc-haha worktreePath / pi-subagents）**：`TeamCreate({ useWorktree: true })` 后，成员 spawn 即在 `git worktree add` 出的独立副本工作（`<teamsRoot>/worktrees/<team>/<member>`，分支 `zcode/<team>/<member>`）——多成员并行改同一仓库不再互相踩踏。创建失败自动降级共享工作区（warn 日志）；TeamDelete/会话清理移除 worktree 工作目录，**成员分支保留**作为 lead 合并入口；git 主仓库的 worktree 元数据需 `git worktree prune` 兜底（已知边界）。git 调用收敛在 `team-worktree.ts` 单文件 IO 边界。
+
+**通知者语义**：聚合仅改变投递形态，不改变确认读/事实源语义（mailbox 仍是唯一事实源）。

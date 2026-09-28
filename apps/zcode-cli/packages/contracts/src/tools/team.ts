@@ -61,6 +61,8 @@ export const TeamFileSchema = z.object({
   teamAllowedPaths: z
     .array(z.object({ path: z.string(), toolName: z.string() }))
     .optional(),
+  /** v2.7：成员 spawn 即在独立 git worktree 副本工作（分支 zcode/<team>/<member>）。 */
+  useWorktree: z.boolean().optional(),
 });
 export type TeamFile = z.infer<typeof TeamFileSchema>;
 
@@ -73,6 +75,8 @@ export const TeamCreateInputSchema = z
   .object({
     name: teamNameSchema.describe("Unique team name within this workspace"),
     description: z.string().max(2_000).optional().describe("What this team is for"),
+    /** v2.7：成员是否在独立 git worktree 副本工作（缺省共享工作区）。 */
+    useWorktree: z.boolean().optional(),
   })
   .strict();
 export type TeamCreateInput = z.infer<typeof TeamCreateInputSchema>;

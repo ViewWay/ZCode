@@ -33,6 +33,12 @@ export interface LeadInboxPollerInput {
   signal: AbortSignal;
   /** 轮询间隔注入点：生产默认 1s，测试缩短。 */
   pollIntervalMs?: number;
+  /**
+   * 通知聚合窗口（ms，v2.7 对齐 pi-subagents join 策略）：>0 时窗口内多条通知合并为
+   * 一条批量投递（防 lead 被逐条完成通知淹没）；达到 10 条上限或窗口到期即投递。
+   * 缺省 0 = 逐条投递（向后兼容）。
+   */
+  aggregationWindowMs?: number;
 }
 
 export interface LeadInboxPollerHandle {
@@ -53,18 +59,56 @@ export function runLeadInboxPoller(input: LeadInboxPollerInput): LeadInboxPoller
 
 async function pollLoop(input: LeadInboxPollerInput): Promise<void> {
   const pollMs = input.pollIntervalMs ?? LEAD_INBOX_POLL_INTERVAL_MS;
+  const windowMs = input.aggregationWindowMs ?? 0;
+  // 聚合缓冲（v2.7）：windowMs>0 时窗口内多条通知合并为一条批量通知投递（pi-subagents
+  // join 策略的对齐实现）；windowMs=0 保持逐条投递。退出前清空缓冲避免丢通知。
+  let buffer: TeamMailboxMessage[] = [];
+  let bufferFirstAt = 0;
+  const flushBuffer = () => {
+    if (buffer.length === 1) {
+      enqueueLeadNotification(input, buffer[0]!);
+    } else if (buffer.length > 1) {
+      const lines = buffer.map((message) => "- " + formatLeadInboxNotification(input.teamName, message));
+      input.enqueue({
+        originMeta: {
+          backgroundSource: "subagent",
+          title: "Team " + input.teamName + " · " + buffer.length + " updates",
+          workId: buffer[0]!.id,
+        },
+        taskId: "team:" + input.teamName,
+        text: lines.join("\n"),
+        traceContext: buffer[0]!.traceContext ?? input.baseTraceContext,
+      });
+    }
+    buffer = [];
+    bufferFirstAt = 0;
+  };
   while (!input.signal.aborted) {
     // TeamFile 是团队存活事实：被 TeamDelete/会话清理删除后消费循环自停，不为已解散团队空转。
     const team = await loadTeamFile(input.deps, input.teamName);
-    if (team === undefined) return;
+    if (team === undefined) {
+      if (buffer.length > 0) flushBuffer();
+      return;
+    }
     const { newlyRead } = await readTeamInbox(input.dirs, input.teamName, input.leadName, {
       markRead: true,
     });
-    for (const message of newlyRead) {
-      enqueueLeadNotification(input, message);
+    if (windowMs <= 0) {
+      for (const message of newlyRead) {
+        enqueueLeadNotification(input, message);
+      }
+    } else {
+      for (const message of newlyRead) {
+        if (buffer.length === 0) bufferFirstAt = Date.now();
+        buffer.push(message);
+      }
+      if (buffer.length > 0 && (buffer.length >= 10 || Date.now() - bufferFirstAt >= windowMs)) {
+        flushBuffer();
+      }
     }
     await sleep(pollMs);
   }
+  if (buffer.length > 0) flushBuffer();
 }
 
 /** 单条邮箱消息转通知并入队；单条失败不阻断其余消息。 */

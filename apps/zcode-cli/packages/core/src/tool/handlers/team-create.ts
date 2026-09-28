@@ -52,6 +52,7 @@ const teamCreateHandler: ToolHandler = async (input, context) => {
       leadAgentId: `lead_${context.sessionId}`,
       leadSessionId: context.sessionId,
       leadWorkingDirectory: context.workingDirectory,
+      useWorktree: parsed.useWorktree,
     },
   );
   return TeamCreateOutputSchema.parse({ status, team }) satisfies TeamCreateOutput;
