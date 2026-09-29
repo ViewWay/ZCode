@@ -77,11 +77,15 @@ export const TeamCreateInputSchema = z
     description: z.string().max(2_000).optional().describe("What this team is for"),
     /** v2.7：成员是否在独立 git worktree 副本工作（缺省共享工作区）。 */
     useWorktree: z.boolean().optional(),
+    /** v2.8：团队角色模板名（<workspaceRoot>/.zcode/team-templates/<name>.md）。 */
+    template: z.string().max(64).optional(),
   })
   .strict();
 export type TeamCreateInput = z.infer<typeof TeamCreateInputSchema>;
 
-export const TeamCreateOutputSchema = z.object(TEAM_CREATE_OUTPUT_SCHEMA_BASE).strict();
+export const TeamCreateOutputSchema = z
+  .object({ ...TEAM_CREATE_OUTPUT_SCHEMA_BASE, templatePlan: z.array(z.string()).optional() })
+  .strict();
 export type TeamCreateOutput = z.infer<typeof TeamCreateOutputSchema>;
 
 export const TeamCreateInputJsonSchema = toToolJsonSchema(TeamCreateInputSchema);

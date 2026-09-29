@@ -271,3 +271,11 @@ lead 消费循环由 runner 端口闭包持有：首个 teammate spawn 时启动
 **worktree 隔离（对齐 cc-haha worktreePath / pi-subagents）**：`TeamCreate({ useWorktree: true })` 后，成员 spawn 即在 `git worktree add` 出的独立副本工作（`<teamsRoot>/worktrees/<team>/<member>`，分支 `zcode/<team>/<member>`）——多成员并行改同一仓库不再互相踩踏。创建失败自动降级共享工作区（warn 日志）；TeamDelete/会话清理移除 worktree 工作目录，**成员分支保留**作为 lead 合并入口；git 主仓库的 worktree 元数据需 `git worktree prune` 兜底（已知边界）。git 调用收敛在 `team-worktree.ts` 单文件 IO 边界。
 
 **通知者语义**：聚合仅改变投递形态，不改变确认读/事实源语义（mailbox 仍是唯一事实源）。
+
+### v2.8 增量（2026-09-29）：技能提升与团队角色模板
+
+**技能提升**：`TeamKnowledgePromote({slug, skill_name?})` 把团队知识文档改写为标准 SKILL.md 写入用户级技能目录 `~/.zcode/skills/<name>/`——跨项目可被 Skill 工具加载（当前会话不注册，新会话生效）；覆盖语义；slug/skillName 走路径安全校验。
+
+**团队角色模板**：`TeamCreate({template})` 读取 `<workspaceRoot>/.zcode/team-templates/<name>.md`（行式 markdown：description + `## member: <name>` 段（成员 prompt）+ `## task: <subject>` 段（owner/depends/detail）），解析为 templatePlan（成员 spawn 计划 + 任务创建计划，含 owner 与 depends 提示）随输出回灌 lead 模型，lead 按剧本 Agent spawn + TaskCreate 实例化。模板名走路径安全校验；段数上限 32。
+
+**协作闭环补全**：用户一句需求 → lead 自主选角色模板建队 → 成员按知识库/技能工作 → 经验沉淀 → 可提升为跨项目技能。

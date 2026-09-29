@@ -90,3 +90,27 @@ test("workspaces with distinct identity keys do not see each other's teams", asy
   const result = await service.list({ workspacePath: "/workspaces/other" });
   assert.deepEqual(result, { teams: [] });
 });
+
+test("listInboxMessages projects member inbox messages and tolerates missing files (v2.9)", async () => {
+  const service = createTeamsService(dirs());
+  const inboxDir = join(homeDir, ".zcode", "teams", resolveTeamsWorkspaceKey("/workspaces/demo"), "alpha", "inboxes");
+  await mkdir(inboxDir, { recursive: true });
+  await writeFile(
+    join(inboxDir, "alice.json"),
+    JSON.stringify([
+      { id: "m1", from: "team_lead", to: "alice", payload: { kind: "text", text: "do it" }, sentAt: new Date().toISOString(), read: true },
+      { id: "m2", from: "alice", to: "team_lead", summary: "done", payload: { kind: "task_notification", taskId: "task_1", subject: "X", status: "completed", actor: "alice" }, sentAt: new Date().toISOString(), read: false },
+    ]),
+    "utf8",
+  );
+  const result = await service.listInboxMessages({ workspacePath: "/workspaces/demo", teamName: "alpha", memberName: "alice" });
+  assert.equal(result.messages.length, 2);
+  assert.equal(result.messages[0].payloadKind, "text");
+  assert.equal(result.messages[0].text, "do it");
+  assert.equal(result.messages[1].payloadKind, "task_notification");
+  assert.equal(result.messages[1].status, "completed");
+
+  // 收件箱不存在的成员容忍返回空
+  const missing = await service.listInboxMessages({ workspacePath: "/workspaces/demo", teamName: "alpha", memberName: "nobody" });
+  assert.deepEqual(missing.messages, []);
+});

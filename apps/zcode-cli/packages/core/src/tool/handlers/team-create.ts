@@ -16,6 +16,7 @@ import {
   type TeamCreateOutput,
 } from "@zcode/contracts";
 import type { ToolEntry, ToolHandler } from "../types.js";
+import { readTeamTemplate, type ParsedTeamTemplate } from "./team-template.js";
 import { resolveTeamWorkspaceDirs } from "../../subagent/team/team-paths.js";
 import { createOrGetTeam } from "../../subagent/team/team-store.js";
 
@@ -42,11 +43,17 @@ const teamCreateHandler: ToolHandler = async (input, context) => {
     workspaceIdentity: context.workspaceIdentity,
     workspacePath: context.workspaceRoot || context.workingDirectory,
   });
+  // 团队角色模板(v2.8):template 指向 <workspaceRoot>/.zcode/team-templates/<name>.md,
+  // 解析为「成员 spawn 计划 + 任务创建计划」,经 templatePlan 回灌 lead 模型按剧本实例化。
+  let template: ParsedTeamTemplate | undefined;
+  if (parsed.template !== undefined) {
+    template = await readTeamTemplate(context.workspaceRoot || context.workingDirectory, parsed.template);
+  }
   const { team, status } = await createOrGetTeam(
     { dirs },
     {
       name: parsed.name,
-      description: parsed.description,
+      description: parsed.description ?? template?.description,
       // lead 的 agentId 在主会话没有 child agent 概念，用会话 id 稳定标识；
       // 需要跨会话聚合时 services 层再按 leadSessionId 归并。
       leadAgentId: `lead_${context.sessionId}`,
@@ -55,8 +62,39 @@ const teamCreateHandler: ToolHandler = async (input, context) => {
       useWorktree: parsed.useWorktree,
     },
   );
-  return TeamCreateOutputSchema.parse({ status, team }) satisfies TeamCreateOutput;
+  const templatePlan = formatTemplatePlan(template);
+  return TeamCreateOutputSchema.parse({
+    status,
+    team,
+    ...(templatePlan === undefined ? {} : { templatePlan }),
+  }) satisfies TeamCreateOutput;
 };
+
+function firstLineOf(text: string): string {
+  return text.split("\n")[0]?.trim() ?? "";
+}
+
+function formatTemplatePlan(template: ParsedTeamTemplate | undefined): string[] {
+  if (template === undefined) return [];
+  const plan: string[] = [];
+  if (template.members.length > 0) {
+    plan.push("Planned members (spawn via Agent with team_name + name):");
+    for (const member of template.members) {
+      plan.push(`- ${member.name}: ${firstLineOf(member.prompt)}`);
+    }
+  }
+  if (template.tasks.length > 0) {
+    plan.push("Planned tasks (create via TaskCreate in order):");
+    for (const task of template.tasks) {
+      plan.push(
+        `- ${task.subject}` +
+          (task.owner === undefined ? "" : ` (owner: ${task.owner})`) +
+          (task.depends.length === 0 ? "" : ` [depends: ${task.depends.join(", ")}]`),
+      );
+    }
+  }
+  return plan;
+}
 
 function formatTeamCreateModelContent(output: unknown): string {
   const result = TeamCreateOutputSchema.parse(output);
@@ -65,7 +103,8 @@ function formatTeamCreateModelContent(output: unknown): string {
     result.status === "created"
       ? `Team "${result.team.name}" created.`
       : `Team "${result.team.name}" already exists; returning it unchanged.`;
-  return `${head}\nMembers: ${memberNames}\nSpawn teammates with Agent({ team_name: "${result.team.name}", name: "<teammate>", ... }).\nAs lead, coordinate rather than implement: dispatch tasks (TaskCreate/TaskUpdate), review delivered work, and unblock blockers — avoid editing files yourself while teammates are active.`;
+  const plan = result.templatePlan === undefined ? "" : "\n" + result.templatePlan.join("\n");
+  return `${head}\nMembers: ${memberNames}\nSpawn teammates with Agent({ team_name: "${result.team.name}", name: "<teammate>", ... }).${plan}\nAs lead, coordinate rather than implement: dispatch tasks (TaskCreate/TaskUpdate), review delivered work, and unblock blockers — avoid editing files yourself while teammates are active.`;
 }
 
 export const teamCreateToolEntry: ToolEntry = {

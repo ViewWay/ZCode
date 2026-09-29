@@ -64,8 +64,27 @@ function toToolSchemas() {
     TeamKnowledgeWriteOutputJsonSchema: toToolJsonSchema(TeamKnowledgeWriteOutputSchema),
     TeamKnowledgeSearchInputJsonSchema: toToolJsonSchema(TeamKnowledgeSearchInputSchema),
     TeamKnowledgeSearchOutputJsonSchema: toToolJsonSchema(TeamKnowledgeSearchOutputSchema),
+    TeamKnowledgePromoteInputJsonSchema: toToolJsonSchema(TeamKnowledgePromoteInputSchema),
+    TeamKnowledgePromoteOutputJsonSchema: toToolJsonSchema(TeamKnowledgePromoteOutputSchema),
   } as const;
 }
+
+export const TeamKnowledgePromoteInputSchema = z
+  .object({
+    slug: z.string().min(1).max(TEAM_KNOWLEDGE_SLUG_MAX_CHARS),
+    skill_name: z.string().min(1).max(TEAM_KNOWLEDGE_SLUG_MAX_CHARS).optional(),
+  })
+  .strict();
+export type TeamKnowledgePromoteInput = z.infer<typeof TeamKnowledgePromoteInputSchema>;
+
+export const TeamKnowledgePromoteOutputSchema = z
+  .object({
+    skillName: z.string(),
+    path: z.string(),
+    updated: z.boolean(),
+  })
+  .strict();
+export type TeamKnowledgePromoteOutput = z.infer<typeof TeamKnowledgePromoteOutputSchema>;
 
 export const TEAM_KNOWLEDGE_TOOL_JSON_SCHEMAS = toToolSchemas();
 export type TeamKnowledgeToolJsonSchemas = typeof TEAM_KNOWLEDGE_TOOL_JSON_SCHEMAS;

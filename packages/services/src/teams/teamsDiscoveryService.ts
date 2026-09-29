@@ -9,7 +9,14 @@
 
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { TeamRoster, TeamRosterMember, TeamsListResult } from "@zcode/shared";
+import type {
+  TeamInboxMessageProjection,
+  TeamInboxParams,
+  TeamInboxResult,
+  TeamRoster,
+  TeamRosterMember,
+  TeamsListResult,
+} from "@zcode/shared";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
 import type { ITeamsService } from "./teams.js";
 import { resolveTeamsWorkspaceDir, type TeamsHomeDirResolver } from "./teamsPaths.js";
@@ -103,6 +110,60 @@ export function createTeamsService(options?: {
       }
       teams.sort((a, b) => a.name.localeCompare(b.name));
       return { teams };
+    },
+
+    async listInboxMessages(params: TeamInboxParams): Promise<TeamInboxResult> {
+      const workspaceDir = resolveTeamsWorkspaceDir(params, homeDirResolver);
+      const inboxFile = join(workspaceDir, params.teamName, "inboxes", params.memberName + ".json");
+      let raw: string;
+      try {
+        raw = await readFile(inboxFile, "utf8");
+      } catch {
+        // 收件箱不存在 = 该成员还没有收发过消息;常态而非错误。
+        return { memberName: params.memberName, messages: [] };
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (error) {
+        logger?.warn("Skipping unreadable team inbox", {
+          event: "agent-teams.discovery.inbox_unreadable",
+          module: "services.teams",
+          teamName: params.teamName,
+          memberName: params.memberName,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return { memberName: params.memberName, messages: [] };
+      }
+      if (!Array.isArray(parsed)) {
+        return { memberName: params.memberName, messages: [] };
+      }
+      const messages: TeamInboxMessageProjection[] = [];
+      for (const item of parsed) {
+        if (typeof item !== "object" || item === null) continue;
+        const record = item as Record<string, unknown>;
+        const id = scalarString(record.id);
+        const from = scalarString(record.from);
+        const to = scalarString(record.to);
+        const sentAt = scalarString(record.sentAt);
+        if (!id || !from || !to || !sentAt) continue;
+        const payload = typeof record.payload === "object" && record.payload !== null
+          ? (record.payload as Record<string, unknown>)
+          : {};
+        const payloadKind = typeof payload.kind === "string" ? payload.kind : "unknown";
+        messages.push({
+          id,
+          from,
+          to,
+          ...(scalarString(record.summary) === undefined ? {} : { summary: scalarString(record.summary) }),
+          ...(typeof payload.text === "string" ? { text: payload.text } : {}),
+          payloadKind,
+          ...(typeof payload.status === "string" ? { status: payload.status } : {}),
+          sentAt,
+          read: record.read === true,
+        });
+      }
+      return { memberName: params.memberName, messages };
     },
   };
 }

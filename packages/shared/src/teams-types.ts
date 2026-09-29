@@ -37,3 +37,29 @@ export interface TeamsListParams {
 export interface TeamsListResult {
   teams: TeamRoster[];
 }
+
+/** v2.9 消息流面板:成员收件箱消息的只读投影。事实源 inboxes/<member>.json(runtime 唯一写入)。 */
+export interface TeamInboxMessageProjection {
+  id: string;
+  from: string;
+  to: string;
+  summary?: string;
+  /** text 载荷的正文;非 text 载荷省略。 */
+  text?: string;
+  /** text / shutdown_request / shutdown_response / idle_notification / task_notification / plan_approval_* */
+  payloadKind: string;
+  /** task_notification 的任务状态(completed/cancelled/pending)。 */
+  status?: string;
+  sentAt: string;
+  read: boolean;
+}
+
+export interface TeamInboxParams extends TeamsListParams {
+  teamName: string;
+  memberName: string;
+}
+
+export interface TeamInboxResult {
+  memberName: string;
+  messages: TeamInboxMessageProjection[];
+}

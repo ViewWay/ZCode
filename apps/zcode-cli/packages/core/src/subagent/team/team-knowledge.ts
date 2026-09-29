@@ -8,7 +8,8 @@
 // 写入所有权归 runtime；TeamDelete 归档行为见 team-shutdown.ts（后续批次）。
 
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { isSafeTeamPathSegment, type TeamWorkspaceDirs } from "./team-paths.js";
 
 export interface TeamKnowledgeDeps {
@@ -144,6 +145,47 @@ export async function searchTeamKnowledge(
     hits.push({ slug: entry.slug, whenToUse: entry.whenToUse, author: entry.author, snippet });
   }
   return hits;
+}
+
+/**
+ * 技能提升(v2.8):把团队知识文档改写为标准 SKILL.md,写入用户级技能目录
+ * (<homedir>/.zcode/skills/<skillName>/SKILL.md)——跨项目可被 Skill 工具加载
+ * (当前会话不注册,下个会话生效)。覆盖语义,updated 标志与知识写入一致。
+ */
+export async function promoteTeamKnowledge(
+  deps: TeamKnowledgeDeps,
+  teamName: string,
+  slug: string,
+  options?: { skillsRoot?: string; skillName?: string },
+): Promise<{ skillName: string; path: string; updated: boolean }> {
+  const skillName = options?.skillName ?? slug;
+  if (!isSafeTeamPathSegment(skillName, 64)) {
+    throw new Error("Invalid skill name: " + skillName);
+  }
+  const file = knowledgeFile(deps, teamName, slug);
+  const raw = await readFile(file, "utf8");
+  const meta = parseFrontmatter(raw);
+  const body = bodyOf(raw);
+  const skillsRoot = options?.skillsRoot ?? join(homedir(), ".zcode", "skills");
+  const skillDir = join(skillsRoot, skillName);
+  const skillFile = join(skillDir, "SKILL.md");
+  let updated = false;
+  try {
+    await readFile(skillFile, "utf8");
+    updated = true;
+  } catch {
+    updated = false;
+  }
+  const doc = [
+    "---",
+    "name: " + skillName,
+    "description: " + (meta.whenToUse.length > 0 ? meta.whenToUse : "Promoted from team knowledge " + slug),
+    "---",
+    body.endsWith("\n") ? body : body + "\n",
+  ].join("\n");
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(skillFile, doc, "utf8");
+  return { skillName, path: skillFile, updated };
 }
 
 /**
