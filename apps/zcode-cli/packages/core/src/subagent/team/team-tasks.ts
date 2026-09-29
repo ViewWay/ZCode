@@ -91,6 +91,7 @@ export async function createTeamTask(
       updatedAt: now,
       ...(input.description === undefined ? {} : { description: input.description }),
       ...(input.blockedBy === undefined ? {} : { blockedBy: validateBlockedBy(input.blockedBy, file.tasks) }),
+      ...(input.externalId === undefined ? {} : { externalId: input.externalId }),
     };
     await saveTaskListFile(deps, teamName, { ...file, tasks: [...file.tasks, task] });
     return { task };
@@ -245,6 +246,7 @@ export async function updateTeamTask(
       ...(nextOwner === undefined ? {} : { owner: nextOwner }),
       ...(dispatchBumped ? { attempts: current.attempts === undefined ? 1 : current.attempts + 1 } : {}),
       ...(ownerChanged ? { reassignedAt: updatedAt } : {}),
+      ...(input.externalId === undefined ? {} : { externalId: input.externalId }),
     };
     const tasks = [...file.tasks];
     tasks[index] = updated;

@@ -48,6 +48,8 @@ export const TeamTaskSchema = z.object({
   version: z.number().int().nonnegative(),
   /** 任务依赖（P1）：taskId 列表，全部 completed 才 ready；缺失的依赖任务视为不满足。 */
   blockedBy: z.array(z.string().min(1).max(128)).optional(),
+  /** 外部系统任务 ID（v2.8 集成）：如 FlowPilot task_id，用于与编排层双向对账。 */
+  externalId: z.string().max(128).optional(),
   /** 正反馈计数（P1）：owner 变更或终态重开时 +1，供 lead 派发参考；客观计数，无主观评分。 */
   attempts: z.number().int().nonnegative().optional(),
   /** 最近一次 owner 变更时间。 */
@@ -80,6 +82,8 @@ export const TaskCreateInputSchema = z
     description: z.string().max(TEAM_TASK_DESCRIPTION_MAX_CHARS).optional(),
     /** 任务依赖：taskId 列表，全部 completed 后任务才可认领/开始。 */
     blockedBy: z.array(z.string().min(1).max(128)).optional(),
+    /** v2.8 集成：外部系统任务 ID（如 FlowPilot task_id），用于对账。 */
+    externalId: z.string().max(128).optional(),
   })
   .strict();
 export type TaskCreateInput = z.infer<typeof TaskCreateInputSchema>;
@@ -101,6 +105,8 @@ export const TaskUpdateInputSchema = z
     reviewVerdict: z.enum(["approve", "revise"]).optional(),
     /** 验收意见;revise 时必填,并作为消息送达 owner 收件箱。 */
     reviewComment: z.string().max(2_000).optional(),
+    /** v2.8 集成：外部系统任务 ID（如 FlowPilot task_id），用于对账。 */
+    externalId: z.string().max(128).optional(),
   })
   .strict();
 export type TaskUpdateInput = z.infer<typeof TaskUpdateInputSchema>;
