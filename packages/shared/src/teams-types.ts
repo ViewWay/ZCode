@@ -26,6 +26,8 @@ export interface TeamRoster {
   leadAgentId?: string;
   /** ISO 时间戳。 */
   createdAt?: string;
+  /** v1 仅协议承载的团队级权限路径（TeamFile.teamAllowedPaths 只读投影；runtime 唯一写入）。 */
+  teamAllowedPaths?: Array<{ path: string; toolName: string }>;
   members: TeamRosterMember[];
 }
 
@@ -115,5 +117,10 @@ export interface TeamDashboardData {
   team: TeamRoster;
   tasks: TeamTaskProjection[];
   messages: TeamInboxMessageProjection[];
+  plan?: TeamPlanProjection;
+}
+
+/** v2.10 计划审批面板:plan.json 的独立只读投影结果;文件缺失/损坏时省略 plan。 */
+export interface TeamPlanResult {
   plan?: TeamPlanProjection;
 }

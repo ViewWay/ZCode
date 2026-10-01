@@ -10,6 +10,7 @@ import type {
   TeamDashboardParams,
   TeamInboxParams,
   TeamInboxResult,
+  TeamPlanResult,
   TeamTasksParams,
   TeamTasksResult,
   TeamsListParams,
@@ -39,6 +40,12 @@ export interface ITeamsService {
    * 任一子集缺失/损坏时容忍:对应子集为空或省略,不阻断整体。
    */
   getDashboard(params: TeamDashboardParams): Promise<TeamDashboardData>;
+  /**
+   * 读取团队计划 plan.json 的只读投影(v2.10 计划-审批面板)。
+   * 文件不存在/损坏/形状不符时容忍并省略 plan(与 getDashboard 同款取舍);
+   * 批准/驳回动作在 runtime TeamPlanApprove 工具的权限确认窗执行,本服务无写路径。
+   */
+  getTeamPlan(params: TeamDashboardParams): Promise<TeamPlanResult>;
 }
 
 export const ITeamsService = createServiceDescriptor<ITeamsService>(ServiceChannels.Teams);

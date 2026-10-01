@@ -232,3 +232,98 @@ test("getDashboard tolerates a team without tasks/inboxes/plan", async () => {
   assert.deepEqual(dashboard.messages, []);
   assert.equal(dashboard.plan, undefined);
 });
+
+test("list projects teamAllowedPaths and omits the field when absent or malformed", async () => {
+  const service = createTeamsService(dirs());
+  const wsDir = resolveTeamsWorkspaceDir({ workspacePath: "/workspaces/allowed" }, dirs().homeDirResolver);
+  const guarded = join(wsDir, "guarded");
+  const bare = join(wsDir, "bare");
+  await mkdir(guarded, { recursive: true });
+  await mkdir(bare, { recursive: true });
+  await writeFile(
+    join(guarded, "config.json"),
+    JSON.stringify({
+      name: "guarded",
+      members: [{ agentId: "a1", name: "solo", isActive: false }],
+      teamAllowedPaths: [
+        { path: "/workspaces/demo/docs", toolName: "Read" },
+        { path: "/workspaces/demo/docs", toolName: "Edit" },
+        // 形状不符的条目被丢弃，不拖垮其余投影。
+        { path: 42, toolName: "Read" },
+        { path: "/no-tool" },
+        "not-an-object",
+      ],
+    }),
+    "utf8",
+  );
+  await writeFile(
+    join(bare, "config.json"),
+    JSON.stringify({ name: "bare", members: [{ agentId: "a2", name: "solo", isActive: false }] }),
+    "utf8",
+  );
+
+  const result = await service.list({ workspacePath: "/workspaces/allowed" });
+  assert.equal(result.teams.length, 2);
+  const guardedTeam = result.teams.find((team) => team.name === "guarded")!;
+  assert.deepEqual(guardedTeam.teamAllowedPaths, [
+    { path: "/workspaces/demo/docs", toolName: "Read" },
+    { path: "/workspaces/demo/docs", toolName: "Edit" },
+  ]);
+  // 未配置时字段整体省略，UI 侧据 undefined 显示「未配置」。
+  const bareTeam = result.teams.find((team) => team.name === "bare")!;
+  assert.equal(bareTeam.teamAllowedPaths, undefined);
+});
+
+test("getTeamPlan projects plan.json for the team", async () => {
+  const service = createTeamsService(dirs());
+  const teamDir = join(homeDir, ".zcode", "teams", resolveTeamsWorkspaceKey("/workspaces/demo"), "echo");
+  await mkdir(teamDir, { recursive: true });
+  await writeFile(
+    join(teamDir, "plan.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      teamName: "echo",
+      sessionId: "s1",
+      revision: 2,
+      state: "review_pending",
+      members: [
+        { id: "m1", name: "alice", prompt: "做调研并输出报告", reason: "熟悉领域", difficulty: "low" },
+        // 缺 name 的成员被丢弃，不拖垮整份计划。
+        { id: "m2", prompt: "缺名字" },
+      ],
+      tasks: [
+        { id: "pt1", subject: "调研", owner: "alice", depends: [] },
+        { id: "pt2", subject: "落地", depends: ["调研"] },
+      ],
+    }),
+    "utf8",
+  );
+  const result = await service.getTeamPlan({ workspacePath: "/workspaces/demo", teamName: "echo" });
+  assert.equal(result.plan?.state, "review_pending");
+  assert.deepEqual(
+    result.plan?.members.map((member) => member.name),
+    ["alice"],
+  );
+  assert.equal(result.plan?.members[0]!.reason, "熟悉领域");
+  assert.equal(result.plan?.members[0]!.difficulty, "low");
+  assert.equal(result.plan?.tasks.length, 2);
+  assert.deepEqual(result.plan?.tasks[1]!.depends, ["调研"]);
+});
+
+test("getTeamPlan tolerates missing/corrupt plan.json", async () => {
+  const service = createTeamsService(dirs());
+  // 不存在 = 该团队没走过计划-审批流，plan 省略。
+  const missing = await service.getTeamPlan({ workspacePath: "/workspaces/demo", teamName: "foxtrot" });
+  assert.deepEqual(missing, {});
+
+  const teamDir = join(homeDir, ".zcode", "teams", resolveTeamsWorkspaceKey("/workspaces/demo"), "golf");
+  await mkdir(teamDir, { recursive: true });
+  // 损坏 JSON 同款容忍。
+  await writeFile(join(teamDir, "plan.json"), "{ not json", "utf8");
+  const corrupt = await service.getTeamPlan({ workspacePath: "/workspaces/demo", teamName: "golf" });
+  assert.equal(corrupt.plan, undefined);
+  // 形状不符（缺 members/tasks）整体省略。
+  await writeFile(join(teamDir, "plan.json"), JSON.stringify({ state: "review_pending" }), "utf8");
+  const malformed = await service.getTeamPlan({ workspacePath: "/workspaces/demo", teamName: "golf" });
+  assert.equal(malformed.plan, undefined);
+});

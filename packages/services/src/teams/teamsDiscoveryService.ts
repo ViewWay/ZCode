@@ -15,6 +15,7 @@ import type {
   TeamInboxParams,
   TeamInboxResult,
   TeamPlanProjection,
+  TeamPlanResult,
   TeamRoster,
   TeamRosterMember,
   TeamTaskProjection,
@@ -61,11 +62,23 @@ function normalizeTeam(teamName: string, raw: unknown): TeamRoster | undefined {
   const members = record.members
     .map(normalizeMember)
     .filter((member): member is TeamRosterMember => member !== undefined);
+  // teamAllowedPaths（v1 仅协议承载）：条目缺 path/toolName 或非对象时丢弃；全空时省略字段。
+  const teamAllowedPaths = Array.isArray(record.teamAllowedPaths)
+    ? record.teamAllowedPaths
+        .map((entry): { path: string; toolName: string } | undefined => {
+          if (typeof entry !== "object" || entry === null) return undefined;
+          const path = scalarString((entry as Record<string, unknown>).path);
+          const toolName = scalarString((entry as Record<string, unknown>).toolName);
+          return path !== undefined && toolName !== undefined ? { path, toolName } : undefined;
+        })
+        .filter((entry): entry is { path: string; toolName: string } => entry !== undefined)
+    : [];
   return {
     name: scalarString(record.name) ?? teamName,
     ...(scalarString(record.description) === undefined ? {} : { description: scalarString(record.description) }),
     ...(scalarString(record.leadAgentId) === undefined ? {} : { leadAgentId: scalarString(record.leadAgentId) }),
     ...(scalarString(record.createdAt) === undefined ? {} : { createdAt: scalarString(record.createdAt) }),
+    ...(teamAllowedPaths.length > 0 ? { teamAllowedPaths } : {}),
     members,
   };
 }
@@ -263,7 +276,6 @@ export function createTeamsService(options?: {
     },
 
     async getDashboard(params): Promise<TeamDashboardData> {
-      const workspaceDir = resolveTeamsWorkspaceDir(params, homeDirResolver);
       const { teams } = await service.list(params);
       // 团队刚被解散等场景下 roster 里找不到该团队:容忍,投影空名册继续聚合其余子集。
       const team =
@@ -280,6 +292,12 @@ export function createTeamsService(options?: {
         }
       }
       const messages = [...merged.values()].sort((a, b) => b.sentAt.localeCompare(a.sentAt));
+      const { plan } = await service.getTeamPlan(params);
+      return { team, tasks, messages, ...(plan === undefined ? {} : { plan }) };
+    },
+
+    async getTeamPlan(params): Promise<TeamPlanResult> {
+      const workspaceDir = resolveTeamsWorkspaceDir(params, homeDirResolver);
       let plan: TeamPlanProjection | undefined;
       try {
         plan = normalizePlan(JSON.parse(await readFile(join(workspaceDir, params.teamName, "plan.json"), "utf8")));
@@ -287,7 +305,7 @@ export function createTeamsService(options?: {
         // plan.json 不存在/损坏 = 该团队没走过计划-审批流;面板不展示计划即可。
         plan = undefined;
       }
-      return { team, tasks, messages, ...(plan === undefined ? {} : { plan }) };
+      return plan === undefined ? {} : { plan };
     },
   };
   return service;
