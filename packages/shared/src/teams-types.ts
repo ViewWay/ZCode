@@ -63,3 +63,57 @@ export interface TeamInboxResult {
   memberName: string;
   messages: TeamInboxMessageProjection[];
 }
+
+/** v2.10 协作面板:共享任务板 tasks.json 的只读投影(runtime 唯一写入者)。 */
+export interface TeamTaskProjection {
+  taskId: string;
+  subject: string;
+  status: "pending" | "in_progress" | "completed" | "cancelled";
+  /** 认领成员名(TeamFile.members[].name);pending 无 owner。 */
+  owner?: string;
+  /** CAS 版本号(runtime 每次成功更新 +1),仅展示用。 */
+  version: number;
+  /** 前驱 taskId 列表;全部 completed 才可认领。 */
+  blockedBy?: string[];
+  /** 外部系统任务 ID(v2.8 对账锚点),仅透传。 */
+  externalId?: string;
+  /** ISO 时间戳。 */
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TeamTasksParams extends TeamsListParams {
+  teamName: string;
+}
+
+export interface TeamTasksResult {
+  tasks: TeamTaskProjection[];
+}
+
+export interface TeamDashboardParams extends TeamsListParams {
+  teamName: string;
+}
+
+/** 计划投影(plan.json 的宽松子集,v2.10 计划-审批-启动)。 */
+export interface TeamPlanProjection {
+  state: string;
+  members: {
+    name: string;
+    prompt: string;
+    reason?: string;
+    difficulty?: string;
+  }[];
+  tasks: {
+    subject: string;
+    owner?: string;
+    depends: string[];
+  }[];
+}
+
+/** v2.10 协作面板聚合快照:roster + 任务板 + 全队收件箱 + 计划;各子集独立容忍缺失。 */
+export interface TeamDashboardData {
+  team: TeamRoster;
+  tasks: TeamTaskProjection[];
+  messages: TeamInboxMessageProjection[];
+  plan?: TeamPlanProjection;
+}

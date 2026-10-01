@@ -114,3 +114,121 @@ test("listInboxMessages projects member inbox messages and tolerates missing fil
   const missing = await service.listInboxMessages({ workspacePath: "/workspaces/demo", teamName: "alpha", memberName: "nobody" });
   assert.deepEqual(missing.messages, []);
 });
+
+test("listTasks projects tasks.json and tolerates missing/corrupt files", async () => {
+  const service = createTeamsService(dirs());
+  const teamDir = join(homeDir, ".zcode", "teams", resolveTeamsWorkspaceKey("/workspaces/demo"), "delta");
+  await mkdir(join(teamDir, "inboxes"), { recursive: true });
+  await writeFile(
+    join(teamDir, "tasks.json"),
+    JSON.stringify({
+      teamName: "delta",
+      tasks: [
+        { taskId: "task_1", subject: "设计 API", status: "completed", owner: "alice", version: 3, createdAt: "2026-09-25T00:00:00.000Z", updatedAt: "2026-09-25T01:00:00.000Z" },
+        { taskId: "task_2", subject: "实现 API", status: "pending", version: 0, blockedBy: ["task_1"], externalId: "FP-7", createdAt: "2026-09-25T00:00:00.000Z", updatedAt: "2026-09-25T01:00:00.000Z" },
+        { subject: "缺关键字段的任务" },
+      ],
+    }),
+    "utf8",
+  );
+  const result = await service.listTasks({ workspacePath: "/workspaces/demo", teamName: "delta" });
+  assert.equal(result.tasks.length, 2);
+  assert.equal(result.tasks[0]!.owner, "alice");
+  assert.equal(result.tasks[0]!.version, 3);
+  assert.deepEqual(result.tasks[1]!.blockedBy, ["task_1"]);
+  assert.equal(result.tasks[1]!.externalId, "FP-7");
+
+  await writeFile(join(teamDir, "tasks.json"), "{ not json", "utf8");
+  const corrupt = await service.listTasks({ workspacePath: "/workspaces/demo", teamName: "delta" });
+  assert.deepEqual(corrupt.tasks, []);
+
+  const missing = await service.listTasks({ workspacePath: "/workspaces/demo", teamName: "ghost" });
+  assert.deepEqual(missing.tasks, []);
+});
+
+test("getDashboard aggregates roster, tasks, merged inbox and plan", async () => {
+  const service = createTeamsService(dirs());
+  const teamDir = join(homeDir, ".zcode", "teams", resolveTeamsWorkspaceKey("/workspaces/demo"), "bravo");
+  await mkdir(join(teamDir, "inboxes"), { recursive: true });
+  await writeFile(
+    join(teamDir, "config.json"),
+    JSON.stringify({
+      name: "bravo",
+      leadAgentId: "lead_s1",
+      members: [
+        { agentId: "lead_s1", name: "team_lead", isActive: true },
+        { agentId: "agent_alice", name: "alice", isActive: true, color: "blue" },
+        { agentId: "agent_bob", name: "bob", isActive: false, color: "green" },
+      ],
+    }),
+    "utf8",
+  );
+  await writeFile(
+    join(teamDir, "tasks.json"),
+    JSON.stringify({
+      teamName: "bravo",
+      tasks: [
+        { taskId: "task_1", subject: "调研", status: "completed", owner: "alice", version: 2, createdAt: "2026-09-25T00:00:00.000Z", updatedAt: "2026-09-25T01:00:00.000Z" },
+        { taskId: "task_2", subject: "落地", status: "pending", version: 0, blockedBy: ["task_1"], createdAt: "2026-09-25T00:00:00.000Z", updatedAt: "2026-09-25T01:00:00.000Z" },
+      ],
+    }),
+    "utf8",
+  );
+  await writeFile(
+    join(teamDir, "inboxes", "alice.json"),
+    JSON.stringify([
+      { id: "m-old", from: "team_lead", to: "alice", summary: "先做调研", payload: { kind: "text", text: "先做调研" }, sentAt: "2026-09-25T01:00:00.000Z", read: true },
+    ]),
+    "utf8",
+  );
+  await writeFile(
+    join(teamDir, "inboxes", "bob.json"),
+    JSON.stringify([
+      { id: "m-new", from: "alice", to: "bob", summary: "调研完成", payload: { kind: "task_notification", taskId: "task_1", subject: "调研", status: "completed", actor: "alice" }, sentAt: "2026-09-25T02:00:00.000Z", read: false },
+    ]),
+    "utf8",
+  );
+  await writeFile(
+    join(teamDir, "plan.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      teamName: "bravo",
+      sessionId: "s1",
+      revision: 1,
+      state: "review_pending",
+      members: [{ id: "m1", name: "alice", prompt: "做调研", reason: "熟悉领域", difficulty: "low" }],
+      tasks: [{ id: "pt1", subject: "调研", owner: "alice", depends: [] }],
+    }),
+    "utf8",
+  );
+
+  const dashboard = await service.getDashboard({ workspacePath: "/workspaces/demo", teamName: "bravo" });
+  assert.equal(dashboard.team.name, "bravo");
+  assert.equal(dashboard.team.members.length, 3);
+  assert.equal(dashboard.tasks.length, 2);
+  assert.equal(dashboard.messages.length, 2);
+  assert.equal(dashboard.messages[0]!.id, "m-new");
+  assert.equal(dashboard.plan?.state, "review_pending");
+  assert.equal(dashboard.plan?.members[0]!.name, "alice");
+  assert.equal(dashboard.plan?.tasks[0]!.depends.length, 0);
+
+  await writeFile(join(teamDir, "plan.json"), "{ not json", "utf8");
+  const noPlan = await service.getDashboard({ workspacePath: "/workspaces/demo", teamName: "bravo" });
+  assert.equal(noPlan.plan, undefined);
+});
+
+test("getDashboard tolerates a team without tasks/inboxes/plan", async () => {
+  const service = createTeamsService(dirs());
+  const teamDir = join(homeDir, ".zcode", "teams", resolveTeamsWorkspaceKey("/workspaces/demo"), "charlie");
+  await mkdir(teamDir, { recursive: true });
+  await writeFile(
+    join(teamDir, "config.json"),
+    JSON.stringify({ name: "charlie", members: [{ agentId: "a1", name: "solo", isActive: false }] }),
+    "utf8",
+  );
+  const dashboard = await service.getDashboard({ workspacePath: "/workspaces/demo", teamName: "charlie" });
+  assert.equal(dashboard.team.name, "charlie");
+  assert.deepEqual(dashboard.tasks, []);
+  assert.deepEqual(dashboard.messages, []);
+  assert.equal(dashboard.plan, undefined);
+});

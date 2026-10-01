@@ -10,15 +10,19 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
+  TeamDashboardData,
   TeamInboxMessageProjection,
   TeamInboxParams,
   TeamInboxResult,
+  TeamPlanProjection,
   TeamRoster,
   TeamRosterMember,
+  TeamTaskProjection,
+  TeamTasksResult,
   TeamsListResult,
 } from "@zcode/shared";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
-import type { ITeamsService } from "./teams.js";
+import type { ITeamsService } from "./teams.ts";
 import { resolveTeamsWorkspaceDir, type TeamsHomeDirResolver } from "./teamsPaths.js";
 
 const logger = createServiceLogger("teams");
@@ -45,12 +49,8 @@ function normalizeMember(raw: unknown): TeamRosterMember | undefined {
       ? {}
       : { permissionMode: scalarString(record.permissionMode) }),
     ...(scalarString(record.cwd) === undefined ? {} : { cwd: scalarString(record.cwd) }),
-    ...(scalarString(record.sessionId) === undefined
-      ? {}
-      : { sessionId: scalarString(record.sessionId) }),
-    ...(scalarString(record.joinedAt) === undefined
-      ? {}
-      : { joinedAt: scalarString(record.joinedAt) }),
+    ...(scalarString(record.sessionId) === undefined ? {} : { sessionId: scalarString(record.sessionId) }),
+    ...(scalarString(record.joinedAt) === undefined ? {} : { joinedAt: scalarString(record.joinedAt) }),
   };
 }
 
@@ -63,24 +63,85 @@ function normalizeTeam(teamName: string, raw: unknown): TeamRoster | undefined {
     .filter((member): member is TeamRosterMember => member !== undefined);
   return {
     name: scalarString(record.name) ?? teamName,
-    ...(scalarString(record.description) === undefined
-      ? {}
-      : { description: scalarString(record.description) }),
-    ...(scalarString(record.leadAgentId) === undefined
-      ? {}
-      : { leadAgentId: scalarString(record.leadAgentId) }),
-    ...(scalarString(record.createdAt) === undefined
-      ? {}
-      : { createdAt: scalarString(record.createdAt) }),
+    ...(scalarString(record.description) === undefined ? {} : { description: scalarString(record.description) }),
+    ...(scalarString(record.leadAgentId) === undefined ? {} : { leadAgentId: scalarString(record.leadAgentId) }),
+    ...(scalarString(record.createdAt) === undefined ? {} : { createdAt: scalarString(record.createdAt) }),
     members,
   };
+}
+
+const TEAM_TASK_STATUSES = ["pending", "in_progress", "completed", "cancelled"] as const;
+
+/** 宽松归一任务;缺 taskId/subject/status 关键字段时丢弃该任务。 */
+function normalizeTask(raw: unknown): TeamTaskProjection | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const record = raw as Record<string, unknown>;
+  const taskId = scalarString(record.taskId);
+  const subject = scalarString(record.subject);
+  const status =
+    typeof record.status === "string" && (TEAM_TASK_STATUSES as readonly string[]).includes(record.status)
+      ? (record.status as TeamTaskProjection["status"])
+      : undefined;
+  if (!taskId || !subject || !status) return undefined;
+  const owner = scalarString(record.owner);
+  const externalId = scalarString(record.externalId);
+  const blockedBy = Array.isArray(record.blockedBy)
+    ? record.blockedBy.filter((item): item is string => typeof item === "string")
+    : [];
+  return {
+    taskId,
+    subject,
+    status,
+    version: typeof record.version === "number" && Number.isFinite(record.version) ? record.version : 0,
+    ...(owner === undefined ? {} : { owner }),
+    ...(blockedBy.length > 0 ? { blockedBy } : {}),
+    ...(externalId === undefined ? {} : { externalId }),
+    createdAt: scalarString(record.createdAt) ?? "",
+    updatedAt: scalarString(record.updatedAt) ?? "",
+  };
+}
+
+/** 宽松归一计划;缺 state/members/tasks 形状不符时整体省略。 */
+function normalizePlan(raw: unknown): TeamPlanProjection | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const record = raw as Record<string, unknown>;
+  const state = scalarString(record.state);
+  if (!state || !Array.isArray(record.members) || !Array.isArray(record.tasks)) return undefined;
+  const members: TeamPlanProjection["members"] = [];
+  for (const item of record.members) {
+    if (typeof item !== "object" || item === null) continue;
+    const entry = item as Record<string, unknown>;
+    const name = scalarString(entry.name);
+    if (!name) continue;
+    const reason = scalarString(entry.reason);
+    const difficulty = scalarString(entry.difficulty);
+    members.push({
+      name,
+      prompt: scalarString(entry.prompt) ?? "",
+      ...(reason === undefined ? {} : { reason }),
+      ...(difficulty === undefined ? {} : { difficulty }),
+    });
+  }
+  const tasks: TeamPlanProjection["tasks"] = [];
+  for (const item of record.tasks) {
+    if (typeof item !== "object" || item === null) continue;
+    const entry = item as Record<string, unknown>;
+    const subject = scalarString(entry.subject);
+    if (!subject) continue;
+    const owner = scalarString(entry.owner);
+    const depends = Array.isArray(entry.depends)
+      ? entry.depends.filter((item): item is string => typeof item === "string")
+      : [];
+    tasks.push({ subject, ...(owner === undefined ? {} : { owner }), depends });
+  }
+  return { state, members, tasks };
 }
 
 export function createTeamsService(options?: {
   homeDirResolver?: TeamsHomeDirResolver;
 }): ITeamsService {
   const homeDirResolver = options?.homeDirResolver;
-  return {
+  const service: ITeamsService = {
     async list(params): Promise<TeamsListResult> {
       const workspaceDir = resolveTeamsWorkspaceDir(params, homeDirResolver);
       let teamDirs: string[];
@@ -165,5 +226,69 @@ export function createTeamsService(options?: {
       }
       return { memberName: params.memberName, messages };
     },
+
+    async listTasks(params): Promise<TeamTasksResult> {
+      const workspaceDir = resolveTeamsWorkspaceDir(params, homeDirResolver);
+      const tasksFile = join(workspaceDir, params.teamName, "tasks.json");
+      let raw: string;
+      try {
+        raw = await readFile(tasksFile, "utf8");
+      } catch {
+        // tasks.json 不存在 = 该团队还没创建过共享任务;常态而非错误。
+        return { tasks: [] };
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (error) {
+        logger?.warn("Skipping unreadable team tasks", {
+          event: "agent-teams.discovery.tasks_unreadable",
+          module: "services.teams",
+          teamName: params.teamName,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return { tasks: [] };
+      }
+      // runtime 落盘为 { teamName, tasks: [...] };形状不符时整体跳过(与 list 同款取舍)。
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        !Array.isArray((parsed as Record<string, unknown>).tasks)
+      ) {
+        return { tasks: [] };
+      }
+      const items = (parsed as Record<string, unknown>).tasks as unknown[];
+      const tasks = items.map(normalizeTask).filter((task): task is TeamTaskProjection => task !== undefined);
+      return { tasks };
+    },
+
+    async getDashboard(params): Promise<TeamDashboardData> {
+      const workspaceDir = resolveTeamsWorkspaceDir(params, homeDirResolver);
+      const { teams } = await service.list(params);
+      // 团队刚被解散等场景下 roster 里找不到该团队:容忍,投影空名册继续聚合其余子集。
+      const team =
+        teams.find((candidate) => candidate.name === params.teamName) ?? { name: params.teamName, members: [] };
+      const { tasks } = await service.listTasks(params);
+      const inboxResults = await Promise.all(
+        team.members.map((member) => service.listInboxMessages({ ...params, memberName: member.name })),
+      );
+      // 全队消息按 id 去重后按 sentAt 倒序(新→旧),供消息流面板直接消费。
+      const merged = new Map<string, TeamInboxMessageProjection>();
+      for (const result of inboxResults) {
+        for (const message of result.messages) {
+          merged.set(message.id, message);
+        }
+      }
+      const messages = [...merged.values()].sort((a, b) => b.sentAt.localeCompare(a.sentAt));
+      let plan: TeamPlanProjection | undefined;
+      try {
+        plan = normalizePlan(JSON.parse(await readFile(join(workspaceDir, params.teamName, "plan.json"), "utf8")));
+      } catch {
+        // plan.json 不存在/损坏 = 该团队没走过计划-审批流;面板不展示计划即可。
+        plan = undefined;
+      }
+      return { team, tasks, messages, ...(plan === undefined ? {} : { plan }) };
+    },
   };
+  return service;
 }
