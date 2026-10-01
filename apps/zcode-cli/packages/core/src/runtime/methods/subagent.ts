@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- subagent runtime wiring 集中衔接 child runtime、tool pool、权限、MCP 与 activity watchdog，拆分需单独迁移。 */
-import { RESPOND_TO_COORDINATOR_TOOL_NAME } from "@zcode/contracts";
+import { parseTeammateModelLabel, RESPOND_TO_COORDINATOR_TOOL_NAME } from "@zcode/contracts";
 import type { SubagentRunOptions, WorkspaceId } from "@zcode/contracts";
 import {
   defaultScheduler,
@@ -100,7 +100,10 @@ export function createDefaultSubagentPort(
           ? this.contextSourceSnapshot?.userInstructions
           : undefined;
       const { selection: profileChildSelection, hasConcreteModel } = resolveSubagentSelection({
-        profileSelection: request.profile.modelSelection,
+        // 成员模型路由（Agent Teams）：teammate 生成路径的 model 入参优先于 profile
+        // 静态配置（call-level 意图）；Core Server override 仍居最高优先级，解析
+        // 失败沿用 profile 的同一条解析与报错链，不落回父模型。
+        profileSelection: parseTeammateModelLabel(request.model) ?? request.profile.modelSelection,
         parentSelection: this.getSessionModelSelection(),
         overrideSelection: options?.modelOverride?.selection,
         resolveSelection: deps.resolveEffectiveModelSelection,

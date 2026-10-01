@@ -4,8 +4,9 @@
 // 支持基于配置的子代理和异步启动。
 
 import { z } from "zod";
+import { parseModelPickerValue } from "@zcode/shared/model-selection";
 import type { ToolCallId, TraceId } from "../interfaces/shared.js";
-import type { ModelUsage } from "../model/index.js";
+import type { ModelSelection, ModelUsage } from "../model/index.js";
 import { toToolJsonSchema } from "./json-schema.js";
 import { TEAM_MEMBER_NAME_MAX_CHARS, teamNameSchema } from "./team.js";
 
@@ -23,8 +24,9 @@ export const AgentInputSchema = z.object({
     .string()
     .optional()
     .describe("The type of specialized agent to use for this task"),
-  // subagent 模型由 Settings / Markdown profile 统一决定；若把调用级
-  // model 暴露给父模型，历史 tool call 会持续生成旧 override 并覆盖当前配置。
+  // 普通单次 subagent 的模型仍由 Settings / Markdown profile 统一决定——若把
+  // 调用级 model 暴露给普通路径，历史 tool call 会持续生成旧 override 并覆盖
+  // 当前配置；model 只在下方 teammate 生成路径被消费（成员模型路由）。
   run_in_background: z
     .boolean()
     .optional()
@@ -42,11 +44,38 @@ export const AgentInputSchema = z.object({
     .max(TEAM_MEMBER_NAME_MAX_CHARS)
     .optional()
     .describe("Persistent teammate name within the team; required whenever team_name is set."),
+  // 成员模型路由：lead 为常驻 teammate 点名模型（"providerId/modelId"）；仅
+  // team_name + name 的 teammate 生成路径消费（优先于 profile 静态配置），
+  // 普通单次 subagent 调用忽略该字段。
+  model: z
+    .string()
+    .max(128)
+    .optional()
+    .describe(
+      'Model for the spawned teammate, formatted "providerId/modelId"; ignored for non-teammate spawns.',
+    ),
 });
 
 export type AgentInput = z.infer<typeof AgentInputSchema>;
 
 export const AgentInputJsonSchema = toToolJsonSchema(AgentInputSchema);
+
+/**
+ * 成员模型路由：Agent 工具 model 入参解析为 child 的显式 ModelSelection 意图。
+ * 复用 UI Picker 的 "providerId/modelId" 约定（首个 "/" 拆分，modelId 自身可含
+ * "/"，如 openrouter/<org>/<model>），并兼容 "$reasoningLevel" 后缀；缺席或空白
+ * 返回 undefined，调用方沿用既有优先级。在场但解析失败同样返回 undefined——是否
+ * 按无效入参拒绝由调用方决定：Agent handler 的 teammate 路径拒绝，
+ * runExploreAgent 兜底走既有选择链。
+ */
+export function parseTeammateModelLabel(label: string | undefined): ModelSelection | undefined {
+  if (typeof label !== "string" || label.trim().length === 0) return undefined;
+  try {
+    return parseModelPickerValue(label);
+  } catch {
+    return undefined;
+  }
+}
 
 export interface AgentTextContentBlock {
   type: "text";
@@ -145,6 +174,7 @@ export const AgentErrorCode = {
   BACKGROUND_UNAVAILABLE: "agent_background_unavailable",
   UNKNOWN_AGENT_TYPE: "agent_unknown_type",
   CHILD_RUNTIME_FAILED: "agent_child_runtime_failed",
+  INVALID_TEAMMATE_MODEL: "agent_invalid_teammate_model",
 } as const;
 
 export type AgentErrorCode = (typeof AgentErrorCode)[keyof typeof AgentErrorCode];

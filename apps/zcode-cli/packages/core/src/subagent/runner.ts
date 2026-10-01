@@ -112,6 +112,12 @@ export interface ExploreSubagentRuntimeRequest {
    * 穿线到 child runtime 配置，teammate 与 lead 用同一身份键解析团队目录。
    */
   workspaceIdentity?: string;
+  /**
+   * 成员模型路由（Agent Teams）：teammate 生成路径携带的成员模型标签
+   * （"providerId/modelId"），runExploreAgent 解析为 child 的显式 selection，
+   * 优先于 profile 静态配置；普通 subagent 不携带，行为不变。
+   */
+  model?: string;
 }
 
 export interface ExploreSubagentRuntimeResult {
@@ -1595,6 +1601,8 @@ async function runAgentToCompletion(
       ...(request.workspaceIdentity === undefined
         ? {}
         : { workspaceIdentity: request.workspaceIdentity }),
+      // 成员模型路由：teammate 生成路径携带的模型标签，runExploreAgent 解析为 child selection。
+      ...(request.model === undefined ? {} : { model: request.model }),
     },
     runOptions,
   );

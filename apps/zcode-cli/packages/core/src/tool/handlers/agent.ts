@@ -13,6 +13,7 @@ import {
   TeammateLaunchedOutputSchema,
   createCoreError,
   isTeammateAgentInput,
+  parseTeammateModelLabel,
   type AgentInput,
   type AgentOutput,
   type TeammateLaunchedOutput,
@@ -225,6 +226,24 @@ const agentHandler: ToolHandler = async (input, context) => {
         },
       );
     }
+    // 成员模型路由：model 仅 teammate 路径消费；在场但解析不出 "providerId/modelId"
+    // 时按无效入参拒绝——静默丢掉会让 spawn 落回默认模型，lead 误以为已按点名模型开工。
+    const teammateModel = parseTeammateModelLabel(parsed.model);
+    if (parsed.model !== undefined && parsed.model.trim() !== "" && teammateModel === undefined) {
+      throw createCoreError(
+        CoreErrorType.ToolExecutionFailed,
+        `Invalid model "${parsed.model}" for teammate spawn: expected "providerId/modelId"`,
+        {
+          context: {
+            code: AgentErrorCode.INVALID_TEAMMATE_MODEL,
+            agentType,
+            parentToolCallId: context.toolCallId,
+            toolName: "Agent",
+          },
+          recoverable: true,
+        },
+      );
+    }
     return context.subagentPort.spawnTeammate(
       {
         sessionId: context.sessionId,
@@ -239,6 +258,7 @@ const agentHandler: ToolHandler = async (input, context) => {
         teamName: parsed.team_name!.trim(),
         teammateName: parsed.name!.trim(),
         workspaceIdentity: context.workspaceIdentity,
+        ...(teammateModel === undefined ? {} : { model: parsed.model!.trim() }),
         trace: {
           traceId: context.traceId,
           spanId: context.spanId,

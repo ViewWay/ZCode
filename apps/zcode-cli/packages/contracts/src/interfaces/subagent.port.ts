@@ -32,6 +32,12 @@ export interface SubagentRunRequest {
    * 普通 subagent 不携带，按路径 fallback 解析，行为不变。
    */
   workspaceIdentity?: string;
+  /**
+   * 成员模型路由（Agent Teams）：仅 teammate 生成路径携带。lead 经 Agent 工具
+   * model 入参点名的成员模型标签（"providerId/modelId"），随请求穿线到 child
+   * selection 解析（优先于 profile 静态配置）；普通 subagent 不携带，行为不变。
+   */
+  model?: string;
 }
 
 export interface SubagentRunOptions {
