@@ -361,14 +361,16 @@ type SessionCreateCompatField =
   | "toolAllowlist"
   | "toolDenylist"
   | "offPeakToolEnabled"
-  | "dynamicWorkflowEnabled";
+  | "dynamicWorkflowEnabled"
+  | "pdfLocateToolEnabled";
 type SessionResumeCompatField =
   | "thoughtLevel"
   | "mcpServers"
   | "toolAllowlist"
   | "toolDenylist"
   | "offPeakToolEnabled"
-  | "dynamicWorkflowEnabled";
+  | "dynamicWorkflowEnabled"
+  | "pdfLocateToolEnabled";
 type SessionSendCompatField =
   | "browserAmbientContext"
   | "automationId"
@@ -390,6 +392,9 @@ const SESSION_CREATE_OPTIONAL_COMPAT_FIELDS = new Set<SessionCreateCompatField>(
   // 动态工作流灰度 flag 同理：旧 CLI 不认时
   // 省略重试，工作流工具簇随之不注册，绝不让整个 create 硬失败。
   "dynamicWorkflowEnabled",
+  // PDF 预览联动（specs/pdf-preview-linkage.md）同理：旧 CLI 不认时省略重试
+  // （pdf_locate 随之不注册，fail-closed）。
+  "pdfLocateToolEnabled",
 ]);
 const SESSION_RESUME_OPTIONAL_COMPAT_FIELDS = new Set<SessionResumeCompatField>([
   "thoughtLevel",
@@ -399,6 +404,7 @@ const SESSION_RESUME_OPTIONAL_COMPAT_FIELDS = new Set<SessionResumeCompatField>(
   "toolDenylist",
   "offPeakToolEnabled",
   "dynamicWorkflowEnabled",
+  "pdfLocateToolEnabled",
 ]);
 const SESSION_SEND_OPTIONAL_COMPAT_FIELDS = new Set<SessionSendCompatField>([
   "browserAmbientContext",
@@ -622,6 +628,7 @@ function buildSessionCreateParams(
   params: ZCodeAgentCreateSessionParams & {
     offPeakToolEnabled?: boolean;
     dynamicWorkflowEnabled?: boolean;
+    pdfLocateToolEnabled?: boolean;
   },
   omittedFields: ReadonlySet<SessionCreateCompatField> = new Set(),
 ) {
@@ -666,6 +673,11 @@ function buildSessionCreateParams(
     ...(params.dynamicWorkflowEnabled === true && !omittedFields.has("dynamicWorkflowEnabled")
       ? { dynamicWorkflowEnabled: true }
       : {}),
+    // PDF 预览联动（specs/pdf-preview-linkage.md）：同款下发形状，关闭/旧 CLI 不认时
+    // 不写字段——CLI 缺省即不注册 pdf_locate（fail-closed）。
+    ...(params.pdfLocateToolEnabled === true && !omittedFields.has("pdfLocateToolEnabled")
+      ? { pdfLocateToolEnabled: true }
+      : {}),
   };
 }
 
@@ -673,6 +685,7 @@ function buildSessionResumeParams(
   params: ZCodeAgentResumeSessionParams & {
     offPeakToolEnabled?: boolean;
     dynamicWorkflowEnabled?: boolean;
+    pdfLocateToolEnabled?: boolean;
   },
   omittedFields: ReadonlySet<SessionResumeCompatField> = new Set(),
 ) {
@@ -701,6 +714,10 @@ function buildSessionResumeParams(
     // 同因：resume 不带该 flag 会让冷恢复丢掉工作流工具簇。
     ...(params.dynamicWorkflowEnabled === true && !omittedFields.has("dynamicWorkflowEnabled")
       ? { dynamicWorkflowEnabled: true }
+      : {}),
+    // 同因（specs/pdf-preview-linkage.md）：resume 不带该 flag 会让冷恢复丢掉 pdf_locate。
+    ...(params.pdfLocateToolEnabled === true && !omittedFields.has("pdfLocateToolEnabled")
+      ? { pdfLocateToolEnabled: true }
       : {}),
   };
 }
@@ -907,6 +924,13 @@ interface CreateZCodeAgentServiceOptions extends Omit<
    * dynamicWorkflowEnabled。缺省不传（纯 CLI 装配）= 永远关闭，与 CLI 缺省一致。
    */
   resolveDynamicWorkflowClientConfig?: () => Promise<DynamicWorkflowClientConfig | undefined>;
+  /**
+   * PDF 预览联动（specs/pdf-preview-linkage.md）：Host 桌面本地形态判定
+   * （serviceAuthorityMode === "desktop-local"）由服务集合装配时传入；缺省（纯 CLI /
+   * Web server / desktop-attached-remote）= 永不向 session create/resume 下发
+   * pdfLocateToolEnabled，CLI 侧 fail-closed 不注册 pdf_locate。
+   */
+  pdfLocateToolEnabled?: boolean;
   resolveOffPeakTaskService?: () =>
     | Pick<IOffPeakTaskService, "createTask" | "list" | "getCodingPlanSupport">
     | undefined;
@@ -3522,6 +3546,21 @@ export function createZCodeAgentService(
   }
 
   /**
+   * PDF 预览联动（specs/pdf-preview-linkage.md）的桌面本地形态门：
+   * 装配期由 Host 传入 pdfLocateToolEnabled（serviceAuthorityMode === "desktop-local"）；
+   * 远程 workspace（remoteSessionId / 远程 workspaceIdentity）即使桌面窗口也不下发——
+   * pdf_locate 的 file 路径语义在 CLI 所在机器上解析，跨机定位链路留给后续形态。
+   */
+  function isPdfLocateSupported(params: {
+    workspaceIdentity?: string;
+    remoteSessionId?: string;
+  }): boolean {
+    if (options?.pdfLocateToolEnabled !== true) return false;
+    if (params.remoteSessionId) return false;
+    return !params.workspaceIdentity || !isRemoteWorkspaceIdentity(params.workspaceIdentity);
+  }
+
+  /**
    * 动态工作流灰度门：Host 判定一次并在本
    * 进程内固定。三点理由：
    *   1. 同一次判定同时喂给 workspace/updateDynamicWorkflowPolicy 和 session flag，两者不会
@@ -3556,7 +3595,10 @@ export function createZCodeAgentService(
       // 信封处同源注入；门禁 false 时不写字段（缺省即 fail-closed，与 legacy 一致）。
       const dynamicWorkflowEnabled = await resolveDynamicWorkflowGate();
       const offPeakToolEnabled = isOffPeakToolSupported(params);
-      if (!offPeakToolEnabled && !dynamicWorkflowEnabled) return envelope;
+      const pdfLocateToolEnabled = isPdfLocateSupported(params);
+      if (!offPeakToolEnabled && !dynamicWorkflowEnabled && !pdfLocateToolEnabled) {
+        return envelope;
+      }
       const payload = commandPayloadSchemas.createSession.parse(envelope.payload);
       return {
         ...envelope,
@@ -3566,6 +3608,9 @@ export function createZCodeAgentService(
           // 动态工作流灰度：V4 createSession 是桌面新会话的实际创建路径，不透传则九个工具
           // 永不注册。
           ...(dynamicWorkflowEnabled ? { dynamicWorkflowEnabled: true } : {}),
+          // PDF 预览联动（specs/pdf-preview-linkage.md）：V4 是桌面主链路，不透传则
+          // pdf_locate 永不注册。
+          ...(pdfLocateToolEnabled ? { pdfLocateToolEnabled: true } : {}),
         },
       };
     }
@@ -3711,10 +3756,17 @@ export function createZCodeAgentService(
       const offPeakToolEnabled = isOffPeakToolSupported(params);
       // 灰度在 client 就绪时已判定，这里是进程内已解析 promise 的再次 await（不打远端）。
       const dynamicWorkflowEnabled = await resolveDynamicWorkflowGate();
+      // PDF 预览联动：桌面本地形态门（同一次请求内与上面两个 flag 同源）。
+      const pdfLocateToolEnabled = isPdfLocateSupported(params);
       try {
         const snapshot = await client.request(
           zcodeProtocolMethods.sessionCreate,
-          buildSessionCreateParams({ ...params, offPeakToolEnabled, dynamicWorkflowEnabled }),
+          buildSessionCreateParams({
+            ...params,
+            offPeakToolEnabled,
+            dynamicWorkflowEnabled,
+            pdfLocateToolEnabled,
+          }),
           zcodeSessionStateSnapshotSchema,
           sessionTraceId ? { trace: { traceId: sessionTraceId } } : undefined,
         );
@@ -3755,7 +3807,12 @@ export function createZCodeAgentService(
         const snapshot = await client.request(
           zcodeProtocolMethods.sessionCreate,
           buildSessionCreateParams(
-            { ...params, offPeakToolEnabled, dynamicWorkflowEnabled },
+            {
+              ...params,
+              offPeakToolEnabled,
+              dynamicWorkflowEnabled,
+              pdfLocateToolEnabled,
+            },
             new Set(compatFields),
           ),
           zcodeSessionStateSnapshotSchema,
@@ -3815,6 +3872,8 @@ export function createZCodeAgentService(
       const offPeakToolEnabled = isOffPeakToolSupported(params);
       // 冷恢复同样按 Host 的灰度判定下发，否则恢复出来的会话会丢掉工作流工具簇。
       const dynamicWorkflowEnabled = await resolveDynamicWorkflowGate();
+      // 冷恢复同样按桌面形态门下发，否则恢复的会话丢掉 pdf_locate（specs/pdf-preview-linkage.md）。
+      const pdfLocateToolEnabled = isPdfLocateSupported(params);
       logger.info(cachedTraceId, "开始请求 ZCode Protocol session/resume", {
         mcpServerCount: getMcpServerCount(params),
         mcpServerNames: getMcpServerNames(params),
@@ -3826,7 +3885,12 @@ export function createZCodeAgentService(
       try {
         const snapshot = await client.request(
           zcodeProtocolMethods.sessionResume,
-          buildSessionResumeParams({ ...params, offPeakToolEnabled, dynamicWorkflowEnabled }),
+          buildSessionResumeParams({
+            ...params,
+            offPeakToolEnabled,
+            dynamicWorkflowEnabled,
+            pdfLocateToolEnabled,
+          }),
           zcodeSessionStateSnapshotSchema,
         );
         const sessionTraceId = rememberSessionTrace(params, snapshot) ?? cachedTraceId;
@@ -3863,7 +3927,12 @@ export function createZCodeAgentService(
         const snapshot = await client.request(
           zcodeProtocolMethods.sessionResume,
           buildSessionResumeParams(
-            { ...params, offPeakToolEnabled, dynamicWorkflowEnabled },
+            {
+              ...params,
+              offPeakToolEnabled,
+              dynamicWorkflowEnabled,
+              pdfLocateToolEnabled,
+            },
             new Set(compatFields),
           ),
           zcodeSessionStateSnapshotSchema,

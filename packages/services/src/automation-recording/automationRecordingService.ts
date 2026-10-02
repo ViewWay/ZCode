@@ -1,6 +1,8 @@
 import {
   ServiceChannels,
   type AutomationRecording,
+  type AutomationRecordingCaptureStartParams,
+  type AutomationRecordingCaptureState,
   type AutomationRecordingSaveParams,
   type AutomationReplayOnFailure,
   type AutomationReplayReport,
@@ -28,6 +30,27 @@ export interface IAutomationRecordingService {
   ): Promise<AutomationReplayReport>;
   /** 某录制件的回放报告列表（新→旧）。 */
   listReports(recordingId: string): Promise<AutomationReplayReport[]>;
+
+  // ---- 实时采集（v1.1，specs/record-replay.md）----
+  // 活动采集会话唯一所有者是 Host 侧服务；同一时刻至多一个。
+
+  /**
+   * 开始实时采集：创建 recording scope 浏览器会话并置为可见，用户在嵌入浏览器
+   * 中操作，host 轮询采集。已有活动会话、宿主未装配采集面或链路 preflight
+   * 失败时抛错（诚实失败）。
+   */
+  startCapture(
+    params?: AutomationRecordingCaptureStartParams,
+  ): Promise<AutomationRecordingCaptureState>;
+  /** 当前活动采集会话状态；无活动会话返回 null。 */
+  getCaptureState(): Promise<AutomationRecordingCaptureState | null>;
+  /**
+   * 停止采集并保存：最终 drain → 步骤映射 → store.save，返回落库录制件。
+   * 未捕获到任何步骤时抛错（no steps captured），不落空录制件。
+   */
+  stopCapture(): Promise<AutomationRecording>;
+  /** 取消采集并丢弃（不落库）；无活动会话时抛错。 */
+  cancelCapture(): Promise<boolean>;
 }
 
 export const IAutomationRecordingService = createServiceDescriptor<IAutomationRecordingService>(

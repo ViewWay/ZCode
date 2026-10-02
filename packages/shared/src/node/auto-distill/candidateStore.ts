@@ -3,25 +3,28 @@
 // - 原子写：同目录临时文件 + rename（同卷原子替换）；Windows 上 rename 可能被
 //   杀毒/索引器短暂占用，只在该平台做小步重试。
 // - 进程内串行化：所有读改写共享一条 promise 链，避免并发 add/confirm/delete
-//   互相丢更新。跨进程互斥 v1 不做（候选只由单一宿主后台任务写入）。
+//   互相丢更新。跨进程互斥 v1 不做（写入方：CLI 会话结束触发器 + Desktop 审阅面）。
 // - confirm 只移交数据：从 candidates.json 删除候选并返回给调用方，由调用方
-//   复用 services/core 既有 memory 写入路径落盘（不建第二写入路径）。重复
-//   confirm 拿不到数据 → 调用方不会重复写 memory（幂等）。
+//   按既有 memory 目录与格式落盘（不建第二写入路径）。重复 confirm 拿不到数据
+//   → 调用方不会重复写 memory（幂等）。
 // - promote 生成 SKILL.md 草稿到注入的技能根目录：只落文件、不改任何启用配置，
 //   满足 spec"产出物进入候选位，不直接启用"；技能根目录解析属于接线层。
-// 运行测试：cd <repo-root> && ./node_modules/.bin/tsx --test apps/zcode-cli/packages/core/test/auto-distill/store.test.ts
+// 实现从 apps/zcode-cli/packages/core/src/auto-distill/store.ts 迁入 shared：
+// CLI 进程（触发器写入）与 Desktop host（审阅面读写）都依赖它，但 packages
+// 不能反向依赖 apps；放在 shared/node 保证候选文件只有这一份读写实现。
+// 运行测试：cd <repo-root> && ./node_modules/.bin/tsx --test packages/shared/test/auto-distill/candidateStore.test.ts
 
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { stringify as stringifyYaml } from "yaml";
 
 import {
   DISTILL_CANDIDATES_FILE_NAME,
   DISTILL_STORE_SCHEMA_VERSION,
   type DistillCandidate,
   type DistillCandidateKind,
-} from "./types.js";
+  type DistillCandidateWorkspace,
+} from "../../auto-distill/types.js";
 
 export const DISTILL_CANDIDATES_FILE_CORRUPT_ERROR_CODE = "DISTILL_CANDIDATES_FILE_CORRUPT";
 
@@ -170,7 +173,9 @@ async function writeFileAtomic(filePath: string, contents: string): Promise<void
       ) {
         throw error;
       }
-      await delay(RENAME_RETRY_DELAYS_MS[attempt]);
+      // shared 的 tsconfig 开了 noUncheckedIndexedAccess；attempt 已被上方的
+      // attempt >= RENAME_RETRY_DELAYS_MS.length 分支限定在数组界内。
+      await delay(RENAME_RETRY_DELAYS_MS[attempt]!);
     }
   }
 }
@@ -256,7 +261,17 @@ function isDistillCandidate(value: unknown): value is DistillCandidate {
     value.confidence >= 0 &&
     value.confidence <= 1 &&
     typeof value.createdAt === "string" &&
-    !Number.isNaN(Date.parse(value.createdAt))
+    !Number.isNaN(Date.parse(value.createdAt)) &&
+    (value.workspace === undefined || isDistillCandidateWorkspace(value.workspace))
+  );
+}
+
+function isDistillCandidateWorkspace(value: unknown): value is DistillCandidateWorkspace {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.path === "string" &&
+    value.path.length > 0 &&
+    (value.identity === undefined || typeof value.identity === "string")
   );
 }
 
@@ -277,6 +292,14 @@ function buildSkillDraftSlug(candidate: DistillCandidate): string {
   return slug.length >= 4 ? `distill-${slug}-${idSuffix}` : `distill-${idSuffix}`;
 }
 
+/**
+ * YAML 双引号标量：JSON 字符串本就是合法 YAML double-quoted scalar（转义规则
+ * 同源），shared 不引 yaml 依赖也能产出可被 yaml 解析器读回的 frontmatter 值。
+ */
+function yamlDoubleQuoted(value: string): string {
+  return JSON.stringify(value);
+}
+
 async function writeSkillDraft(
   candidate: DistillCandidate,
   skillsRootDir: string,
@@ -285,7 +308,10 @@ async function writeSkillDraft(
   const skillDir = join(skillsRootDir, slug);
   const skillFilePath = join(skillDir, "SKILL.md");
   await mkdir(skillDir, { recursive: true });
-  const frontmatter = stringifyYaml({ name: slug, description: candidate.summary });
+  const frontmatter = [
+    `name: ${yamlDoubleQuoted(slug)}`,
+    `description: ${yamlDoubleQuoted(candidate.summary)}`,
+  ].join("\n");
   const body = [
     `# ${candidate.summary}`,
     "",
@@ -300,6 +326,6 @@ async function writeSkillDraft(
     "## 内容",
     "（草稿：请把候选沉淀的命令或修复步骤整理成可执行的说明。）",
   ].join("\n");
-  await writeFileAtomic(skillFilePath, `---\n${frontmatter}---\n\n${body}\n`);
+  await writeFileAtomic(skillFilePath, `---\n${frontmatter}\n---\n\n${body}\n`);
   return skillFilePath;
 }

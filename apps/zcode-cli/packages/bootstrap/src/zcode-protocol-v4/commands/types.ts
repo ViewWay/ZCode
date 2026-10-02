@@ -239,6 +239,8 @@ export interface V4CommandCoreHost {
      * 缺省回落到进程级 workspace 结论，仍是 fail-closed。
      */
     dynamicWorkflowEnabled?: boolean;
+    /** PDF 预览联动（specs/pdf-preview-linkage.md）：host 桌面形态门禁；缺省不注册。 */
+    pdfLocateToolEnabled?: boolean;
   }): Promise<{ sessionId: string }>;
   /** 从父会话稳定落盘边界创建隐藏 selection_side_chat child。 */
   createSelectionSideSession?(

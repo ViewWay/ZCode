@@ -89,6 +89,11 @@ export function serializeRegistryModelConfig(
         supportsPdf: config.properties.inputFormat.supportsPdf,
       },
       outputFormat: { supportsText: config.properties.outputFormat.supportsText },
+      // 生成端点能力声明（specs/image-tools.md、specs/voice-pipeline.md）；
+      // 与 inputFormat 的显式逐字段不同，这里是可选对象整体透传。
+      ...(config.properties.capabilities
+        ? { capabilities: { ...config.properties.capabilities } }
+        : {}),
       supportsToolCall: config.properties.supportsToolCall,
       supportsJsonSchemaOutput: config.properties.supportsJsonSchemaOutput,
       supportsNativeWebSearch: config.properties.supportsNativeWebSearch,

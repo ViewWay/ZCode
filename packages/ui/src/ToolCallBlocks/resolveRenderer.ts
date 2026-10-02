@@ -44,6 +44,9 @@ import {
   isPresentFilesToolCall,
   PresentFilesToolCallBlock,
 } from "@/ToolCallBlocks/renderers/present-files.js";
+// PDF 预览联动（specs/pdf-preview-linkage.md）：pdf_locate 按名认领（present_files 同款），
+// 工具完成时触发预览面板翻页/高亮。
+import { isPdfLocateToolCall, PdfLocateToolCallBlock } from "@/ToolCallBlocks/renderers/pdf-locate.js";
 import { ReadToolCallBlock } from "@/ToolCallBlocks/renderers/read.js";
 import { ReadSessionContextToolCallBlock } from "@/ToolCallBlocks/renderers/read-session-context.js";
 import { RespondToCoordinatorToolCallBlock } from "@/ToolCallBlocks/renderers/respond-to-coordinator.js";
@@ -115,6 +118,10 @@ export function resolveToolCallRenderer(context: ToolCallBlockRenderContext) {
   // media-preview 打开路径，首卡自动打开仅桌面形态（组件内判定）。
   if (isPresentFilesToolCall(context.toolCallNode.toolCall)) {
     return PresentFilesToolCallBlock;
+  }
+
+  if (isPdfLocateToolCall(context.toolCallNode.toolCall)) {
+    return PdfLocateToolCallBlock;
   }
 
   // 升级问答两工具同款按名分流、同样排在 family 之前：它们不在已知工具表里（identity 回

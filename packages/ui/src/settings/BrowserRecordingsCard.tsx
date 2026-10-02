@@ -1,11 +1,17 @@
 /* 浏览器操作录制列表（specs/record-replay.md）：
    「自动化」页已创建任务区之后的录制件来源分组。每行 = 标题（缺省回退名）+
    来源 recording 徽章 + 步骤数 + 创建时间 + 手动回放/删除按钮。
+   v1.1 录制入口：开始录制（隐私确认，type 值含敏感文本原样入库）→ 录制中状态条
+   （getCaptureState 轮询步数/URL）→ 停止并保存 / 取消。
    数据走 IAutomationRecordingService（Desktop 本地 Host 提供）；服务缺失（远端/
    Web host）时整块隐藏。回放为同步整次报告：完成后 toast 摘要，失败步附原因。 */
 import { useCallback, useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
-import type { AutomationRecording, AutomationReplayReport } from "@zcode/shared";
+import { Circle, Loader2 } from "lucide-react";
+import type {
+  AutomationRecording,
+  AutomationRecordingCaptureState,
+  AutomationReplayReport,
+} from "@zcode/shared";
 import type { IAutomationRecordingService } from "@zcode/services";
 import { Button } from "@/components/ui/button.js";
 import { toast } from "@/components/ui/toast.js";
@@ -15,6 +21,7 @@ import { logger } from "@/logger.js";
 import { cn } from "@/components/lib/utils.js";
 import { AutomationRunNowIcon } from "@/settings/AutomationIcons.js";
 import { AutomationTrashIcon } from "@/settings/AutomationDesignPrimitives.js";
+import { BrowserRecordingCaptureBar } from "@/settings/BrowserRecordingCaptureBar.js";
 import { formatDateTime } from "@/settings/automationFormat.js";
 
 function toMessage(error: unknown): string {
@@ -62,6 +69,9 @@ function describeReplayOutcome(
   };
 }
 
+/** 录制中状态条的步数/URL 轮询间隔（host 侧采集轮询 1s，UI 不需要更密）。 */
+const CAPTURE_STATE_POLL_MS = 2_000;
+
 export function BrowserRecordingsCard({
   automationRecordingService,
 }: {
@@ -73,6 +83,8 @@ export function BrowserRecordingsCard({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyRecordingId, setBusyRecordingId] = useState<string | null>(null);
+  const [capture, setCapture] = useState<AutomationRecordingCaptureState | null>(null);
+  const [captureBusy, setCaptureBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!automationRecordingService) return;
@@ -92,6 +104,99 @@ export function BrowserRecordingsCard({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // 录制中：轮询活动会话状态（步数/URL）；host 侧已无会话（异常终止）时收敛为空。
+  useEffect(() => {
+    if (!automationRecordingService || !capture) return;
+    let disposed = false;
+    const timer = setInterval(() => {
+      void automationRecordingService
+        .getCaptureState()
+        .then((state) => {
+          if (!disposed) setCapture(state);
+        })
+        .catch((pollError) => {
+          logger.warn("[browserRecordings] 读取录制状态失败", { message: toMessage(pollError) });
+        });
+    }, CAPTURE_STATE_POLL_MS);
+    return () => {
+      disposed = true;
+      clearInterval(timer);
+    };
+  }, [automationRecordingService, capture?.captureId]);
+
+  const handleStartRecord = async () => {
+    if (!automationRecordingService || capture || captureBusy) return;
+    // 隐私确认：type 步骤会原样记录输入文本（含密码），回放需要真实值，不做脱敏。
+    const confirmed = await confirmDialog({
+      title: intl.formatMessage({ id: "browserRecordings.recordConfirmTitle" }),
+      description: intl.formatMessage({ id: "browserRecordings.recordConfirmDescription" }),
+      confirmLabel: intl.formatMessage({ id: "browserRecordings.record" }),
+    });
+    if (!confirmed) return;
+    setCaptureBusy(true);
+    try {
+      setCapture(await automationRecordingService.startCapture());
+    } catch (startError) {
+      const message = toMessage(startError);
+      logger.error("[browserRecordings] 开始录制失败", message);
+      toast(intl.formatMessage({ id: "browserRecordings.recordStartFailed" }, { message }));
+    } finally {
+      setCaptureBusy(false);
+    }
+  };
+
+  const handleStopRecord = async () => {
+    if (!automationRecordingService || !capture || captureBusy) return;
+    setCaptureBusy(true);
+    try {
+      const recording = await automationRecordingService.stopCapture();
+      setCapture(null);
+      toast(
+        intl.formatMessage(
+          { id: "browserRecordings.recordSaved" },
+          {
+            title: formatRecordingTitle(
+              recording,
+              intl.formatMessage({ id: "browserRecordings.fallbackName" }),
+            ),
+            steps: String(recording.steps.length),
+          },
+        ),
+      );
+      await refresh();
+    } catch (stopError) {
+      const message = toMessage(stopError);
+      logger.error("[browserRecordings] 停止录制失败", message);
+      setCapture(null);
+      toast(intl.formatMessage({ id: "browserRecordings.recordStopFailed" }, { message }));
+    } finally {
+      setCaptureBusy(false);
+    }
+  };
+
+  const handleCancelRecord = async () => {
+    if (!automationRecordingService || !capture || captureBusy) return;
+    const confirmed = await confirmDialog({
+      title: intl.formatMessage({ id: "browserRecordings.cancelConfirmTitle" }),
+      description: intl.formatMessage({ id: "browserRecordings.cancelConfirmDescription" }),
+      confirmLabel: intl.formatMessage({ id: "browserRecordings.cancelRecord" }),
+    });
+    if (!confirmed) return;
+    setCaptureBusy(true);
+    try {
+      await automationRecordingService.cancelCapture();
+      setCapture(null);
+      toast(intl.formatMessage({ id: "browserRecordings.recordCancelled" }));
+    } catch (cancelError) {
+      const message = toMessage(cancelError);
+      logger.error("[browserRecordings] 取消录制失败", message);
+      setCapture(null);
+      toast(intl.formatMessage({ id: "browserRecordings.recordStopFailed" }, { message }));
+    } finally {
+      setCaptureBusy(false);
+    }
+  };
 
   // 服务缺失（远端/Web host）时整块隐藏，不渲染空壳。
   if (!automationRecordingService) return null;
@@ -158,9 +263,36 @@ export function BrowserRecordingsCard({
 
   return (
     <section className="flex w-full flex-col gap-4" data-browser-recordings>
-      <h2 className="text-ui-base font-medium leading-5 text-foreground-subtle">
-        {intl.formatMessage({ id: "browserRecordings.sectionTitle" })}
-      </h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-ui-base font-medium leading-5 text-foreground-subtle">
+          {intl.formatMessage({ id: "browserRecordings.sectionTitle" })}
+        </h2>
+        {capture ? null : (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0 gap-1"
+            disabled={captureBusy}
+            onClick={() => void handleStartRecord()}
+          >
+            {captureBusy ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Circle className="size-4" aria-hidden="true" />
+            )}
+            {intl.formatMessage({ id: "browserRecordings.record" })}
+          </Button>
+        )}
+      </div>
+      {capture ? (
+        <BrowserRecordingCaptureBar
+          capture={capture}
+          busy={captureBusy}
+          onStop={() => void handleStopRecord()}
+          onCancel={() => void handleCancelRecord()}
+        />
+      ) : null}
       {error ? (
         <div className="rounded-xl border border-card-border bg-background p-3 text-ui-base text-foreground-subtle">
           {intl.formatMessage({ id: "browserRecordings.loadFailed" }, { error })}

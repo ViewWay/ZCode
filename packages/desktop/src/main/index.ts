@@ -113,6 +113,7 @@ import {
 } from "./appShutdownPolicy.js";
 import { createPrimaryWindowCoordinator } from "./primaryWindowCoordinator.js";
 import { createTempTextAttachment } from "./tempTextAttachment.js";
+import { installDesktopMediaPermissionPolicy } from "./desktopMediaPermissionPolicy.js";
 import { flushMainE2ECoverage } from "./e2eCoverage.js";
 import { resolveStartupWindowBootstrap, type StartupWindowBootstrap } from "./startupWorkspace.js";
 import {
@@ -1928,6 +1929,9 @@ app.whenReady().then(async () => {
   installLocalMediaPreviewProtocol(session.defaultSession.protocol, {
     isPathAuthorized: localMediaPreviewPathRegistry.isAuthorized,
   });
+  // 语音输入（specs/voice-pipeline.md）需要麦克风；media 权限此前走 Electron
+  // 默认全放行。先于任何窗口创建收口为「纯音频放行、含视频拒绝」，其余权限类别不变。
+  installDesktopMediaPermissionPolicy(session.defaultSession, logger);
   // Electron 的 net.request 只能在 app ready 后使用；灰度请求仍是旁路预热，不阻塞首个 Host。
   void desktopContextPromptRollout?.refresh();
   installBrowserRestoreBootstrapProtocol(

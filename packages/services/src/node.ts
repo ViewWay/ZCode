@@ -2101,6 +2101,11 @@ export function createLocalServices(options: {
     ...(modelSelectionReadinessSource ? { modelSelectionReadinessSource } : {}),
     authorizeLocalMediaPreviewPath: options?.authorizeLocalMediaPreviewPath,
     ...offPeakToolWiring,
+    // PDF 预览联动（specs/pdf-preview-linkage.md）：桌面本地形态（desktop main 装配）才
+    // 向 session create/resume 下发 pdfLocateToolEnabled；Web server / 远程装配缺省关闭。
+    ...(options?.serviceAuthorityMode === "desktop-local"
+      ? { pdfLocateToolEnabled: true }
+      : {}),
     resolveUsageStatsService: () => usageStatsServiceForAgent,
     // agent 可调桌面设置（specs/agent-settings.md）：与本地 Setting/Broadcast 共用同一
     // Host 生命周期实例（AppSettings 唯一写入路径；theme 经跨窗口广播到 renderer 既有

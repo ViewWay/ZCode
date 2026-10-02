@@ -120,6 +120,80 @@ export interface AutomationRecordingSaveParams {
   steps: AutomationRecordingStep[];
 }
 
+// ---- 实时采集（v1.1，specs/record-replay.md）----
+// 页面采集脚本回传的原始事件在 evaluate 边界进入 host：数据来自不可信页面上下文，
+// 必须先过运行时校验（automationCaptureRawEventSchema），再进入步骤映射。
+
+/**
+ * 单条原始采集事件（页面采集脚本 → host drain）。
+ * click：selector 为页面侧尽力构造（可缺省，回退 point 坐标），x/y 为视口 CSS px。
+ * change：input/textarea/select 的提交值（含敏感文本，录制前 UI 需明示确认）。
+ * scroll：页面侧已按空闲去抖聚合的纵向滚动量。
+ * navigate：URL 变化（页面 popstate/hashchange 或 host URL diff 兜底）。
+ */
+export const automationCaptureRawEventSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("click"),
+      ts: z.number().int().nonnegative(),
+      selector: z.string().max(2_000).optional(),
+      x: z.number().int(),
+      y: z.number().int(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("change"),
+      ts: z.number().int().nonnegative(),
+      selector: z.string().min(1).max(2_000),
+      value: z.string().max(100_000),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("scroll"),
+      ts: z.number().int().nonnegative(),
+      deltaY: z.number().int().min(-100_000).max(100_000),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("navigate"),
+      ts: z.number().int().nonnegative(),
+      url: z.string().min(1).max(20_000),
+    })
+    .strict(),
+]);
+export type AutomationCaptureRawEvent = z.infer<typeof automationCaptureRawEventSchema>;
+
+/** drain 返回结构（页面采集脚本一次性返回当前 URL + 已缓冲事件）。 */
+export const automationCaptureDrainResultSchema = z
+  .object({
+    url: z.string().max(20_000),
+    events: z.array(automationCaptureRawEventSchema).max(500),
+  })
+  .strict();
+export type AutomationCaptureDrainResult = z.infer<typeof automationCaptureDrainResultSchema>;
+
+/** 采集会话状态（服务面 getCaptureState；UI 轮询展示，非存储事实）。 */
+export interface AutomationRecordingCaptureState {
+  captureId: string;
+  /** 采集 scope 的 sessionId（automation-record:<captureId>）。 */
+  sessionId: string;
+  startedAt: string;
+  /** 最近一次 drain 的页面 URL；drain 尚未成功时为 null。 */
+  lastUrl: string | null;
+  /** 映射后的当前步骤数（随轮询推进）。 */
+  stepCount: number;
+  /** 已 drain 的原始事件数。 */
+  eventCount: number;
+}
+
+/** startCapture 入参。 */
+export interface AutomationRecordingCaptureStartParams {
+  title?: string;
+}
+
 // ---- 回放报告 ----
 
 /** 单步回放结果状态：succeeded / skipped（skip 策略跳过）/ failed。 */

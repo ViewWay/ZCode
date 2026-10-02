@@ -89,6 +89,12 @@ function registerRuntimeBuiltInTools(runtime: AgentRuntimeInternal, deps: AgentR
     // 语音工具（specs/voice-pipeline.md）：端口在场才注册；subagent 子会话不暴露。
     includeVoiceTools:
       Boolean(deps.voicePipelinePort) && runtime.config.taskType !== "subagent_child",
+    // PDF 预览联动（specs/pdf-preview-linkage.md）：Host 桌面形态 flag（经 session
+    // create/resume 的 runtimeConfig 下发，fail-closed）才注册；subagent 子会话不暴露
+    // （子代理的回答由主会话卡片消费定位，无嵌套定位语义）。
+    includePdfLocate:
+      runtime.config.pdfLocateToolEnabled === true &&
+      runtime.config.taskType !== "subagent_child",
     // 动态工作流灰度门：与 off-peak 相反，
     // 这里不能用端口在场做判据——十个工具的端口在任何 CLI 里都装配齐全，灰度是 Host 的决定。
     // 取值收在 tool-allowlist.ts，与分支刷新那个入口共用同一个推导。

@@ -3347,6 +3347,11 @@ async function createRecord(
       dynamicWorkflowEnabled:
         ("dynamicWorkflowEnabled" in params && params.dynamicWorkflowEnabled === true) ||
         context.appRuntimePreferences.dynamicWorkflowEnabled === true,
+      // PDF 预览联动（specs/pdf-preview-linkage.md）：Host 仅桌面本地形态下发；这里必须
+      // 写出显式布尔（与 dynamicWorkflowEnabled 同理），缺省 false = fail-closed，
+      // TUI/headless/Web/远程会话不注册 pdf_locate。
+      pdfLocateToolEnabled:
+        "pdfLocateToolEnabled" in params && params.pdfLocateToolEnabled === true,
       // 协议侧的工具允许/拒绝列表是 session 级安全边界，必须进入 runtimeConfig，
       // 不能只依赖 prompt 文本约束，否则内置工具和动态 MCP 工具仍可能越过调用面。
       toolAllowlist: "toolAllowlist" in params ? params.toolAllowlist : undefined,

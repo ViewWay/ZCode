@@ -12,9 +12,12 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 // react-pdf/pdfjs 在模块导入阶段依赖浏览器 DOMMatrix；对话列表也会加载本组件，
 // 导致 Node 测试和非 PDF 对话在真正打开预览前就触发浏览器专属依赖。仅在渲染 PDF 时懒加载，
 // 保持图片/视频分支的加载行为不变，同时避免对话模块产生无条件的 PDF.js 副作用。
+// 渲染切换到 pdf_locate 定位可用查看器（packages/ui/src/pdf/PdfLocateViewer.tsx，
+// specs/pdf-preview-linkage.md）：对话框侧不传 locate，与旧查看器等价；
+// props 与旧 PdfViewer 兼容（source/labels/className/onLoadError）。
 const LazyPdfViewer = lazy(async () => {
-  const module = await import("@/components/ui/pdf-viewer.js");
-  return { default: module.PdfViewer };
+  const module = await import("@/pdf/PdfLocateViewer.js");
+  return { default: module.PdfLocateViewer };
 });
 
 export interface ChatMediaAttachmentPreviewTarget {

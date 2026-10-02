@@ -222,3 +222,131 @@ test("步骤失败（abort）也释放会话：release 在 finally 中执行", a
   assert.equal(released, true, "session must be released even when replay failed");
   await rm(rootDir, { recursive: true, force: true });
 });
+
+// ---- 实时采集服务面（v1.1，specs/record-replay.md）----
+
+/** 可脚本化的 fake 采集会话：stop 返回注入步骤；记录 stop/cancel 调用。 */
+function makeFakeCaptureHandle(options?: {
+  steps?: AutomationRecordingStep[];
+  failStop?: boolean;
+}) {
+  const calls: string[] = [];
+  return {
+    calls,
+    captureId: "cap-fake",
+    sessionId: "automation-record:cap-fake",
+    state: () => ({
+      captureId: "cap-fake",
+      sessionId: "automation-record:cap-fake",
+      startedAt: "2026-10-03T00:00:00.000Z",
+      lastUrl: "https://example.test/",
+      stepCount: options?.steps?.length ?? 0,
+      eventCount: options?.steps?.length ?? 0,
+    }),
+    stop: async (): Promise<AutomationRecordingStep[]> => {
+      calls.push("stop");
+      if (options?.failStop) throw new Error("drain channel broken");
+      return options?.steps ?? [];
+    },
+    cancel: async (): Promise<void> => {
+      calls.push("cancel");
+    },
+  };
+}
+
+async function makeCaptureService(handle?: Awaited<ReturnType<typeof makeFakeCaptureHandle>>) {
+  const rootDir = await mkdtemp(join(tmpdir(), "zcode-automation-capture-service-"));
+  let created = 0;
+  const service = createAutomationRecordingHostService({
+    rootDir,
+    createCaptureSession: async () => {
+      created += 1;
+      if (!handle) throw new Error("capture browser session preflight failed: down");
+      return handle;
+    },
+    executor: {
+      surface: "unused",
+      executeStep: async () => ({ ok: true }),
+      captureScreenshot: async () => ({ ok: false }),
+    },
+    delay: async () => {},
+  });
+  return { rootDir, service, createdCount: () => created };
+}
+
+test("startCapture→getCaptureState→stopCapture：步骤落库并出现在列表", async () => {
+  const handle = makeFakeCaptureHandle({
+    steps: [
+      { seq: 1, action: "navigate", value: "https://example.test/" },
+      { seq: 2, action: "click", target: { kind: "selector", selector: "#go" } },
+    ],
+  });
+  const { rootDir, service } = await makeCaptureService(handle);
+  const state = await service.startCapture({ title: "采集" });
+  assert.equal(state.captureId, "cap-fake");
+  assert.equal((await service.getCaptureState())?.captureId, "cap-fake");
+  const recording = await service.stopCapture();
+  assert.equal(recording.title, "采集");
+  assert.equal(recording.source, "browser");
+  assert.deepEqual(
+    (await service.list()).map((item) => item.id),
+    [recording.id],
+  );
+  // 停止后无活动会话。
+  assert.equal(await service.getCaptureState(), null);
+  await rm(rootDir, { recursive: true, force: true });
+});
+
+test("未装配采集面/已有活动会话时 startCapture 诚实拒绝", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "zcode-automation-capture-service-"));
+  const service = createAutomationRecordingHostService({
+    rootDir,
+    executor: {
+      surface: "unused",
+      executeStep: async () => ({ ok: true }),
+      captureScreenshot: async () => ({ ok: false }),
+    },
+    delay: async () => {},
+  });
+  await assert.rejects(() => service.startCapture(), /unavailable in this host/u);
+  await rm(rootDir, { recursive: true, force: true });
+
+  const handle = makeFakeCaptureHandle({ steps: makeSteps() });
+  const wired = await makeCaptureService(handle);
+  await wired.service.startCapture();
+  await assert.rejects(() => wired.service.startCapture(), /already running/u);
+  await wired.service.cancelCapture();
+  await rm(wired.rootDir, { recursive: true, force: true });
+});
+
+test("stopCapture 空步骤拒绝保存且不留活动会话", async () => {
+  const handle = makeFakeCaptureHandle({ steps: [] });
+  const { rootDir, service } = await makeCaptureService(handle);
+  await service.startCapture();
+  await assert.rejects(() => service.stopCapture(), /no steps captured/u);
+  assert.equal(await service.getCaptureState(), null);
+  assert.deepEqual(await service.list(), []);
+  await rm(rootDir, { recursive: true, force: true });
+});
+
+test("cancelCapture 丢弃不落库；stop/cancel 在无活动会话时抛错", async () => {
+  const handle = makeFakeCaptureHandle({ steps: makeSteps() });
+  const { rootDir, service } = await makeCaptureService(handle);
+  await service.startCapture();
+  assert.equal(await service.cancelCapture(), true);
+  assert.deepEqual(handle.calls, ["cancel"]);
+  assert.deepEqual(await service.list(), []);
+  await assert.rejects(() => service.stopCapture(), /no active/u);
+  await assert.rejects(() => service.cancelCapture(), /no active/u);
+  await rm(rootDir, { recursive: true, force: true });
+});
+
+test("stopCapture 会话失败：错误透出且活动占用已摘除（可重新开始）", async () => {
+  const handle = makeFakeCaptureHandle({ failStop: true });
+  const { rootDir, service, createdCount } = await makeCaptureService(handle);
+  await service.startCapture();
+  await assert.rejects(() => service.stopCapture(), /drain channel broken/u);
+  assert.equal(await service.getCaptureState(), null);
+  assert.equal(createdCount(), 1);
+  await rm(rootDir, { recursive: true, force: true });
+});

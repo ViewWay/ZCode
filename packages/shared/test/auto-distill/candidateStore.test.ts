@@ -1,10 +1,12 @@
-// 候选存储单测（specs/auto-distill.md 验收场景 2 的存储半链路；tmpdir 真实读写，不 mock 文件系统）：
+// 候选存储单测（specs/auto-distill.md 验收场景 2 的存储半链路；tmpdir 真实读写，不 mock 文件系统）。
+// 实现自 apps/zcode-cli/packages/core/src/auto-distill/store.ts 迁入 shared
+// （CLI 触发器与 Desktop 审阅面共用同一实现），测试随实现迁移。
 // - add/list：按置信度降序；同 id upsert 不重复；落盘内容可被新 store 实例读到。
 // - confirm：恰好移交一次数据（重复 confirm 返回 undefined → 模拟 memory 恰好写一条）；候选从文件删除。
 // - delete：不产生任何数据移交（删除不触 memory 写入）。
-// - promote：SKILL.md 草稿落盘（YAML frontmatter 可解析、含来源信息），候选删除，重复 promote 幂等。
+// - promote：SKILL.md 草稿落盘（frontmatter 可解析、含来源信息），候选删除，重复 promote 幂等。
 // - 边界：损坏 candidates.json 抛稳定错误码；homeDir / distillRootDir 注入生效；非法候选拒绝写入。
-// 运行：cd <repo-root> && ./node_modules/.bin/tsx --test apps/zcode-cli/packages/core/test/auto-distill/store.test.ts
+// 运行：cd <repo-root> && ./node_modules/.bin/tsx --test packages/shared/test/auto-distill/candidateStore.test.ts
 
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -17,8 +19,8 @@ import {
   createDistillCandidateStore,
   DISTILL_CANDIDATES_FILE_CORRUPT_ERROR_CODE,
   DistillCandidatesFileError,
-} from "../../src/auto-distill/store.js";
-import type { DistillCandidate } from "../../src/auto-distill/types.js";
+} from "@zcode/shared/node";
+import type { DistillCandidate } from "@zcode/shared";
 
 // ── 合成 fixture ─────────────────────────────────────────────
 
@@ -80,12 +82,30 @@ test("同 id add 幂等 upsert，不产生重复条目", async () => {
   });
 });
 
-test("非法候选（置信度越界 / 空 id）在 add 时被拒绝且不落盘", async () => {
+test("非法候选（置信度越界 / 空 id / workspace.path 为空）在 add 时被拒绝且不落盘", async () => {
   await withTempDir(async (root) => {
     const store = createDistillCandidateStore({ distillRootDir: path.join(root, "distill") });
     await assert.rejects(store.add([candidate({ confidence: 1.5 })]));
     await assert.rejects(store.add([candidate({ id: "" })]));
+    await assert.rejects(store.add([candidate({ workspace: { identity: "w", path: "" } })]));
     assert.deepEqual(await store.list(), []);
+  });
+});
+
+test("带 workspace 的候选可落盘并回读（确认时按它定位项目记忆目录）", async () => {
+  await withTempDir(async (root) => {
+    const distillRootDir = path.join(root, "distill");
+    const store = createDistillCandidateStore({ distillRootDir });
+    await store.add([
+      candidate({
+        id: "distill-ws",
+        workspace: { identity: "remote-proj", path: "/repos/proj" },
+      }),
+    ]);
+
+    const listed = await store.list();
+    assert.equal(listed.length, 1);
+    assert.deepEqual(listed[0].workspace, { identity: "remote-proj", path: "/repos/proj" });
   });
 });
 

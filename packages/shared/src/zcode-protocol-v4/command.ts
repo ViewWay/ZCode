@@ -63,6 +63,9 @@ export const commandPayloadSchemas = {
     offPeakToolEnabled: z.boolean().optional(),
     // 动态工作流灰度 flag，与 offPeakToolEnabled 同一模式。
     dynamicWorkflowEnabled: z.boolean().optional(),
+    // PDF 预览联动 flag（specs/pdf-preview-linkage.md），与 offPeakToolEnabled 同一模式：
+    // Host 仅在桌面本地形态注入；缺省即 fail-closed，pdf_locate 不注册。
+    pdfLocateToolEnabled: z.boolean().optional(),
   }),
   // 父会话由 envelope.sessionId 指定；服务端从父 record 派生完整运行配置。
   // firstInput 存在时，child 创建完成后立即启动首条普通输入；缺省则保持空副屏。

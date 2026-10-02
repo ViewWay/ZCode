@@ -21,3 +21,11 @@ export {
   type NodeSelfResourceSampler,
   type NodeSelfResourceSamplerOptions,
 } from "./node/nodeSelfResourceTelemetry.js";
+export {
+  createDistillCandidateStore,
+  DISTILL_CANDIDATES_FILE_CORRUPT_ERROR_CODE,
+  DistillCandidatesFileError,
+  type CreateDistillCandidateStoreOptions,
+  type DistillCandidateStore,
+} from "./node/auto-distill/candidateStore.js";
+export { resolveProjectMemoryRoot } from "./node/auto-distill/projectMemoryRoot.js";

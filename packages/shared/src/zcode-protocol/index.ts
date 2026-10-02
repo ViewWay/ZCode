@@ -1576,6 +1576,9 @@ export const zcodeSessionCreateParamsSchema = z
     // 动态工作流灰度：与 offPeakToolEnabled 同一
     // 模式——host 裁决后下发，缺省不下发 = 不注册工作流工具簇（fail-closed）。
     dynamicWorkflowEnabled: z.boolean().optional(),
+    // PDF 预览联动（specs/pdf-preview-linkage.md）：host 仅在桌面本地形态下发，
+    // 缺省不下发 = 不注册 pdf_locate（TUI/Web/远程形态无预览消费面，fail-closed）。
+    pdfLocateToolEnabled: z.boolean().optional(),
   })
   .strict();
 export type ZCodeSessionCreateParams = z.infer<typeof zcodeSessionCreateParamsSchema>;
@@ -1594,6 +1597,8 @@ export const zcodeSessionResumeParamsSchema = z
     offPeakToolEnabled: z.boolean().optional(),
     // 与 create 同语义；resume 不带会导致冷恢复丢工作流工具簇。
     dynamicWorkflowEnabled: z.boolean().optional(),
+    // 与 create 同语义（specs/pdf-preview-linkage.md）；resume 不带会导致冷恢复丢 pdf_locate。
+    pdfLocateToolEnabled: z.boolean().optional(),
   })
   .strict();
 export type ZCodeSessionResumeParams = z.infer<typeof zcodeSessionResumeParamsSchema>;

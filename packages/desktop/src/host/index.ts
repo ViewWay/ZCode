@@ -32,6 +32,7 @@ import { createBrowserControlMainBridge } from "./browserControlMainBridge.js";
 import { materializeBrowserRecordingArtifact } from "./browserRecordingArtifactMaterializer.js";
 import { createAutomationRecordingHostService } from "./automationRecordingHostService.js";
 import { acquireAutomationReplayBrowserSession } from "./automationReplayBrowserSession.js";
+import { startAutomationCaptureSession } from "./automationCaptureSession.js";
 import {
   ServiceCollection,
   IBotsService,
@@ -40,6 +41,8 @@ import {
   IMediaPreviewService,
   IOffPeakTaskService,
   IAutomationRecordingService,
+  IDistillKnowledgeService,
+  createDistillKnowledgeService,
   IModelSelectionService,
   ISettingService,
   IWindowControllerService,
@@ -2903,6 +2906,18 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
         // 回放执行面接 browserControlMainBridge：每次回放构造 host 拥有的临时 browser
         // scope（sessionId=automation-replay:<runId>），preflight 失败由服务回退
         // unavailable 执行面（诚实失败）；main 侧 owner/scope/guest 校验复用既有链路。
+        // 实时采集（v1.1）复用同一 bridge 与 workspace 身份：采集 scope
+        // sessionId=automation-record:<captureId>，同样零 main 侧改动。
+        const automationBrowserWorkspace = msg.workspacePath
+          ? {
+              workspaceKey: resolveWorkspaceKey({
+                workspacePath: msg.workspacePath,
+                ...(msg.workspaceIdentity ? { workspaceIdentity: msg.workspaceIdentity } : {}),
+              }),
+              workspacePath: msg.workspacePath,
+              ...(msg.workspaceIdentity ? { workspaceIdentity: msg.workspaceIdentity } : {}),
+            }
+          : undefined;
         services.register(
           IAutomationRecordingService,
           createAutomationRecordingHostService({
@@ -2911,28 +2926,22 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
               acquireAutomationReplayBrowserSession(
                 {
                   port: { execute: (input) => browserControlMainBridge.execute(input) },
-                  ...(msg.workspacePath
-                    ? {
-                        workspace: {
-                          workspaceKey: resolveWorkspaceKey({
-                            workspacePath: msg.workspacePath,
-                            ...(msg.workspaceIdentity
-                              ? { workspaceIdentity: msg.workspaceIdentity }
-                              : {}),
-                          }),
-                          workspacePath: msg.workspacePath,
-                          ...(msg.workspaceIdentity
-                            ? { workspaceIdentity: msg.workspaceIdentity }
-                            : {}),
-                        },
-                      }
-                    : {}),
+                  ...(automationBrowserWorkspace ? { workspace: automationBrowserWorkspace } : {}),
                 },
                 runId,
               ),
+            createCaptureSession: () =>
+              startAutomationCaptureSession({
+                port: { execute: (input) => browserControlMainBridge.execute(input) },
+                ...(automationBrowserWorkspace ? { workspace: automationBrowserWorkspace } : {}),
+                logger,
+              }),
             logger,
           }),
         );
+        // 已沉淀知识审阅（specs/auto-distill.md）：候选存储（~/.zcode/distill）与项目记忆
+        // 落盘都属 Desktop 本地 Host 域；实现在 services（@zcode/shared/node 的唯一 store）。
+        services.register(IDistillKnowledgeService, createDistillKnowledgeService({ logger }));
         wireLocalResourceTelemetry(services);
         hasDisposedHostResources = false;
         disposeHostResourcesInFlight = null;

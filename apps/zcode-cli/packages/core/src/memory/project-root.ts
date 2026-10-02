@@ -1,33 +1,4 @@
-import { createHash } from "node:crypto";
-import { basename, join, resolve } from "node:path";
-
-interface ProjectMemoryRootInput {
-  cliStorageRoot: string;
-  workspaceIdentity?: string;
-  workspacePath: string;
-}
-
-export function resolveProjectMemoryRoot(input: ProjectMemoryRootInput): string {
-  const workspaceIdentity = input.workspaceIdentity?.trim();
-  const normalizedWorkspacePath = resolve(input.workspacePath);
-  const keySource =
-    workspaceIdentity ||
-    (process.platform === "win32"
-      ? normalizedWorkspacePath.toLowerCase()
-      : normalizedWorkspacePath);
-  const hash = createHash("sha256").update(keySource).digest("hex").slice(0, 16);
-  const slug = workspaceIdentity
-    ? "project"
-    : sanitizeProjectSlug(basename(normalizedWorkspacePath) || "project");
-
-  return join(input.cliStorageRoot, "memories", "projects", `${slug}-${hash}`, "memory");
-}
-
-function sanitizeProjectSlug(value: string): string {
-  const slug = value
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48);
-  return slug.length > 0 ? slug : "project";
-}
+// 项目记忆目录定位的唯一实现已迁至 @zcode/shared/node/auto-distill/projectMemoryRoot.ts
+// （自动沉淀"确认"需要 Desktop host 进程用同一公式定位项目记忆目录，packages
+// 不能依赖 apps，故下沉到 shared）。core 内部与 index 出口经此文件保持原导入路径不变。
+export { resolveProjectMemoryRoot } from "@zcode/shared/node";

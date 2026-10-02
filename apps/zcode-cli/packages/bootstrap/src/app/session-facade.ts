@@ -115,6 +115,11 @@ interface CreateSessionFacadeDeps {
   projectID: ProjectId;
   providerRegistry: ProviderRegistryModelSource;
   resolveUiLocale(locale: UiLocale): SupportedLocale;
+  /**
+   * 自动沉淀会话结束触发器（specs/auto-distill.md）：在 session store 关闭前读取
+   * durable messages 提取候选。触发器自身整体 try/catch，这里再兜一层保证关闭链路不受影响。
+   */
+  runDistillExtractionOnClose?: () => Promise<void>;
   runtime: AgentRuntime;
   sessionId: SessionId;
   sessionStore: SessionStorePort;
@@ -291,6 +296,20 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
           deps.ownsSessionStore && isClosableSessionStore(deps.sessionStore)
             ? deps.sessionStore
             : undefined;
+        // 自动沉淀（specs/auto-distill.md）：必须在 closeSessionResources 之前执行——
+        // 候选提取还要读 durable messages，而 session store 在资源关闭的末尾才会关闭。
+        // 触发器内部已整体 try/catch；这里再兜一层，验收场景 3（提取失败不影响会话结束）。
+        if (deps.runDistillExtractionOnClose) {
+          try {
+            await deps.runDistillExtractionOnClose();
+          } catch (error: unknown) {
+            deps.logger.warn?.("Session close distill trigger crashed", {
+              errorMessage: error instanceof Error ? error.message : String(error),
+              event: "auto_distill.trigger.crashed",
+              module: "bootstrap.app",
+            });
+          }
+        }
         await closeSessionResources({
           beginShutdown: () => deps.runtime.beginShutdown(),
           closeBrowserSession: () => deps.runtime.closeBrowserSession(),

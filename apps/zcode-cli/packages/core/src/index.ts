@@ -14,12 +14,21 @@ export * from "./compact/index.js";
 // Memory paths
 export { resolveProjectMemoryRoot } from "./memory/project-root.js";
 
+// 自动沉淀（specs/auto-distill.md）：规则式候选提取（纯函数，接线层为 bootstrap 会话结束触发器）；
+// 候选类型与候选存储在 @zcode/shared（"/node" 子路径），供 CLI 与 Desktop 审阅面共用。
+export { extractDistillCandidates } from "./auto-distill/extract.js";
+export type { ExtractDistillCandidatesOptions } from "./auto-distill/extract.js";
+
 // Tool components
 export { ToolScheduler, defaultToolScheduler, READ_ONLY_TOOLS } from "./tool/scheduler.js";
 export type { ToolSchedule, ToolScheduleItem, ToolDependency } from "./tool/scheduler.js";
 export { createToolRegistry, ToolRegistry, ToolRegistryImpl } from "./tool/registry.js";
 export { createToolExecutor, ToolExecutor, ToolExecutorImpl } from "./tool/executor.js";
 export { builtInTools, registerBuiltInTools } from "./tool/handlers/index.js";
+// 图像/语音端点调用的超时常量：bootstrap 装配本地端口时取同一份值（specs/image-tools.md、
+// specs/voice-pipeline.md），适配器超时与工具执行超时不允许各写一个数。
+export { IMAGE_TOOL_TIMEOUT_MS } from "./tool/handlers/image-tool-shared.js";
+export { VOICE_TOOL_TIMEOUT_MS } from "./tool/handlers/asr-transcribe.js";
 // dwf driver 的 submit profile 运行时守卫要把 typed 声明换回通用声明。
 export {
   createSubmitResultToolEntry,

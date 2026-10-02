@@ -217,6 +217,14 @@ export interface AgentRuntimeConfig {
    */
   dynamicWorkflowEnabled?: boolean;
 
+  /**
+   * PDF 预览联动（specs/pdf-preview-linkage.md）：pdf_locate 工具的注册门。
+   * Host 仅在桌面本地形态（services serviceAuthorityMode === "desktop-local"）经
+   * session create/resume 下发；**缺席即不注册**（fail-closed，TUI/headless/Web/远程
+   * 形态无预览消费面）。subagent_child 在 runtime-tools 侧另行禁用（无嵌套定位）。
+   */
+  pdfLocateToolEnabled?: boolean;
+
   // Context Builder config
   systemPrompt?: string;
   /**

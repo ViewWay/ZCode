@@ -1,6 +1,9 @@
 import type {
   AutomationRecording,
+  AutomationRecordingCaptureStartParams,
+  AutomationRecordingCaptureState,
   AutomationRecordingSaveParams,
+  AutomationRecordingStep,
   AutomationReplayOnFailure,
   AutomationReplayReport,
 } from "@zcode/shared";
@@ -18,6 +21,7 @@ import {
   type BrowserActionExecutor,
 } from "./automationReplayExecutors.js";
 import type { AutomationReplayBrowserSession } from "./automationReplayBrowserSession.js";
+import type { AutomationCaptureHandle } from "./automationCaptureSession.js";
 
 /**
  * 浏览器操作录制回放 Host 服务（specs/record-replay.md）。
@@ -28,6 +32,8 @@ import type { AutomationReplayBrowserSession } from "./automationReplayBrowserSe
  * - 执行面：注入 acquireReplayBrowserSession 时每次回放获取 host 拥有的真实浏览器
  *   会话（结束/失败在 finally 释放）；获取失败回退结构化 unavailable executor——
  *   回放诚实失败，不伪造成功。未注入时使用静态 executor（测试/降级装配）。
+ * - 实时采集（v1.1）：活动采集会话的唯一所有者；同一时刻至多一个，
+ *   createCaptureSession 未装配时 startCapture 诚实失败。
  * - 与 Bots 聊天渠道配置（bot-config.v3.json）零交互；定时调度面互不复用。
  */
 
@@ -41,6 +47,11 @@ export interface AutomationRecordingHostServiceDeps {
    * 会话 sessionId=automation-replay:<runId>。获取失败由本服务回退 unavailable。
    */
   acquireReplayBrowserSession?: (runId: string) => Promise<AutomationReplayBrowserSession>;
+  /**
+   * 创建实时采集会话（v1.1）；宿主装配传入（browserControlMainBridge + workspace）。
+   * preflight/newTab 失败由会话工厂抛错，本服务原样透出（诚实失败）。
+   */
+  createCaptureSession?: () => Promise<AutomationCaptureHandle>;
   /** 进度日志；复用 host 进程 logger（writeHostLog）。 */
   logger?: Pick<Console, "info" | "warn" | "error">;
   store?: AutomationRecordingStore;
@@ -64,6 +75,8 @@ export function createAutomationRecordingHostService(
   const store = resolveStore(deps);
   const log = deps.logger;
   const runIdFactory = deps.newRunId ?? defaultAutomationReplayRunId;
+  /** 活动采集会话（唯一所有者）；同一时刻至多一个。 */
+  let activeCapture: { handle: AutomationCaptureHandle; title?: string } | undefined;
   /** 每次回放新建引擎：runId 预生成（会话 sessionId 对账），executor 按会话获取结果决定。 */
   const buildEngine = (executor: BrowserActionExecutor, runId: string) =>
     createAutomationReplayEngine({
@@ -168,6 +181,69 @@ export function createAutomationRecordingHostService(
 
     async listReports(recordingId: string): Promise<AutomationReplayReport[]> {
       return store.listReports(recordingId);
+    },
+
+    async startCapture(
+      params?: AutomationRecordingCaptureStartParams,
+    ): Promise<AutomationRecordingCaptureState> {
+      if (!deps.createCaptureSession) {
+        // 宿主未装配采集面（远端/降级装配）：诚实失败，不静默假装录制。
+        throw new Error("browser capture is unavailable in this host");
+      }
+      if (activeCapture) {
+        throw new Error("a browser capture session is already running");
+      }
+      const title = params?.title?.trim() || undefined;
+      // 先清占位再创建：工厂失败（preflight/newTab 拒绝）不留半开会话，错误原样透出。
+      const handle = await deps.createCaptureSession();
+      activeCapture = { handle, ...(title ? { title } : {}) };
+      log?.info(
+        `[automation-capture] session registered capture=${handle.captureId} title=${title ?? "<untitled>"}`,
+      );
+      return handle.state();
+    },
+
+    async getCaptureState(): Promise<AutomationRecordingCaptureState | null> {
+      return activeCapture ? activeCapture.handle.state() : null;
+    },
+
+    async stopCapture(): Promise<AutomationRecording> {
+      const current = activeCapture;
+      if (!current) throw new Error("no active browser capture session");
+      // 先摘除活动会话再收尾：停止期间的 getCaptureState 不再报告录制中，
+      // stopCapture 自身失败也不留僵尸占用（会话内部已尽力释放）。
+      activeCapture = undefined;
+      let steps: AutomationRecordingStep[];
+      try {
+        steps = await current.handle.stop();
+      } catch (error) {
+        log?.warn(
+          `[automation-capture] stop failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        throw error;
+      }
+      if (steps.length === 0) {
+        // 空步骤不落库（schema 也要求 steps>=1）：拒绝保存并明确原因。
+        throw new Error("no steps captured; recording was not saved");
+      }
+      const recording = await store.save({
+        ...(current.title ? { title: current.title } : {}),
+        source: "browser",
+        steps,
+      });
+      log?.info(
+        `[automation-capture] saved capture=${current.handle.captureId} as recording=${recording.id} steps=${steps.length}`,
+      );
+      return recording;
+    },
+
+    async cancelCapture(): Promise<boolean> {
+      const current = activeCapture;
+      if (!current) throw new Error("no active browser capture session");
+      activeCapture = undefined;
+      await current.handle.cancel();
+      log?.info(`[automation-capture] cancelled capture=${current.handle.captureId}`);
+      return true;
     },
   };
 }

@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { extractDistillCandidates } from "../../src/auto-distill/extract.js";
-import type { DistillSessionInput } from "../../src/auto-distill/types.js";
+import type { DistillSessionInput } from "@zcode/shared";
 
 // ── 脱敏合成 fixture ─────────────────────────────────────────
 

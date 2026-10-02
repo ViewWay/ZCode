@@ -27,6 +27,7 @@ import {
   IClientScenesService,
   IOffPeakTaskService,
   IAutomationRecordingService,
+  IDistillKnowledgeService,
   ITeamsService,
   ISkillsService,
   ISkillSyncService,
@@ -82,6 +83,8 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly clientScenesService: IClientScenesService;
   readonly offPeakTaskService: IOffPeakTaskService;
   readonly automationRecordingService?: IAutomationRecordingService;
+  /** 已沉淀知识审阅（specs/auto-distill.md）；仅 Desktop 本地 Host 注册，UI 按可选服务处理。 */
+  readonly distillKnowledgeService?: IDistillKnowledgeService;
   readonly teamsService: ITeamsService;
   readonly skillsService: ISkillsService;
   readonly skillSyncService: ISkillSyncService;
@@ -188,6 +191,10 @@ export class RemoteServiceAccess implements IServiceAccessor {
     // 远端 Host 上调用会得到 Unknown channel 错误，UI 侧按可选服务处理。
     this.automationRecordingService = ProxyChannel.toService<IAutomationRecordingService>(
       channelClient.getChannel(IAutomationRecordingService.channelName),
+    );
+    // 已沉淀知识审阅同款范式：仅 Desktop 本地 Host 注册，UI 侧按可选服务处理。
+    this.distillKnowledgeService = ProxyChannel.toService<IDistillKnowledgeService>(
+      channelClient.getChannel(IDistillKnowledgeService.channelName),
     );
     // Bugfix（存量缺口）: accessor 自 commit 引入 teamsService 后要求该字段，
     // RemoteServiceAccess 一直缺 proxy 实现，导致 tsc -b packages/client 必挂；

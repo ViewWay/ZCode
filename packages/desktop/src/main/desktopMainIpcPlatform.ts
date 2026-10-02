@@ -18,6 +18,7 @@ import {
   type OpenInEditorOptions,
   type SaveCliMcpToUserDirectoryRequest,
   type CreateTempTextAttachmentRequest,
+  type CreateTempVoiceAttachmentRequest,
   type UpdateStatePayload,
   type WindowControlsOverlayReadyPayload,
 } from "@zcode/shared";
@@ -52,6 +53,7 @@ import {
   saveCliMcpToUserDirectory,
 } from "./mcpUserDirectory/index.js";
 import { createTempTextAttachment } from "./tempTextAttachment.js";
+import { createTempVoiceAttachment } from "./tempVoiceAttachment.js";
 import { registerDesktopSaveFileIpcHandler } from "./desktopSaveFile.js";
 import { registerDesktopPrintToPdfIpcHandler } from "./desktopPrintToPdf.js";
 import { registerCuaPipActiveSessionIpc } from "./desktopCuaPipIpc.js";
@@ -138,6 +140,15 @@ export function registerPlatformIpcHandlers(options: {
     PlatformChannels.CreateTempTextAttachment,
     async (_event, payload: CreateTempTextAttachmentRequest) => {
       return createTempTextAttachment(payload);
+    },
+  );
+
+  // 麦克风录音落盘：payload 已在 createTempVoiceAttachment 内做空值/超限校验，
+  // 失败原样抛给 renderer（fail-closed 可读提示），不在 IPC 层吞错。
+  ipcMain.handle(
+    PlatformChannels.CreateTempVoiceAttachment,
+    async (_event, payload: CreateTempVoiceAttachmentRequest) => {
+      return createTempVoiceAttachment(payload);
     },
   );
 

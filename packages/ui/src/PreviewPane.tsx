@@ -43,6 +43,8 @@ import {
   type MediaCodeViewerSource,
 } from "@/lib/codeViewer.js";
 import type { PdfViewerSource } from "@/components/ui/pdf-viewer.js";
+import type { PdfLocateViewerLocate } from "@/pdf/PdfLocateViewer.js";
+import { isSamePdfPath, usePdfLocateStore } from "@/store/pdfLocateStore.js";
 import { normalizeCodeViewerSource } from "@/lib/codeViewerSource.js";
 import { FileDisplayIcon, resolveFileDisplayDescriptor } from "@/lib/fileDisplay.js";
 import { getPathLeaf, isAbsoluteFilePath } from "@/lib/path.js";
@@ -640,6 +642,35 @@ export function PreviewPane({
   const imageSource = useMemo(() => resolvePreviewPaneImageSource(source), [source]);
   const mediaSource = useMemo(() => resolvePreviewPaneMediaSource(source), [source]);
   const pdfSource = useMemo(() => resolvePreviewPanePdfSource(source), [source]);
+  // pdf_locate 定位消费（specs/pdf-preview-linkage.md）：pdf_locate 工具卡把请求发布到
+  // pdfLocateStore；这里在「预览当前打开的 PDF 路径」与 pending 匹配时一次性消费并转成
+  // 查看器定位请求。pending 在预览开着别的文件时保留，等 onOpenCodeViewer 切换到目标
+  // 文件后由本 effect 消费；文件切换清空上一定位（旧页码对新文档无意义）。
+  const pdfSourcePath = pdfSource?.path ?? null;
+  const pendingPdfLocate = usePdfLocateStore((state) => state.pending);
+  const [pdfLocate, setPdfLocate] = useState<PdfLocateViewerLocate | null>(null);
+  const pdfLocateSourcePathRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (pdfLocateSourcePathRef.current !== pdfSourcePath) {
+      pdfLocateSourcePathRef.current = pdfSourcePath;
+      setPdfLocate(null);
+    }
+    if (!pdfSourcePath || !pendingPdfLocate) {
+      return;
+    }
+    if (!isSamePdfPath(pendingPdfLocate.filePath, pdfSourcePath)) {
+      return;
+    }
+    const consumed = usePdfLocateStore.getState().consume(pdfSourcePath);
+    if (!consumed) {
+      return;
+    }
+    setPdfLocate({
+      page: consumed.page,
+      snippet: consumed.snippet,
+      requestId: consumed.requestId,
+    });
+  }, [pdfSourcePath, pendingPdfLocate]);
   const officePreviewKind = useMemo(
     () => (source?.type === "file" ? getOfficeFilePreviewKind(source.path) : null),
     [source],
@@ -1864,6 +1895,7 @@ export function PreviewPane({
             loadingPdfPreview={loadingPdfPreview}
             pdfViewerSource={pdfViewerSource}
             pdfViewerLabels={pdfViewerLabels}
+            pdfLocate={pdfLocate}
             loadingOfficePreview={loadingOfficePreview}
             officePreview={officePreview}
             officePreviewKind={officePreviewKind}

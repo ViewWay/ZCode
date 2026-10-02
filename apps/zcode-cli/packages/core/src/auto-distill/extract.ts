@@ -11,7 +11,11 @@
 
 import { createHash } from "node:crypto";
 
-import type { DistillCandidate, DistillSessionFragment, DistillSessionInput } from "./types.js";
+import type {
+  DistillCandidate,
+  DistillSessionFragment,
+  DistillSessionInput,
+} from "@zcode/shared";
 
 /** 命令行首个 token 白名单：只统计开发工作流里高频、可复用的命令。 */
 const KNOWN_COMMAND_TOKENS = new Set([
