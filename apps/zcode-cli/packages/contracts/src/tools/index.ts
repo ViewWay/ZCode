@@ -71,6 +71,8 @@ export * from "./desktop-setting.js";
 export * from "./image-tool.js";
 // 语音工具（specs/voice-pipeline.md）：asr_transcribe/tts_speech 契约。
 export * from "./voice-tool.js";
+// PDF 预览联动（specs/pdf-preview-linkage.md）：pdf_locate 契约。
+export * from "./pdf-locate.js";
 
 // Shared types (only once to avoid duplicates)
 export type { DiffHunk, GitDiff } from "./write.js";

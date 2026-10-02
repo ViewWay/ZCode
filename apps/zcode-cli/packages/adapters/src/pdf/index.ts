@@ -7,6 +7,7 @@ import {
   READ_PDF_INFO_TIMEOUT_MS,
   READ_PDF_MAX_PAGES_PER_REQUEST,
   READ_PDF_RENDER_TIMEOUT_MS,
+  READ_PDF_TEXT_TIMEOUT_MS,
   type ExecutionPort,
   type ExecutionResult,
   type PdfDocumentPageCountRequest,
@@ -146,6 +147,36 @@ class PopplerPdfDocumentAdapter implements PdfDocumentPort {
     // 失败结果不能缓存；用户安装 Poppler 后同一进程应能立即恢复。
     this.availabilityConfirmed = true;
   }
+
+  async extractPageTexts(
+    request: PdfDocumentPageCountRequest,
+    options?: { signal?: AbortSignal },
+  ): Promise<string[]> {
+    // pdftotext 与 pdftoppm 同属 poppler-utils，复用同一次可用性探测，
+    // 缺 Poppler 时统一归类为 unavailable（pdf_locate 的片段匹配依赖本方法）。
+    await this.ensureAvailable(request, options?.signal);
+    const result = await this.options.executionPort.run(
+      {
+        command: { mode: "argv", file: "pdftotext", args: [request.filePath, "-"] },
+        timeoutMs: READ_PDF_TEXT_TIMEOUT_MS,
+        trace: request.trace,
+      },
+      options?.signal ? { signal: options.signal } : undefined,
+    );
+    if (result.cancelled || options?.signal?.aborted) {
+      throw new PdfDocumentPortError("cancelled", "PDF text extraction was cancelled.");
+    }
+    if (result.timedOut || result.status === "timed_out") {
+      throw new PdfDocumentPortError(
+        "timeout",
+        `PDF text extraction timed out after ${READ_PDF_TEXT_TIMEOUT_MS}ms.`,
+      );
+    }
+    if (result.status !== "completed" || result.exitCode !== 0) {
+      throwPdfTextExtractionError(result, request);
+    }
+    return splitPdfTextPages(result.stdout.text);
+  }
 }
 
 function assertRenderSucceeded(
@@ -220,6 +251,58 @@ function assertRenderSucceeded(
     detail.length > 0 ? `pdftoppm failed: ${detail}` : "pdftoppm failed.",
     { cause: result.error?.cause },
   );
+}
+
+// 根因：pdftotext 与 pdftoppm 的 stderr 诊断格式一致，文本提取的失败分类
+// 复用 render 的口径（密码/输入 I/O/损坏），只是没有页范围错误一类。
+function throwPdfTextExtractionError(
+  result: ExecutionResult,
+  request: PdfDocumentPageCountRequest,
+): never {
+  const stderr = result.stderr.text;
+  if (/password/iu.test(stderr)) {
+    throw new PdfDocumentPortError(
+      "password_protected",
+      "PDF is password-protected. Please provide an unprotected version.",
+    );
+  }
+  const diagnosticLines = stderr.split("\n");
+  const firstDiagnostic = diagnosticLines[0] ?? "";
+  const hasCommandOrInternalError = diagnosticLines.some((line) =>
+    /^(?:Command Line Error|Internal Error)(?: \(\d+\))?: /u.test(line),
+  );
+  const isInputIoError =
+    firstDiagnostic.startsWith("I/O Error: ") && firstDiagnostic.includes(`'${request.filePath}'`);
+  const isInputPermissionError = firstDiagnostic.startsWith("Permission Error: ");
+  if ((isInputIoError || isInputPermissionError) && !hasCommandOrInternalError) {
+    throw new PdfDocumentPortError(
+      isInputPermissionError ? "permission_denied" : "io_error",
+      `Could not extract PDF text: ${firstDiagnostic}`,
+    );
+  }
+  if (/damaged|corrupt|invalid/iu.test(stderr) || BROKEN_PDF_STRUCTURE_PATTERN.test(stderr)) {
+    throw new PdfDocumentPortError("corrupted", "PDF file is corrupted or invalid.");
+  }
+  const detail = [stderr, result.stdout.text, result.error?.message]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .join("\n")
+    .trim();
+  throw new PdfDocumentPortError(
+    "process_failed",
+    detail.length > 0 ? `pdftotext failed: ${detail}` : "pdftotext failed.",
+    { cause: result.error?.cause },
+  );
+}
+
+// 根因：pdftotext 在每页文本末尾输出换页符（\f）；split 后最后一个元素是
+// 尾随空串（部分版本不带结尾 \f 时则恰好整除）。只裁掉这一个尾部哨兵，
+// 中间的空页保留——它们代表真实的空白页。页 i 的文本 = parts[i-1]。
+export function splitPdfTextPages(output: string): string[] {
+  const parts = output.split("\f");
+  if (parts.length > 1 && parts[parts.length - 1].trim() === "") {
+    parts.pop();
+  }
+  return parts.length > 0 ? parts : [""];
 }
 
 async function readRenderedPages(

@@ -92,11 +92,14 @@ import { imageEditToolEntry } from "./image-edit.js";
 // 语音工具（specs/voice-pipeline.md）：端口在场才注册（fail-closed）。
 import { asrTranscribeToolEntry } from "./asr-transcribe.js";
 import { ttsSpeechToolEntry } from "./tts-speech.js";
+// PDF 预览联动（specs/pdf-preview-linkage.md）：桌面形态门待 UI 链路接入，当前休眠。
+import { pdfLocateToolEntry } from "./pdf-locate.js";
 import { IMAGE_GEN_TOOL_NAME, IMAGE_EDIT_TOOL_NAME } from "@zcode/contracts";
 import {
   ASR_TRANSCRIBE_TOOL_NAME,
   TTS_SPEECH_TOOL_NAME,
 } from "@zcode/contracts";
+import { PDF_LOCATE_TOOL_NAME } from "@zcode/contracts";
 import { amendWorkflowToolEntry } from "./amend-workflow.js";
 import { createWorkflowToolEntry } from "./create-workflow.js";
 import { saveWorkflowToolEntry } from "./save-workflow.js";
@@ -160,6 +163,8 @@ export const builtInTools: ToolEntry[] = [
   // 语音工具（specs/voice-pipeline.md）：端口在场才注册（fail-closed）。
   asrTranscribeToolEntry,
   ttsSpeechToolEntry,
+  // PDF 预览联动（specs/pdf-preview-linkage.md）：桌面形态门待 UI 链路，当前休眠不注册。
+  pdfLocateToolEntry,
   submitResultToolEntry,
   // actor 的升级通道。与 submit_result 完全同构：
   // 端口在场即注册（includeEscalate），`tools:"none"` 下由 workflow_child 的 allowlist
@@ -247,6 +252,8 @@ interface RegisterBuiltInToolsOptions {
   includeImageTools?: boolean;
   /** 语音工具（specs/voice-pipeline.md）：asr_transcribe/tts_speech，端口在场才注册。 */
   includeVoiceTools?: boolean;
+  /** PDF 预览联动（specs/pdf-preview-linkage.md）：pdf_locate，桌面形态门显式开启才注册。 */
+  includePdfLocate?: boolean;
   includeSubmitResult?: boolean;
   /**
    * 在场时 submit_result 以 typed 声明注册（`{ result: <schema> }`，strict 资格），供 dwf mono
@@ -355,6 +362,9 @@ export function registerBuiltInTools(
         entry.metadata.name === TTS_SPEECH_TOOL_NAME) &&
       options.includeVoiceTools !== true
     ) {
+      continue;
+    }
+    if (entry.metadata.name === PDF_LOCATE_TOOL_NAME && options.includePdfLocate !== true) {
       continue;
     }
     if (
