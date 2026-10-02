@@ -182,7 +182,9 @@ export function createSmartRoutingPort(input: {
           evaluated.push({ candidate, queryError: errorMessage(error) });
         }
       }
-      // flash 档：有 Flash 模型的已认证候选里取剩余最高（免费轨通常满额，天然优先消耗）。
+      // flash 档：降级优先于升级（specs/smart-routing-v3.md D2）——已认证且有 Flash 模型的
+      // 候选里取剩余最高者。剩余 >0 即可走 flash（降级轨）；低于 5% 阈值不回退主力、不消耗
+      // 重置卡（避免低额度烧卡跑简单任务）；额度归零（D1）才落主力循环 → 重置卡 → catalog 回落。
       if (tier === "flash") {
         let best: { candidate: SmartRoutingCatalogEntry; percentage: number } | undefined;
         for (const entry of evaluated) {
@@ -194,7 +196,8 @@ export function createSmartRoutingPort(input: {
           ) {
             continue;
           }
-          if (flashSnapshot.remainingPercentage < SMART_ROUTING_LOW_QUOTA_THRESHOLD) continue;
+          // D1：额度归零的轨不再可走 flash；(0,5%) 区间按 D2 保持 flash（降级优先）。
+          if (flashSnapshot.remainingPercentage <= 0) continue;
           const flash = flashModelOf(entry.candidate);
           if (!flash) continue;
           if (best === undefined || flashSnapshot.remainingPercentage > best.percentage) {
@@ -204,12 +207,15 @@ export function createSmartRoutingPort(input: {
         if (best) {
           const flash = flashModelOf(best.candidate)!;
           const percent = Math.round(best.percentage * 1000) / 10;
+          const lowQuota = best.percentage < SMART_ROUTING_LOW_QUOTA_THRESHOLD;
           return {
             kind: "plan",
             providerId: best.candidate.providerId,
             modelId: flash.modelId,
             tier,
-            note: `Smart flash 档：任务简单，优先消耗剩余最高的轨（${best.candidate.providerId}/${flash.modelId}，剩余 ${percent}%）`,
+            note: `Smart flash 档：任务简单，优先消耗剩余最高的轨（${best.candidate.providerId}/${flash.modelId}，剩余 ${percent}%${
+              lowQuota ? "，低于 5% 阈值——降级优先于升级，不消耗重置卡" : ""
+            }）`,
           };
         }
       }

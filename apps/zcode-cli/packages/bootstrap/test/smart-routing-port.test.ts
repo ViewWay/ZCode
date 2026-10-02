@@ -376,6 +376,48 @@ test("flash 档：简单任务优先消耗剩余最高的轨（免费轨满额�
   assert.equal(decision.tier, "flash");
 });
 
+test("flash 档 D2：低额度（>0 且 <5%）保持 flash，降级优先于升级", async () => {
+  const usageStats = fakeUsageStats({
+    snapshots: {
+      bigmodel: { state: "authenticated", remainingPercentage: 0.03 },
+    },
+    cards: { bigmodel: [{ resetType: "FIVE_HOUR", expireAt: fixedClock() + 3_600_000 }] },
+  });
+  const port = createSmartRoutingPort({
+    usageStats,
+    getCatalog: () => [
+      planEntry("bigmodel", [
+        ["glm-5.3", 200_000],
+        ["glm-5.3-flash", 130_000],
+      ]),
+    ],
+    getRegistryView: () => registryViewWithOrdinary("openai", "gpt-x", 100_000),
+    now: fixedClock,
+  });
+  const decision = await port.getRoutingDecision({ taskPreview: "帮我看看这段代码怎么改" });
+  assert.equal(decision.kind, "plan");
+  assert.equal(decision.tier, "flash");
+  assert.equal(decision.modelId, "glm-5.3-flash");
+  assert.match(decision.note, /降级优先/u);
+  assert.equal(usageStats.calls.useCalls.length, 0);
+});
+
+test("flash 档 D1：额度归零不选 flash，无卡可用时回落 v1 目录择优", async () => {
+  const usageStats = fakeUsageStats({
+    snapshots: { bigmodel: { state: "authenticated", remainingPercentage: 0 } },
+  });
+  const port = createSmartRoutingPort({
+    usageStats,
+    getCatalog: () => [planEntry("bigmodel", [["glm-5.3-flash", 130_000]])],
+    getRegistryView: () => registryViewWithOrdinary("openai", "gpt-x", 100_000),
+    now: fixedClock,
+  });
+  const decision = await port.getRoutingDecision({ taskPreview: "帮我看看这段代码怎么改" });
+  assert.equal(decision.kind, "catalog");
+  assert.match(decision.note, /回落/u);
+  assert.equal(usageStats.calls.useCalls.length, 0);
+});
+
 test("pro 档：复杂关键词或长文本走主力模型", async () => {
   const usageStats = fakeUsageStats({
     snapshots: {
