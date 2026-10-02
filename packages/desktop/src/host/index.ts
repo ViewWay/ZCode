@@ -15,6 +15,7 @@
  */
 import { createHostDatabaseStartup } from "./hostDatabaseStartup.js";
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import {
   MessagePortProtocol,
   ChannelServer,
@@ -29,6 +30,8 @@ import { resolveResourceTelemetryEnvironmentKey } from "./hostResourceTelemetryE
 import { reportHostSessionCreate } from "./hostSessionCreateTelemetry.js";
 import { createBrowserControlMainBridge } from "./browserControlMainBridge.js";
 import { materializeBrowserRecordingArtifact } from "./browserRecordingArtifactMaterializer.js";
+import { createAutomationRecordingHostService } from "./automationRecordingHostService.js";
+import { createUnavailableBrowserActionExecutor } from "./automationReplayExecutors.js";
 import {
   ServiceCollection,
   IBotsService,
@@ -36,6 +39,7 @@ import {
   IClientConfigService,
   IMediaPreviewService,
   IOffPeakTaskService,
+  IAutomationRecordingService,
   IModelSelectionService,
   ISettingService,
   IWindowControllerService,
@@ -61,6 +65,7 @@ import {
   createHostApiNetworkTransport,
   createSettingServiceWithMigrations,
   OffPeakModelUnavailableError,
+  getZCodeDataRootDir,
   OffPeakPermanentDispatchError,
   type HostApiNetworkTransport,
   type OffPeakRequestAuthBuilder,
@@ -2894,6 +2899,20 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
           );
           services.register(IZCodeTaskService, reportingZCodeTaskService);
         }
+        // 浏览器操作录制回放（specs/record-replay.md）：存储/引擎属 Desktop 本地 Host 域。
+        // v1 手动回放没有可绑定的受控浏览器会话上下文，先注入结构化 unavailable 执行面
+        // （诚实失败，报告 executorSurface 说明原因）；接线 browserControlMainBridge 需要
+        // 为回放预留一个 host 拥有的浏览器会话/guest，属后续增量（见 spec 接线缺口）。
+        services.register(
+          IAutomationRecordingService,
+          createAutomationRecordingHostService({
+            rootDir: join(getZCodeDataRootDir(), "automations"),
+            executor: createUnavailableBrowserActionExecutor(
+              "replay browser execution surface is not wired to a live browser session yet",
+            ),
+            logger,
+          }),
+        );
         wireLocalResourceTelemetry(services);
         hasDisposedHostResources = false;
         disposeHostResourcesInFlight = null;

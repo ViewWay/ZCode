@@ -93,6 +93,9 @@ export * from "./official-mcp-tool-error.js";
 export * from "./conversation-message-projection-policy.js";
 export * from "./conversation-share.js";
 export * from "./conversation-preview-artifacts.js";
+// 交付物卡片与 zwidget（specs/deliverable-cards.md）：present_files 工具名与消息流
+// widget 块的纯函数层，contracts 工具契约与 UI 渲染两侧共用。
+export * from "./zwidget.js";
 export * from "./zcode-session-task-status.js";
 export * from "./zcode-tool-projection-memory.js";
 export * from "./zcode-slash-command-help.js";
@@ -231,6 +234,7 @@ export type {
 export type { ZCodeTaskCreateResult } from "./zcode-task-types.js";
 export * from "./zcode-task-types.js";
 export * from "./automation-types.js";
+export * from "./automation-recording.js";
 export * from "./off-peak-types.js";
 export * from "./background-task-control-merge.js";
 export * from "./background-task-controls.js";

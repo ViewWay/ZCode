@@ -26,6 +26,8 @@ import {
   IClientConfigService,
   IClientScenesService,
   IOffPeakTaskService,
+  IAutomationRecordingService,
+  ITeamsService,
   ISkillsService,
   ISkillSyncService,
   IMcpSyncService,
@@ -79,6 +81,8 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly clientConfigService: IClientConfigService;
   readonly clientScenesService: IClientScenesService;
   readonly offPeakTaskService: IOffPeakTaskService;
+  readonly automationRecordingService?: IAutomationRecordingService;
+  readonly teamsService: ITeamsService;
   readonly skillsService: ISkillsService;
   readonly skillSyncService: ISkillSyncService;
   readonly mcpSyncService: IMcpSyncService;
@@ -179,6 +183,17 @@ export class RemoteServiceAccess implements IServiceAccessor {
     );
     this.offPeakTaskService = ProxyChannel.toService<IOffPeakTaskService>(
       channelClient.getChannel(IOffPeakTaskService.channelName),
+    );
+    // 浏览器录制回放仅 Desktop 本地 Host 注册该 channel；代理仍统一创建，
+    // 远端 Host 上调用会得到 Unknown channel 错误，UI 侧按可选服务处理。
+    this.automationRecordingService = ProxyChannel.toService<IAutomationRecordingService>(
+      channelClient.getChannel(IAutomationRecordingService.channelName),
+    );
+    // Bugfix（存量缺口）: accessor 自 commit 引入 teamsService 后要求该字段，
+    // RemoteServiceAccess 一直缺 proxy 实现，导致 tsc -b packages/client 必挂；
+    // 这里按同款 ProxyChannel 范式补齐，恢复 IServiceAccessor 契约一致。
+    this.teamsService = ProxyChannel.toService<ITeamsService>(
+      channelClient.getChannel(ITeamsService.channelName),
     );
     this.skillsService = ProxyChannel.toService<ISkillsService>(
       channelClient.getChannel(ISkillsService.channelName),
