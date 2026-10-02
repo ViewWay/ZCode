@@ -91,3 +91,134 @@ test("rootDir 与 store 都缺省时装配期显式报错", () => {
     /requires rootDir or store/u,
   );
 });
+
+test("replay 接真实浏览器会话：acquire runId 与报告对账，步骤经会话执行器，结束后释放", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "zcode-automation-host-service-"));
+  const acquiredRunIds: string[] = [];
+  const sessionStepSeqs: number[] = [];
+  const staticExecutorUsed: number[] = [];
+  let released = false;
+  const service = createAutomationRecordingHostService({
+    rootDir,
+    // 静态执行面不应被使用；记录调用以证明步骤走的是会话执行器。
+    executor: {
+      surface: "static-fallback",
+      async executeStep(step) {
+        staticExecutorUsed.push(step.seq);
+        return { ok: true };
+      },
+      async captureScreenshot() {
+        return { ok: true, base64Png: "" };
+      },
+    },
+    acquireReplayBrowserSession: async (runId) => {
+      acquiredRunIds.push(runId);
+      return {
+        executor: {
+          surface: "browser-command-bridge:automation-replay:session",
+          async executeStep(step) {
+            sessionStepSeqs.push(step.seq);
+            return { ok: true };
+          },
+          async captureScreenshot() {
+            return { ok: true, base64Png: "aGVsbG8=" };
+          },
+        },
+        release: async () => {
+          released = true;
+        },
+      };
+    },
+    newRunId: () => "run-live",
+    delay: async () => {},
+  });
+  const saved = await service.save({ title: "live", steps: makeSteps() });
+  const report = await service.replay(saved.id);
+  assert.equal(report.status, "completed");
+  assert.equal(report.executorSurface, "browser-command-bridge:automation-replay:session");
+  assert.deepEqual(acquiredRunIds, ["run-live"]);
+  assert.equal(report.runId, "run-live");
+  assert.deepEqual(sessionStepSeqs, [1]);
+  assert.deepEqual(staticExecutorUsed, [], "steps must run via session executor");
+  assert.equal(released, true, "session must be released after replay");
+  await rm(rootDir, { recursive: true, force: true });
+});
+
+test("会话获取失败：回退 unavailable 执行面，报告 executorSurface 说明原因且状态 failed", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "zcode-automation-host-service-"));
+  const service = createAutomationRecordingHostService({
+    rootDir,
+    executor: {
+      surface: "static-fallback",
+      async executeStep() {
+        return { ok: true };
+      },
+      async captureScreenshot() {
+        return { ok: false };
+      },
+    },
+    acquireReplayBrowserSession: async () => {
+      throw new Error("replay browser session preflight failed: backend_unavailable: down");
+    },
+    delay: async () => {},
+  });
+  const saved = await service.save({ title: "broken", steps: makeSteps() });
+  const report = await service.replay(saved.id);
+  assert.equal(report.status, "failed");
+  assert.match(
+    report.executorSurface,
+    /^unavailable: replay browser session acquisition failed: /u,
+  );
+  // 步骤以 unavailable 失败，绝不伪造成功。
+  assert.equal(report.steps[0]?.status, "failed");
+  assert.match(report.steps[0]?.error ?? "", /unavailable/u);
+  await rm(rootDir, { recursive: true, force: true });
+});
+
+test("步骤失败（abort）也释放会话：release 在 finally 中执行", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "zcode-automation-host-service-"));
+  let released = false;
+  const service = createAutomationRecordingHostService({
+    rootDir,
+    executor: {
+      surface: "static-fallback",
+      async executeStep() {
+        return { ok: true };
+      },
+      async captureScreenshot() {
+        return { ok: false };
+      },
+    },
+    acquireReplayBrowserSession: async () => ({
+      executor: {
+        surface: "failing-session",
+        async executeStep() {
+          return { ok: false, error: "selector_not_found: #gone" };
+        },
+        async captureScreenshot() {
+          return { ok: false, error: "unavailable" };
+        },
+      },
+      release: async () => {
+        released = true;
+      },
+    }),
+    delay: async () => {},
+  });
+  const saved = await service.save({
+    title: "fail",
+    steps: [
+      { seq: 1, action: "navigate", value: "https://example.test/" },
+      { seq: 2, action: "extract" },
+    ],
+  });
+  const report = await service.replay(saved.id);
+  assert.equal(report.status, "failed");
+  // abort 策略：第二步不执行。
+  assert.deepEqual(
+    report.steps.map((step) => step.seq),
+    [1],
+  );
+  assert.equal(released, true, "session must be released even when replay failed");
+  await rm(rootDir, { recursive: true, force: true });
+});

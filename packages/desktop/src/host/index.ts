@@ -31,7 +31,7 @@ import { reportHostSessionCreate } from "./hostSessionCreateTelemetry.js";
 import { createBrowserControlMainBridge } from "./browserControlMainBridge.js";
 import { materializeBrowserRecordingArtifact } from "./browserRecordingArtifactMaterializer.js";
 import { createAutomationRecordingHostService } from "./automationRecordingHostService.js";
-import { createUnavailableBrowserActionExecutor } from "./automationReplayExecutors.js";
+import { acquireAutomationReplayBrowserSession } from "./automationReplayBrowserSession.js";
 import {
   ServiceCollection,
   IBotsService,
@@ -2900,16 +2900,36 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
           services.register(IZCodeTaskService, reportingZCodeTaskService);
         }
         // 浏览器操作录制回放（specs/record-replay.md）：存储/引擎属 Desktop 本地 Host 域。
-        // v1 手动回放没有可绑定的受控浏览器会话上下文，先注入结构化 unavailable 执行面
-        // （诚实失败，报告 executorSurface 说明原因）；接线 browserControlMainBridge 需要
-        // 为回放预留一个 host 拥有的浏览器会话/guest，属后续增量（见 spec 接线缺口）。
+        // 回放执行面接 browserControlMainBridge：每次回放构造 host 拥有的临时 browser
+        // scope（sessionId=automation-replay:<runId>），preflight 失败由服务回退
+        // unavailable 执行面（诚实失败）；main 侧 owner/scope/guest 校验复用既有链路。
         services.register(
           IAutomationRecordingService,
           createAutomationRecordingHostService({
             rootDir: join(getZCodeDataRootDir(), "automations"),
-            executor: createUnavailableBrowserActionExecutor(
-              "replay browser execution surface is not wired to a live browser session yet",
-            ),
+            acquireReplayBrowserSession: (runId) =>
+              acquireAutomationReplayBrowserSession(
+                {
+                  port: { execute: (input) => browserControlMainBridge.execute(input) },
+                  ...(msg.workspacePath
+                    ? {
+                        workspace: {
+                          workspaceKey: resolveWorkspaceKey({
+                            workspacePath: msg.workspacePath,
+                            ...(msg.workspaceIdentity
+                              ? { workspaceIdentity: msg.workspaceIdentity }
+                              : {}),
+                          }),
+                          workspacePath: msg.workspacePath,
+                          ...(msg.workspaceIdentity
+                            ? { workspaceIdentity: msg.workspaceIdentity }
+                            : {}),
+                        },
+                      }
+                    : {}),
+                },
+                runId,
+              ),
             logger,
           }),
         );

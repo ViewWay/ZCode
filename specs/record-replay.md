@@ -63,9 +63,22 @@ click 必填 target；wait 必填 durationMs；scroll 必填 deltaY；extract ta
 - 真实执行面适配器 `createBrowserCommandActionExecutor`：把步骤映射为既有
   `BrowserCommand`（navigate/snapshot/click 坐标/scroll/playwright locator fill+click），
   经注入的 `executeCommand` 派发——与 host↔main 的 `browserControlMainBridge.execute`
-  同一契约。宿主内没有为「无会话上下文的回放」预留的受控浏览器执行 API 时，使用
+  同一契约。宿主内没有可用的受控浏览器执行链路（会话获取失败）时，回退
   `createUnavailableBrowserActionExecutor` 返回结构化 unavailable 错误（诚实失败，
-  不伪造成功）；接线缺口在实现报告中说明。
+  不伪造成功），报告 `executorSurface` 说明原因。
+- 回放浏览器会话 `acquireAutomationReplayBrowserSession`
+  （`packages/desktop/src/host/automationReplayBrowserSession.ts`）：每次回放构造
+  host 拥有的临时 browser scope——sessionId=`automation-replay:<runId>`（与报告 runId
+  对账），workspace 身份沿用窗口 Host 的 `workspaceIdentity?.trim() || workspacePath`；
+  步骤与截图经 `browserControlMainBridge.execute` 派发。main 侧
+  `BrowserGuestManager` 按 scope（browserId/generation/windowId/workspaceKey/
+  remoteSessionId/sessionId/clientMode）隐式创建 agent tab 并由 renderer 后台挂载
+  guest（不抢当前对话焦点），owner/scope/guest 校验边界完全复用既有链路，不新增
+  main 侧 API。
+- 会话生命周期：回放开始先派发一条 `list` 命令 preflight 验证 host→main 链路；
+  失败即回退 unavailable 执行面。回放结束/失败必须在 finally 中释放：list 出
+  scope 内 tabs 后逐个 `close`（不遗留 claimable user tab）；释放本身尽力而为，
+  失败仅告警，不影响已落盘的报告。
 - 引擎逐步执行（seq 升序）；`wait` 由引擎本地延时（可注入 delay）；其余动作派发执行器。
 - 失败策略：默认截图 + 中断（报告 status="failed"）；可配 `onFailure:"skip"` 记
   skipped 继续。中断时已执行步骤与失败截图保留在报告中。

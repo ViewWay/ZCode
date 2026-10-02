@@ -72,6 +72,9 @@ async function captureFailureScreenshot(
   }
 }
 
+/** runId 缺省生成器；导出给宿主服务在构造引擎前预生成 runId（会话 sessionId 需与报告对账）。 */
+export const defaultAutomationReplayRunId = (): string => `run-${randomUUID()}`;
+
 export function createAutomationReplayEngine(deps: AutomationReplayEngineDeps): {
   replay(
     recording: AutomationRecording,
@@ -79,7 +82,7 @@ export function createAutomationReplayEngine(deps: AutomationReplayEngineDeps): 
   ): Promise<AutomationReplayRunResult>;
 } {
   const now = deps.now ?? Date.now;
-  const newRunId = deps.newRunId ?? (() => `run-${randomUUID()}`);
+  const newRunId = deps.newRunId ?? defaultAutomationReplayRunId;
   const delay = deps.delay ?? defaultDelay;
 
   return {
