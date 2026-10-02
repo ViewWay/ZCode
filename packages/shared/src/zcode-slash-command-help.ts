@@ -42,6 +42,16 @@ export const BUILTIN_ZCODE_SLASH_COMMAND_HELP_ENTRIES: readonly BuiltinZCodeSlas
     },
     {
       details: [
+        "Runs a normal agent turn that consolidates project memory: fixes drifted memories, merges unsaved recent signal into existing topic files, converts relative dates to absolute, deletes contradicted facts, and keeps MEMORY.md a one-line-per-memory index.",
+        "Optional text becomes the consolidation focus.",
+        "Requires project memory to be enabled for the workspace; otherwise the turn explains that and stops.",
+      ],
+      name: "dream",
+      summary: "Consolidate project memory with a four-phase reflective pass.",
+      usage: "/dream [focus]",
+    },
+    {
+      details: [
         "Runs a normal agent turn that inspects the current workspace and creates or updates AGENTS.md.",
         "Existing AGENTS.md files should be edited rather than overwritten.",
         "This command targets the workspace root, not the user default ~/.zcode/AGENTS.md.",

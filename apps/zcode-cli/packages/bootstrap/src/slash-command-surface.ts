@@ -9,6 +9,7 @@ export const APP_PROTOCOL_VISIBLE_BUILTIN_SLASH_COMMAND_NAMES = [
   "goal",
   "workflow",
   "compact",
+  "dream",
   "init",
 ] as const;
 
