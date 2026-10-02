@@ -1,4 +1,5 @@
-// 会话互聊（实验）协议端口单测：联系人过滤、投递三态、来源标注与协作者创建。
+// 会话互聊协议端口单测（specs/session-chat.md）：联系人过滤、busy/idle 判定、
+// 投递三态、来源标注与协作者创建。busy = 存在未完成 turn（活跃 abort controller）。
 // 全部走最小 fake context（sessions 注册表 + sessionStore 标题解析），不启动协议 server。
 
 import assert from "node:assert/strict";
@@ -111,7 +112,7 @@ test("listSessions keeps sidebar-visible live sessions, excludes own/deferred/su
     contacts.map((contact) => contact.sessionId),
     ["sess_running", "sess_old"],
   );
-  assert.equal(contacts[0]?.status, "running");
+  assert.equal(contacts[0]?.status, "busy");
   assert.equal(contacts[0]?.title, "Title-sess_running");
   assert.equal(contacts[1]?.status, "idle");
 });

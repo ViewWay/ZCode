@@ -2241,7 +2241,7 @@ const zhCN: Record<string, string> = {
   "settings.modelIoFullRetention": "完整保留模型 I/O",
   "settings.modelIoFullRetentionDescription":
     "保留完整的模型请求和响应，不自动压缩、限制大小或删除旧记录。",
-  "settings.sessionChat": "会话互聊（实验）",
+  "settings.sessionChat": "会话互聊",
   "settings.sessionChatDescription":
     "允许会话互相呼叫：新会话将获得列出同工作区其它存活会话、向其发消息、创建协作者会话的工具。仅对开关变更后创建的会话生效。",
   "settings.performanceMode": "性能模式",

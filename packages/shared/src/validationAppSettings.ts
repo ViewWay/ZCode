@@ -453,7 +453,9 @@ const appSettingsObjectSchema = z.object({
   zcodeInteractionBehavior: zcodeInteractionBehaviorSchema.default("queue"),
   askUserQuestionAutoResolutionEnabled: z.boolean().default(true),
   modelIoFullRetentionEnabled: z.boolean().default(false),
-  sessionChatEnabled: z.boolean().default(false),
+  // 会话互聊工具面（specs/session-chat.md）：undefined 即默认开启（desktop 形态）；
+  // 显式 false 关闭。不做数据迁移——历史存量未设置该键的配置自然落在默认开启。
+  sessionChatEnabled: z.boolean().optional(),
   startPlanRecommendationDismissed: z.boolean().default(false),
   providerFamilyConnectionSelections: providerFamilyConnectionSelectionSettingsSchema.default({}),
   providerFamilyDomain: providerFamilyDomainSchema.optional(),

@@ -254,8 +254,9 @@ export class ZCodeProtocolAgentServer {
         // 动态工作流灰度门 fail-closed：Host 必须显式 workspace/updateDynamicWorkflowPolicy
         // 才开启。
         dynamicWorkflowEnabled: false,
-        // 会话互聊（实验）fail-closed：Host 必须显式 workspace/updateSessionChatPreferences
-        // 才开启；之后创建/恢复的会话才带 SessionList/SessionTalk/SessionCreate 工具面。
+        // 会话互聊 fail-closed：进程级默认关闭（CLI/TUI 即终态）；Host 必须显式
+        // workspace/updateSessionChatPreferences 才开启（desktop 默认同步 true）；
+        // 之后创建/恢复的会话才带 SessionList/SessionTalk/SessionCreate 工具面。
         sessionChatEnabled: false,
       },
       notify: (notification) => this.messageSink?.(notification),

@@ -1,12 +1,23 @@
 // ============================================================
-// Session Chat Tools (实验) - SessionList / SessionTalk / SessionCreate
+// Session Chat Tools - SessionList / SessionTalk / SessionCreate
 // ============================================================
-// 会话互聊工具面（specs 对齐 MiMo 实验室同名功能）：允许模型呼叫同 workspace 内
-// 其它存活会话、创建协作者会话。宿主（协议 server）在实验开关开启时注入
-// SessionChatPort；端口缺席即不注册工具（fail-closed）。
+// 会话互聊工具面（specs/session-chat.md，对齐 MiMo 实验室同名功能）：允许模型
+// 呼叫同 workspace 内其它存活会话、创建协作者会话。宿主（协议 server）注入
+// SessionChatPort（desktop 默认开启，CLI/TUI 关闭）；端口缺席即不注册工具
+// （fail-closed）。
 // 与 agent-teams 完全独立：不读写 TeamFile/mailbox，不给 team 成员产生副作用。
 // SessionTalk 是 fire-and-return：投递只进目标会话的 admission；回应由接收方
 // 模型调用 SessionTalk 发回来源会话（消息体头部携带来源标注与回信指引）。
+//
+// SessionTalk 注入消息的来源标注格式（宿主端口 buildSessionChatMessage 生成，
+// 以用户输入形式注入目标会话；接收方 UI/模型凭头部区分「另一会话的模型」
+// 与用户输入，回信走 SessionTalk 发回来源会话）：
+//
+//   [Session Inter-Chat / 会话互聊]
+//   This message is from the MODEL of another session in this workspace ("<fromTitle>", sessionId <fromSessionId>) — not from the user.
+//   To reply, call SessionTalk with targetSessionId "<fromSessionId>".
+//   ---
+//   <message>
 
 import {
   CoreErrorType,
@@ -38,6 +49,8 @@ const MAX_SESSION_CHAT_MODEL_BYTES = 8_192;
 const SESSION_LIST_TIMEOUT_MS = 10_000;
 const SESSION_TALK_TIMEOUT_MS = 15_000;
 const SESSION_CREATE_TIMEOUT_MS = 30_000;
+/** 端口未提供 status 的旧实现按 idle 兼容（specs/session-chat.md 验收场景 1）。 */
+const SESSION_STATUS_DEFAULT = "idle" as const;
 
 const SESSION_LIST_DESCRIPTION = [
   "# SessionList",
@@ -48,7 +61,7 @@ const SESSION_LIST_DESCRIPTION = [
   "{}",
   "```",
   "",
-  "Each entry has sessionId, title and status (idle/running). Use SessionTalk with a sessionId to send a message to that session's model.",
+  "Each entry has sessionId, an optional title and status (busy = has an unfinished turn, idle). Use SessionTalk with a sessionId to send a message to that session's model.",
 ].join("\n");
 
 const SESSION_TALK_DESCRIPTION = [
@@ -94,9 +107,17 @@ function requireSessionChatPort(toolName: string, port: unknown) {
 const sessionListHandler: ToolHandler = async (input, context) => {
   SessionListInputSchema.parse(input);
   requireSessionChatPort(SESSION_LIST_TOOL_NAME, context.sessionChatPort);
-  const sessions = await context.sessionChatPort!.listSessions({
+  const contacts = await context.sessionChatPort!.listSessions({
     excludeSessionId: String(context.sessionId),
   });
+  // busy/idle 的唯一来源是端口（宿主注册表）：core 不推导、不缓存，每次实时拉取；
+  // 端口未提供 status 的旧实现按 idle 兼容，title 原样透传（可选字段）。
+  const sessions = contacts.map((contact) => ({
+    sessionId: contact.sessionId,
+    ...(contact.title === undefined ? {} : { title: contact.title }),
+    status: contact.status ?? SESSION_STATUS_DEFAULT,
+    updatedAt: contact.updatedAt,
+  }));
   return SessionListOutputSchema.parse({ sessions }) satisfies SessionListOutput;
 };
 

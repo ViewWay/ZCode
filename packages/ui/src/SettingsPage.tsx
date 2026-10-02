@@ -685,7 +685,8 @@ export function SettingsPage({
   const askUserQuestionAutoResolutionEnabled =
     sharedSettings?.askUserQuestionAutoResolutionEnabled !== false;
   const modelIoFullRetentionEnabled = sharedSettings?.modelIoFullRetentionEnabled === true;
-  const sessionChatEnabled = sharedSettings?.sessionChatEnabled === true;
+  // undefined 即默认开启（specs/session-chat.md）；与 Root 初始化同步语义一致。
+  const sessionChatEnabled = sharedSettings?.sessionChatEnabled ?? true;
   const [dataBaseDir, setDataBaseDir] = useState("");
   const [terminalInheritSystemProfile, setTerminalInheritSystemProfile] = useState(true);
   const [terminalFontFamily, setTerminalFontFamily] = useState("");
