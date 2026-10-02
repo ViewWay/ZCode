@@ -51,6 +51,8 @@ export interface ModelSelectGroupItem {
   key: string;
   value: string;
   name: string;
+  /** 副标题（如 Smart 的编排说明）；存在时条目渲染为两行。 */
+  description?: string;
   badgeLabel?: string;
   supportsVisionInput?: boolean;
 }
@@ -71,6 +73,8 @@ export interface ModelSelectGroup {
   label: string;
   labelBadge?: string;
   directItems?: boolean;
+  /** 无头模式：directItems 组不渲染组头标签，条目即入口本身（如 Smart 虚拟入口）。 */
+  headerless?: boolean;
   selectedOptionKey?: string;
   connectionOptions?: ModelSelectConnectionOption[];
   items: ModelSelectGroupItem[];
@@ -297,14 +301,21 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
       } as const;
       const content = (
         <>
-          <span className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
-            <span className="min-w-0 truncate" title={item.name}>
-              {item.name}
+          <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="min-w-0 truncate" title={item.name}>
+                {item.name}
+              </span>
+              {item.badgeLabel ? (
+                <span className={MODEL_CONFIG_SELECT_BADGE_CLASS_NAME}>{item.badgeLabel}</span>
+              ) : null}
+              {item.supportsVisionInput ? <ModelInputCapabilityBadge /> : null}
             </span>
-            {item.badgeLabel ? (
-              <span className={MODEL_CONFIG_SELECT_BADGE_CLASS_NAME}>{item.badgeLabel}</span>
+            {item.description ? (
+              <span className="min-w-0 truncate text-ui-xs text-foreground-subtle">
+                {item.description}
+              </span>
             ) : null}
-            {item.supportsVisionInput ? <ModelInputCapabilityBadge /> : null}
           </span>
           {itemLocked ? (
             <TooltipProvider>
@@ -587,14 +598,16 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
                     <Fragment key={group.key}>
                       {groupSeparator}
                       <div>
-                        <DropdownMenuLabel
-                          className="flex min-h-8 items-center px-2 py-1"
-                          data-testid={testId(TID_CHAT_MODEL_SELECT_GROUP, group.key)}
-                          data-model-provider-key={group.key}
-                        >
-                          {renderGroupLabel(group)}
-                        </DropdownMenuLabel>
-                        {renderProviderConnectionHeader(group)}
+                        {group.headerless ? null : (
+                          <DropdownMenuLabel
+                            className="flex min-h-8 items-center px-2 py-1"
+                            data-testid={testId(TID_CHAT_MODEL_SELECT_GROUP, group.key)}
+                            data-model-provider-key={group.key}
+                          >
+                            {renderGroupLabel(group)}
+                          </DropdownMenuLabel>
+                        )}
+                        {group.headerless ? null : renderProviderConnectionHeader(group)}
                         <DropdownMenuRadioGroup value={normalizedValue}>
                           {group.items.map((item) => renderModelItem(item))}
                         </DropdownMenuRadioGroup>

@@ -4930,8 +4930,8 @@ const enUS: Record<string, string> = {
   "chat.toolbar.model.description":
     "Choose the model used by this task. The shortcut opens the model menu.",
   "chat.toolbar.model.manageModels": "Manage models",
-  "chat.model.smart": "Smart (auto-route)",
-  "chat.model.smart.desc": "Auto-picks the best configured model by context window and availability",
+  "chat.model.smart": "Smart",
+  "chat.model.smart.desc": "Auto-orchestrates the best-fitting models and agents",
   "chat.toolbar.model.searchPlaceholder": "Search models...",
   "chat.toolbar.model.empty": "No models found",
   "chat.toolbar.modelSwitch.stage.settingModel": "Switching model...",

@@ -761,12 +761,14 @@ function V4ComposerModelControlsImpl({
         {
           key: "smart:auto",
           label: intl.formatMessage({ id: "chat.model.smart" }),
+          headerless: true,
           directItems: true,
           items: [
             {
               key: "smart:auto:item",
               value: encodeCustomModelValue("smart", "auto"),
-              name: intl.formatMessage({ id: "chat.model.smart.desc" }),
+              name: intl.formatMessage({ id: "chat.model.smart" }),
+              description: intl.formatMessage({ id: "chat.model.smart.desc" }),
             },
           ],
         },
