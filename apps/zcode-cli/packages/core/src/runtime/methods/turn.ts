@@ -25,6 +25,7 @@ import type {
 } from "../deps.js";
 import {
   parseCompactCommand,
+  parseDreamCommand,
   parseRewindCommand,
   createTurnAbortScope,
   throwIfTurnAborted,
@@ -59,6 +60,7 @@ import {
   closeGoalStateChangeReminderDeferral,
   openGoalStateChangeReminderDeferral,
 } from "./goal-state-reminder.js";
+import { buildDreamPrompt } from "../../memory/dream-prompt.js";
 import { scheduleProjectMemoryExtraction } from "../helpers/project-memory-extraction.js";
 import { appendBrowserTurnScreenshot } from "./browser-turn-screenshot.js";
 import { clearBrowserTurnState } from "../../repl/browser-turn-state.js";
@@ -107,6 +109,16 @@ export async function executeTurnCommand(
   const turnId = startReservation?.turnId ?? createTurnId();
   const queryId = options?.queryId ?? (options?.inputId as QueryId | undefined) ?? createQueryId();
   const displayInput = options?.displayInput ?? input;
+  // /dream 内置命令：模型输入改写为记忆巩固提示词（参考 cc-haha consolidationPrompt）；
+  // TurnStarted 等 UI 事件仍展示用户敲的原文（上一行的 displayInput 已先行捕获）。
+  const dreamFocus = parseDreamCommand(input);
+  if (dreamFocus !== null) {
+    input = buildDreamPrompt({
+      memoryRoot: this.memoryRoot,
+      workspaceRoot: this.workspaceRoot,
+      ...(dreamFocus === undefined ? {} : { instructions: dreamFocus }),
+    });
+  }
   const turnTraceContext =
     startReservation?.traceContext ??
     createChildTraceContext(options?.traceContext ?? this.rootTraceContext, {
