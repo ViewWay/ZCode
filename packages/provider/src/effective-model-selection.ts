@@ -30,13 +30,22 @@ export function resolveEffectiveModelSelection(input: {
   let original = input.selection;
   if (!original)
     return Object.freeze({ effectiveSelection: null, selectionIssue: "selection-missing" });
-  // Smart 虚拟选择：执行边界改写为具体模型；显示/保存路径保持 Smart 原意图。
-  if (input.resolveSmartSelection === true && isSmartModelSelection(original)) {
-    const routed = resolveSmartRoute(input.registry);
-    if (!routed) {
-      return Object.freeze({ effectiveSelection: null, selectionIssue: "provider-not-found" });
+  // Smart 虚拟选择：执行边界改写为具体模型；显示/保存路径原意图透传（编排由 core 回合端口完成）。
+  if (isSmartModelSelection(original)) {
+    if (input.resolveSmartSelection === true) {
+      const routed = resolveSmartRoute(input.registry);
+      if (!routed) {
+        return Object.freeze({ effectiveSelection: null, selectionIssue: "provider-not-found" });
+      }
+      original = routed;
+    } else {
+      return Object.freeze({
+        effectiveSelection: Object.freeze({
+          providerId: original.providerId,
+          modelId: original.modelId,
+        }),
+      });
     }
-    original = routed;
   }
   const kind = input.classifyProvider(original.providerId);
   let providerId = original.providerId;
