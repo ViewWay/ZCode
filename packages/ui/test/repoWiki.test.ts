@@ -1,16 +1,30 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  analyzeWikiDocument,
+  getWikiPageNeighbors,
+  summarizeWikiGeneration,
+} from "../src/repo-wiki/analysis.js";
+import {
   buildRepoWikiGeneratePrompt,
   buildWikiCatalogTree,
   computeWorkspaceWikiHash,
+  extractWikiPageOutline,
+  filterWikiCatalogTree,
+  flattenWikiCatalogPageIds,
   getRepoWikiDirPath,
   getRepoWikiJsonPath,
   normalizeWikiDocument,
   REPO_WIKI_PAGE_FAILED_MARKER,
   REPO_WIKI_PAGE_PENDING_MARKER,
-  summarizeWikiGeneration,
-} from "../src/lib/repoWiki.js";
+  type WikiCatalogNode,
+} from "../src/repo-wiki/model.js";
+import {
+  clearTrackedGeneration,
+  getTrackedGenerationSessionId,
+  hasTrackedGeneration,
+  trackGeneration,
+} from "../src/repo-wiki/generationRegistry.js";
 
 const HOME = "/home/user";
 // 12 位 hash 与官方版目录命名一致（sha256(绝对路径) 前 12 hex）。
@@ -129,6 +143,31 @@ test("buildWikiCatalogTree derives from parentId when catalogTree is missing", (
   assert.equal(tree[1].children[0].page?.id, "b-child");
 });
 
+test("buildWikiCatalogTree supports page nodes carrying children (depth-first nav included)", () => {
+  // 目录树节点可同时携带 pageId 与 children（兜底挂载也会往页面节点下挂子页）：
+  // 渲染层折叠只作用于分组节点，页面节点子树必须始终保留（否则丢页面）。
+  const doc = normalizeWikiDocument({
+    catalogTree: [
+      {
+        id: "n1",
+        title: "根页面",
+        pageId: "p1",
+        children: [{ id: "n2", title: "子页面", pageId: "p2" }],
+      },
+    ],
+    pages: [
+      { id: "p1", title: "根页面", markdown: "m1", order: 1 },
+      { id: "p2", title: "子页面", markdown: "m2", order: 2 },
+    ],
+  });
+  const tree = buildWikiCatalogTree(doc);
+  assert.equal(tree.length, 1);
+  assert.equal(tree[0].page?.id, "p1");
+  assert.equal(tree[0].children[0].page?.id, "p2");
+  // 「上一页/下一页」导航的目录序：带 children 的页面节点同样参与深度优先遍历
+  assert.deepEqual(flattenWikiCatalogPageIds(tree), ["p1", "p2"]);
+});
+
 test("buildRepoWikiGeneratePrompt targets the documented wiki path with official-depth requirements", () => {
   const workspacePath = "/home/user/project";
   const zh = buildRepoWikiGeneratePrompt(
@@ -177,8 +216,14 @@ test("buildRepoWikiGeneratePrompt honors the generateDiagrams toggle", () => {
     workspacePath: "/home/user/project",
     language: "zh-CN" as const,
   };
-  const withDiagrams = buildRepoWikiGeneratePrompt({ ...base, generateDiagrams: true, retryPerPage: 0 }, "project");
-  const withoutDiagrams = buildRepoWikiGeneratePrompt({ ...base, generateDiagrams: false, retryPerPage: 0 }, "project");
+  const withDiagrams = buildRepoWikiGeneratePrompt(
+    { ...base, generateDiagrams: true, retryPerPage: 0 },
+    "project",
+  );
+  const withoutDiagrams = buildRepoWikiGeneratePrompt(
+    { ...base, generateDiagrams: false, retryPerPage: 0 },
+    "project",
+  );
   // 文档措辞：只在确有帮助处生成图表；关闭时全部用文字表达
   assert.ok(withDiagrams.includes("确有帮助"));
   assert.ok(withoutDiagrams.includes("不要插入"));
@@ -227,4 +272,259 @@ test("summarizeWikiGeneration derives progress from the exact page markers", () 
   });
   assert.equal(summarizeWikiGeneration(done), null);
   assert.equal(summarizeWikiGeneration(null), null);
+});
+
+test("summarizeWikiGeneration: 仅剩失败标记页时无「进行中」页面（视图据此转空闲）", () => {
+  const doc = normalizeWikiDocument({
+    pages: [
+      { id: "p1", title: "一", markdown: "正文一", order: 1 },
+      { id: "p2", title: "二", markdown: REPO_WIKI_PAGE_FAILED_MARKER, order: 2 },
+    ],
+  });
+  const progress = summarizeWikiGeneration(doc);
+  assert.ok(progress);
+  assert.equal(progress.failed, 1);
+  // 无非失败未完成页 = 无页面正在生成 = 生成必然已结束
+  assert.equal(progress.generatingPageId, null);
+  assert.deepEqual(progress.waitingPageIds, ["p2"]);
+});
+
+/** 构造测试目录树：分组节点 page=null。 */
+function groupNode(id: string, title: string, children: WikiCatalogNode[]): WikiCatalogNode {
+  return { id, title, page: null, children };
+}
+
+test("filterWikiCatalogTree matches page title/description/markdown case-insensitively", () => {
+  const tree: WikiCatalogNode[] = [
+    groupNode("g1", "分组A", [
+      {
+        id: "p1",
+        title: "调度内核",
+        page: {
+          id: "p1",
+          title: "调度内核",
+          markdown: "# 调度",
+          description: "runtime 的任务调度",
+        },
+        children: [],
+      },
+      {
+        id: "p2",
+        title: "存储层",
+        page: { id: "p2", title: "存储层", markdown: "正文提到 Router 与路由分发" },
+        children: [],
+      },
+    ]),
+    { id: "p3", title: "工具链", page: { id: "p3", title: "工具链", markdown: "m" }, children: [] },
+  ];
+
+  // 空查询：原样返回（同一引用），不过滤
+  assert.equal(filterWikiCatalogTree(tree, ""), tree);
+  assert.equal(filterWikiCatalogTree(tree, "   "), tree);
+
+  // 命中标题（大小写不敏感走 description/markdown 同理）
+  const byTitle = filterWikiCatalogTree(tree, "调度内核");
+  assert.equal(byTitle.length, 1);
+  assert.equal(byTitle[0].children.length, 1);
+  assert.equal(byTitle[0].children[0].page?.id, "p1");
+
+  // 命中 markdown 正文（保留所在分组）
+  const byBody = filterWikiCatalogTree(tree, "router");
+  assert.equal(byBody.length, 1);
+  assert.equal(byBody[0].children[0].page?.id, "p2");
+
+  // 命中 description
+  const byDesc = filterWikiCatalogTree(tree, "RUNTIME");
+  assert.equal(byDesc[0].children[0].page?.id, "p1");
+
+  // 无命中：全部剪除
+  assert.deepEqual(filterWikiCatalogTree(tree, "不存在词"), []);
+});
+
+test("filterWikiCatalogTree keeps group nodes only when their subtree matches and does not mutate the input", () => {
+  const tree: WikiCatalogNode[] = [
+    groupNode("g1", "分组A", [
+      { id: "p1", title: "Alpha", page: { id: "p1", title: "Alpha", markdown: "m" }, children: [] },
+    ]),
+    groupNode("g2", "分组B", [
+      { id: "p2", title: "Beta", page: { id: "p2", title: "Beta", markdown: "m" }, children: [] },
+    ]),
+  ];
+  const filtered = filterWikiCatalogTree(tree, "beta");
+  assert.equal(filtered.length, 1);
+  assert.equal(filtered[0].id, "g2");
+  // 分组节点仅作标题（page=null），不可被「页面匹配」保留
+  // 原树未被修改（过滤不落盘、不并行改写）
+  assert.equal(tree.length, 2);
+  assert.equal(tree[0].children.length, 1);
+  assert.equal(tree[1].children.length, 1);
+});
+
+test("flattenWikiCatalogPageIds walks the catalog depth-first", () => {
+  const tree: WikiCatalogNode[] = [
+    groupNode("g1", "分组A", [
+      { id: "p1", title: "一", page: { id: "p1", title: "一", markdown: "m" }, children: [] },
+      groupNode("g1-1", "子分组", [
+        { id: "p2", title: "二", page: { id: "p2", title: "二", markdown: "m" }, children: [] },
+      ]),
+    ]),
+    { id: "p3", title: "三", page: { id: "p3", title: "三", markdown: "m" }, children: [] },
+  ];
+  assert.deepEqual(flattenWikiCatalogPageIds(tree), ["p1", "p2", "p3"]);
+  assert.deepEqual(flattenWikiCatalogPageIds([]), []);
+});
+
+test("extractWikiPageOutline extracts h2/h3 in document order, skipping fenced code blocks", () => {
+  const markdown = [
+    "# 页面标题", // h1 不入纲（正文头部已单独展示标题）
+    "总览段落。",
+    "## 架构总览 ####", // 行尾闭合 # 装饰被去掉
+    "正文……",
+    "### 数据结构",
+    "```ts",
+    "## 这不是标题，是代码注释",
+    "~~~",
+    "### 也不是标题：仍在代码块内",
+    "~~~",
+    "```",
+    "## 执行链路",
+    "```python",
+    "## 依然不是标题（不同语言围栏）",
+    "```",
+    "#### 四级标题不入纲",
+    "",
+  ].join("\n");
+  const outline = extractWikiPageOutline(markdown);
+  assert.deepEqual(outlook_types(outline), ["h2", "h3", "h2"]);
+  assert.deepEqual(
+    outline.map((item) => item.title),
+    ["架构总览", "数据结构", "执行链路"],
+  );
+
+  // 无标题 / 空白标题 → 空大纲（UI 不渲染大纲块）
+  assert.deepEqual(extractWikiPageOutline("只有正文"), []);
+  assert.deepEqual(extractWikiPageOutline("## "), []);
+  assert.deepEqual(extractWikiPageOutline(""), []);
+});
+
+function outlook_types(items: Array<{ level: 2 | 3 }>): string[] {
+  return items.map((item) => `h${item.level}`);
+}
+
+test("analyzeWikiDocument：单遍产出与 summarizeWikiGeneration 一致，派生页状态与可读序", () => {
+  const doc = normalizeWikiDocument({
+    pages: [
+      { id: "p1", title: "一", markdown: "正文一", order: 1 },
+      { id: "p2", title: "二", markdown: REPO_WIKI_PAGE_PENDING_MARKER, order: 2 },
+      { id: "p3", title: "三", markdown: REPO_WIKI_PAGE_PENDING_MARKER, order: 3 },
+      { id: "p4", title: "四", markdown: REPO_WIKI_PAGE_FAILED_MARKER, order: 4 },
+    ],
+  });
+  const analysis = analyzeWikiDocument(doc, buildWikiCatalogTree(doc));
+  // v7：summarize 委托同一单遍扫描，输出必须逐字段一致
+  assert.deepEqual(analysis.progress, summarizeWikiGeneration(doc));
+  assert.equal(analysis.failedPageCount, 1);
+  assert.equal(analysis.pendingStatusById.get("p2"), "generating");
+  assert.equal(analysis.pendingStatusById.get("p3"), "waiting");
+  assert.equal(analysis.pendingStatusById.get("p4"), "failed");
+  assert.ok(!analysis.pendingStatusById.has("p1"), "已完成页不入未完成状态表");
+  // 可读页序 = 目录深度优先序剔除未完成页
+  assert.deepEqual(analysis.readablePageIds, ["p1"]);
+
+  // 全部完成 → progress null、全部可读
+  const doneDoc = normalizeWikiDocument({
+    pages: [{ id: "a", title: "A", markdown: "x", order: 1 }],
+  });
+  const doneAnalysis = analyzeWikiDocument(doneDoc, buildWikiCatalogTree(doneDoc));
+  assert.equal(doneAnalysis.progress, null);
+  assert.deepEqual(doneAnalysis.readablePageIds, ["a"]);
+
+  // 空文档
+  const empty = analyzeWikiDocument(null, []);
+  assert.equal(empty.progress, null);
+  assert.deepEqual(empty.readablePageIds, []);
+});
+
+test("analyzeWikiDocument：仅剩失败标记页时无进行中页（视图据此转空闲）", () => {
+  const doc = normalizeWikiDocument({
+    pages: [
+      { id: "p1", title: "一", markdown: "正文一", order: 1 },
+      { id: "p2", title: "二", markdown: REPO_WIKI_PAGE_FAILED_MARKER, order: 2 },
+    ],
+  });
+  const analysis = analyzeWikiDocument(doc, buildWikiCatalogTree(doc));
+  assert.equal(analysis.progress?.generatingPageId, null);
+  assert.equal(analysis.failedPageCount, 1);
+  assert.equal(analysis.pendingStatusById.get("p2"), "failed");
+});
+
+test("getWikiPageNeighbors：可读目录序邻页，端点与序外页为 null", () => {
+  const doc = normalizeWikiDocument({
+    pages: [
+      { id: "p1", title: "一", markdown: "正文一", order: 1 },
+      { id: "p2", title: "二", markdown: REPO_WIKI_PAGE_PENDING_MARKER, order: 2 },
+      { id: "p3", title: "三", markdown: "正文三", order: 3 },
+      { id: "p4", title: "四", markdown: "正文四", order: 5 },
+    ],
+  });
+  const analysis = analyzeWikiDocument(doc, buildWikiCatalogTree(doc));
+  assert.deepEqual(analysis.readablePageIds, ["p1", "p3", "p4"]);
+
+  const first = getWikiPageNeighbors(doc, analysis.readablePageIds, "p1");
+  assert.equal(first.prevPage, null);
+  assert.equal(first.nextPage?.id, "p3");
+  const middle = getWikiPageNeighbors(doc, analysis.readablePageIds, "p3");
+  assert.equal(middle.prevPage?.id, "p1");
+  assert.equal(middle.nextPage?.id, "p4");
+  const last = getWikiPageNeighbors(doc, analysis.readablePageIds, "p4");
+  assert.equal(last.prevPage?.id, "p3");
+  assert.equal(last.nextPage, null);
+  // 未完成页不在可读序内：两侧均为 null
+  const pending = getWikiPageNeighbors(doc, analysis.readablePageIds, "p2");
+  assert.equal(pending.prevPage, null);
+  assert.equal(pending.nextPage, null);
+});
+
+test("filterWikiCatalogTree 缓存路径：同页对象重复过滤结果一致且不改原树", () => {
+  const tree: WikiCatalogNode[] = [
+    groupNode("g1", "分组A", [
+      { id: "p1", title: "Alpha", page: { id: "p1", title: "Alpha", markdown: "m" }, children: [] },
+    ]),
+    groupNode("g2", "分组B", [
+      { id: "p2", title: "Beta", page: { id: "p2", title: "Beta", markdown: "m" }, children: [] },
+    ]),
+  ];
+  const once = filterWikiCatalogTree(tree, "beta");
+  // 第二次不同大小写：走 WeakMap 小写缓存路径，输出必须与首算一致
+  const twice = filterWikiCatalogTree(tree, "BETA");
+  assert.equal(once.length, 1);
+  assert.equal(twice.length, 1);
+  assert.equal(twice[0].id, "g2");
+  assert.equal(once[0].id, twice[0].id);
+  // 原树仍未被修改
+  assert.equal(tree.length, 2);
+  assert.equal(tree[0].children.length, 1);
+  assert.equal(tree[1].children.length, 1);
+});
+
+test("generationRegistry track/has/get/clear 幂等且 identity 优先", () => {
+  const scope = { workspacePath: "/tmp/repo-registry-test" };
+  assert.equal(hasTrackedGeneration(scope), false);
+  assert.equal(getTrackedGenerationSessionId(scope), undefined);
+  trackGeneration(scope, "session-1");
+  assert.equal(hasTrackedGeneration(scope), true);
+  assert.equal(getTrackedGenerationSessionId(scope), "session-1");
+  // 同仓库重复登记覆盖为最近一次
+  trackGeneration(scope, "session-2");
+  assert.equal(getTrackedGenerationSessionId(scope), "session-2");
+  // 身份 key 规则：identity 优先于路径（AGENTS.md）
+  assert.equal(
+    hasTrackedGeneration({ workspacePath: scope.workspacePath, workspaceIdentity: "id-1" }),
+    false,
+  );
+  // clear 幂等
+  clearTrackedGeneration(scope);
+  clearTrackedGeneration(scope);
+  assert.equal(hasTrackedGeneration(scope), false);
+  assert.equal(getTrackedGenerationSessionId(scope), undefined);
 });

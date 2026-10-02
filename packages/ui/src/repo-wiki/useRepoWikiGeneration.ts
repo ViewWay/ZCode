@@ -3,35 +3,20 @@ import type { IServiceAccessor } from "@zcode/services";
 import { createCommandEnvelope } from "@/v4/commandFactory.js";
 import { acquireWorkspaceConnection } from "@/v4/workspaceConnectionRegistry.js";
 import { logger } from "@/logger.js";
+import {
+  clearTrackedGeneration,
+  generationWorkspaceKey,
+  getTrackedGenerationSessionId,
+  hasTrackedGeneration,
+  trackGeneration,
+  type RepoWikiGenerationScope,
+} from "./generationRegistry.js";
 
-export interface RepoWikiGenerationScope {
-  workspacePath: string;
-  workspaceIdentity?: string;
-  remoteSessionId?: string;
-  /** 生成会话的模型覆盖；缺省用 runtime 缺省模型（顶栏"默认"）。 */
-  modelSelection?: { providerId: string; modelId: string };
-}
+export type { RepoWikiGenerationScope } from "./generationRegistry.js";
 
 export type RepoWikiGenerationResult =
   | { ok: true; sessionId: string }
   | { ok: false; reasonCode: string };
-
-/**
- * 生成会话登记表（module 级，进程内单例）：workspaceId → sessionId。
- * 跨 workbench 重挂载存活——用户切走再切回时「停止」仍能找到生成会话。
- * 同仓库只保留最近一次生成的会话（文档：同仓库同时只能跑一个生成任务）。
- */
-const generationSessionIds = new Map<string, string>();
-
-function generationWorkspaceKey(scope: RepoWikiGenerationScope): string {
-  // workspace 身份 key 沿用 AGENTS.md 规则：identity 优先，否则路径。
-  return scope.workspaceIdentity?.trim() || scope.workspacePath;
-}
-
-/** 是否存在登记的生成会话（近似"生成中"：分析阶段 wiki.json 尚未落盘时 UI 依赖它）。 */
-export function hasTrackedGeneration(scope: RepoWikiGenerationScope): boolean {
-  return generationSessionIds.has(generationWorkspaceKey(scope));
-}
 
 /**
  * Repo Wiki 生成动作：与对话 composer 解耦，直接经任务运行时发起后台生成任务
@@ -52,6 +37,15 @@ export function useRepoWikiGeneration(services: IServiceAccessor) {
   const start = useCallback(
     async (scope: RepoWikiGenerationScope, prompt: string): Promise<RepoWikiGenerationResult> => {
       if (pendingRef.current) {
+        return { ok: false, reasonCode: "generation_in_flight" };
+      }
+      // 单生成任务互斥（spec v5）：createSession ACK 后到目录骨架落盘前存在一个
+      // 无视觉反馈的窗口，pending 挡不住窗口外的重复点击——两个会话并发写同一
+      // wiki.json 会互相覆盖。登记表已有本仓库会话时直接拒绝，不发命令。
+      if (hasTrackedGeneration(scope)) {
+        logger.warn("[repo-wiki] 已有生成会话在跑，拒绝重复发起", {
+          workspaceId: generationWorkspaceKey(scope),
+        });
         return { ok: false, reasonCode: "generation_in_flight" };
       }
       pendingRef.current = true;
@@ -81,7 +75,7 @@ export function useRepoWikiGeneration(services: IServiceAccessor) {
           }),
         );
         if (ack.status === "accepted" && ack.result?.type === "createSession") {
-          generationSessionIds.set(workspaceId, ack.result.sessionId);
+          trackGeneration(scope, ack.result.sessionId);
           return { ok: true, sessionId: ack.result.sessionId };
         }
         const reasonCode = ack.reasonCode ?? ack.status;
@@ -111,37 +105,43 @@ export function useRepoWikiGeneration(services: IServiceAccessor) {
    * 该会话由本功能独占）。已落盘页面保留；登记表随即清除，视图转空闲。
    * 无登记会话时静默返回 false（幂等，例如重挂载后生成已自然结束）。
    */
-  const stop = useCallback(async (scope: RepoWikiGenerationScope): Promise<boolean> => {
-    const workspaceId = generationWorkspaceKey(scope);
-    const sessionId = generationSessionIds.get(workspaceId);
-    if (!sessionId) return false;
-    generationSessionIds.delete(workspaceId);
-    const lease = acquireWorkspaceConnection(
-      {
-        workspacePath: scope.workspacePath,
-        ...(scope.workspaceIdentity ? { workspaceIdentity: scope.workspaceIdentity } : {}),
-        ...(scope.remoteSessionId ? { remoteSessionId: scope.remoteSessionId } : {}),
-      },
-      services.zcodeAgentService,
-    );
-    try {
-      const ack = await lease.transport.sendCommand(
-        createCommandEnvelope({ type: "stop", payload: {}, sessionId }),
+  const stop = useCallback(
+    async (scope: RepoWikiGenerationScope): Promise<boolean> => {
+      const sessionId = getTrackedGenerationSessionId(scope);
+      if (!sessionId) return false;
+      clearTrackedGeneration(scope);
+      const lease = acquireWorkspaceConnection(
+        {
+          workspacePath: scope.workspacePath,
+          ...(scope.workspaceIdentity ? { workspaceIdentity: scope.workspaceIdentity } : {}),
+          ...(scope.remoteSessionId ? { remoteSessionId: scope.remoteSessionId } : {}),
+        },
+        services.zcodeAgentService,
       );
-      if (ack.status !== "accepted" && ack.status !== "noop") {
-        logger.warn("[repo-wiki] stop 被拒", { sessionId, status: ack.status, reasonCode: ack.reasonCode ?? null });
+      try {
+        const ack = await lease.transport.sendCommand(
+          createCommandEnvelope({ type: "stop", payload: {}, sessionId }),
+        );
+        if (ack.status !== "accepted" && ack.status !== "noop") {
+          logger.warn("[repo-wiki] stop 被拒", {
+            sessionId,
+            status: ack.status,
+            reasonCode: ack.reasonCode ?? null,
+          });
+        }
+        return true;
+      } catch (error) {
+        logger.warn("[repo-wiki] stop 抛错", {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return true;
+      } finally {
+        lease.release();
       }
-      return true;
-    } catch (error) {
-      logger.warn("[repo-wiki] stop 抛错", {
-        sessionId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return true;
-    } finally {
-      lease.release();
-    }
-  }, [services]);
+    },
+    [services],
+  );
 
   return { start, stop, pending };
 }

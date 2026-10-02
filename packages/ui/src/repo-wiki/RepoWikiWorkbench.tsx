@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePanelRef } from "react-resizable-panels";
 import {
   ArrowLeftIcon,
@@ -7,35 +7,28 @@ import {
   RefreshCwIcon,
   Trash2Icon,
 } from "lucide-react";
-import type { GitRepositorySummary, ModelSelection } from "@zcode/shared";
+import type { GitRepositorySummary } from "@zcode/shared";
 import type { CodeViewerSource } from "@/lib/codeViewer.js";
 import type { MessageFileLinkTarget } from "@/components/ai-elements/message.js";
 import { getPathLeaf } from "@/lib/path.js";
-import {
-  buildRepoWikiGeneratePrompt,
-  REPO_WIKI_PAGE_FAILED_MARKER,
-  summarizeWikiGeneration,
-} from "@/lib/repoWiki.js";
+import { analyzeWikiDocument, getWikiPageNeighbors } from "./analysis.js";
+import { buildRepoWikiGeneratePrompt, type WikiPageSource } from "./model.js";
 import { Button } from "@/components/ui/button.js";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable.js";
 import { toast } from "@/components/ui/toast.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
-import { useModelSelectionView } from "@/hooks/useModelSelectionView.js";
-import { hasTrackedGeneration, useRepoWikiGeneration } from "@/hooks/useRepoWikiGeneration.js";
-import { useRepoWikiSelection, useRepoWikiWorkspace } from "@/hooks/useRepoWikiWorkspace.js";
+import { useRepoWikiGeneration } from "./useRepoWikiGeneration.js";
+import { useRepoWikiGenerationStatus } from "./useRepoWikiGenerationStatus.js";
+import { useRepoWikiSelection, useRepoWikiWorkspace } from "./useRepoWikiWorkspace.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
-import { RepoWikiCatalogPane } from "@/app-shell/RepoWikiCatalogPane.js";
-import type { RepoWikiPageStatus } from "@/app-shell/RepoWikiCatalogTree.js";
-import { RepoWikiEmptyState } from "@/app-shell/RepoWikiEmptyState.js";
-import { RepoWikiPageView } from "@/app-shell/RepoWikiPageView.js";
-import {
-  parseModelSelectValue,
-  RepoWikiGenerationOptions,
-  type RepoWikiGenerationOptionsProps,
-  type RepoWikiModelOption,
-} from "@/app-shell/RepoWikiGenerationOptions.js";
-import { RepoWikiMetaBar } from "@/app-shell/RepoWikiMetaBar.js";
+import { RepoWikiCatalogPane } from "./RepoWikiCatalogPane.js";
+import { RepoWikiEmptyState } from "./RepoWikiEmptyState.js";
+import { RepoWikiGenerationOptions } from "./RepoWikiGenerationOptions.js";
+import { RepoWikiMetaBar } from "./RepoWikiMetaBar.js";
+import { RepoWikiPageNav } from "./RepoWikiPageNav.js";
+import { RepoWikiPageView } from "./RepoWikiPageView.js";
+import { useRepoWikiGenerationOptions } from "./useRepoWikiGenerationOptions.js";
 
 interface RepoWikiWorkbenchProps {
   workspacePath: string;
@@ -80,89 +73,38 @@ export function RepoWikiWorkbench({
   const { selectedPageId, selectPage } = useRepoWikiSelection(wiki.catalog);
 
   // ── 生成状态（磁盘推导 + 登记表；spec「生成状态机」）──
-  const progress = useMemo(() => summarizeWikiGeneration(wiki.doc), [wiki.doc]);
-  const tracked = hasTrackedGeneration({
-    workspacePath,
-    workspaceIdentity,
-    remoteSessionId: workspaceRemoteSessionId,
-  });
+  // 单遍扫描统一派生（v7）：进度 + 未完成页状态 + 失败计数 + 可读页目录序。
+  const analysis = useMemo(
+    () => analyzeWikiDocument(wiki.doc, wiki.catalog),
+    [wiki.doc, wiki.catalog],
+  );
+  const progress = analysis.progress;
   // 用户点过「停止」后本轮不再视为生成中，直到再次点生成。
   const [userStoppedGeneration, setUserStoppedGeneration] = useState(false);
-  const generating =
-    !userStoppedGeneration && (progress !== null ? tracked : !wiki.doc && tracked);
+  const { generating, generationBusy } = useRepoWikiGenerationStatus({
+    wikiPhase: wiki.phase,
+    progress,
+    userStoppedGeneration,
+    generationPending,
+    scope: {
+      workspacePath,
+      workspaceIdentity,
+      remoteSessionId: workspaceRemoteSessionId,
+    },
+  });
 
   // ── 生成选项（视图态，不持久化）──
-  const [wikiLanguage, setWikiLanguage] = useState<"zh-CN" | "en-US">(locale);
-  const [generateDiagrams, setGenerateDiagrams] = useState(true);
-  const [retryPerPage, setRetryPerPage] = useState(0);
-  const [modelOverride, setModelOverride] = useState<ModelSelection | null>(null);
-  const modelSelectionRead = useModelSelectionView(
-    workspacePath,
-    workspaceRemoteSessionId ?? null,
-    workspaceIdentity ?? null,
-  );
-  const modelOptions = useMemo<RepoWikiModelOption[]>(() => {
-    if (modelSelectionRead.state.status !== "ready") return [];
-    return modelSelectionRead.state.view.providers.map((provider) => ({
-      providerId: provider.providerId,
-      providerLabel: provider.providerName ?? provider.providerId,
-      models: provider.models.map((model) => ({
-        value: `${provider.providerId}/${model.modelId}`,
-        modelId: model.modelId,
-      })),
-    }));
-  }, [modelSelectionRead.state]);
-  const preferredSelection =
-    modelSelectionRead.state.status === "ready"
-      ? (modelSelectionRead.state.view.preferredSelection ?? null)
-      : null;
-  const selectedModel = modelOverride ?? preferredSelection;
-  const selectedModelValue = selectedModel
-    ? `${selectedModel.providerId}/${selectedModel.modelId}`
-    : "default";
-  // 生成选项受控 props：顶栏（form=bar）与空态居中表单（form）共用同一份状态。
-  const generationOptions: RepoWikiGenerationOptionsProps = {
-    language: wikiLanguage,
-    onLanguageChange: setWikiLanguage,
-    modelOptions,
-    selectedModelValue,
-    onModelValueChange: (value) => setModelOverride(parseModelSelectValue(value)),
-    retryPerPage,
-    onRetryPerPageChange: setRetryPerPage,
-    generateDiagrams,
-    onGenerateDiagramsChange: setGenerateDiagrams,
-  };
-
-  // ── 元数据取数（分支/提交/文件数）──
-  const isGitRepository = gitSummary?.isRepository === true;
-  const [headCommitId, setHeadCommitId] = useState<string | null>(null);
-  const [wikiFileCount, setWikiFileCount] = useState<number | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    if (isGitRepository) {
-      void services.gitService
-        .getCommitGraph({ workspacePath, maxCount: 1 })
-        .then((result) => {
-          if (!cancelled) setHeadCommitId(result.commits[0]?.hash.slice(0, 11) ?? null);
-        })
-        .catch(() => {});
-    } else {
-      setHeadCommitId(null);
-    }
-    void services.fileService
-      .listWorkspaceFilesLength({ rootPath: workspacePath })
-      .then((count) => {
-        if (!cancelled && Number.isFinite(count)) setWikiFileCount(count);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [isGitRepository, services, workspacePath]);
+  const { generationOptions, wikiLanguage, modelOverride, retryPerPage, generateDiagrams } =
+    useRepoWikiGenerationOptions({
+      workspacePath,
+      workspaceIdentity,
+      workspaceRemoteSessionId,
+      locale,
+    });
 
   const wikiHomePath = wiki.homePath;
   const wikiWorkspaceHash = wiki.workspaceHash;
-  const generateDisabled = generationPending || wiki.phase === "resolving";
+  const generateDisabled = generationBusy || wiki.phase === "resolving";
   const [deleting, setDeleting] = useState(false);
   const selectedPage = useMemo(
     () => wiki.doc?.pages.find((page) => page.id === selectedPageId) ?? null,
@@ -235,13 +177,15 @@ export function RepoWikiWorkbench({
     setDeleting(true);
     try {
       await services.fileService.deleteFile({ path: wikiJsonPath });
+      // 删除成功立即重读（spec v5）：不等下一轮轮询，随即回到空态卡片。
+      wiki.refresh();
       toast(intl.formatMessage({ id: "repoWiki.deleted" }));
     } catch {
       toast(intl.formatMessage({ id: "repoWiki.deleteFailed" }));
     } finally {
       setDeleting(false);
     }
-  }, [confirmDialog, intl, services, wiki.wikiJsonPath]);
+  }, [confirmDialog, intl, services, wiki.refresh, wiki.wikiJsonPath]);
 
   const handleOpenFileLink = useCallback(
     (target: MessageFileLinkTarget) => {
@@ -257,24 +201,48 @@ export function RepoWikiWorkbench({
     [workspacePath, workspaceIdentity, workspaceRemoteSessionId],
   );
 
-  // 页面状态：进行中（目录序第一个未完成）/等待/失败；未完成页置灰不可选。
+  // 引用稳定回调（v7 性能不变量）：inline 箭头会打断 RepoWikiPageView 内
+  // MessageResponse 的深度 memo，导致整页 markdown 随本组件任意状态变化全量重渲。
+  const handleOpenSource = useCallback(
+    (source: WikiPageSource) => {
+      onOpenCodeViewer({
+        type: "file",
+        title: getPathLeaf(source.path),
+        path: source.path,
+        workspacePath,
+        workspaceIdentity,
+        workspaceRemoteSessionId,
+      });
+    },
+    [workspacePath, workspaceIdentity, workspaceRemoteSessionId],
+  );
+
+  // 页面状态：磁盘事实（analysis.pendingStatusById，单遍扫描产出）+ 视图态重标注——
+  // 用户停止后首个未完成页展示为「等待生成」而非「正在生成」（仅改标签不改成员，
+  // 未完成页两种标签下都置灰不可选）。
   const pageStatusById = useMemo(() => {
-    const map = new Map<string, RepoWikiPageStatus>();
-    if (!progress) return map;
-    for (const page of wiki.doc?.pages ?? []) {
-      if (page.markdown.trim() === REPO_WIKI_PAGE_FAILED_MARKER) map.set(page.id, "failed");
+    if (generating || !progress || progress.generatingPageId === null) {
+      return analysis.pendingStatusById;
     }
-    if (progress.generatingPageId) {
-      map.set(progress.generatingPageId, generating ? "generating" : "waiting");
-    }
-    for (const pageId of progress.waitingPageIds) {
-      if (!map.has(pageId)) map.set(pageId, "waiting");
-    }
-    return map;
-  }, [generating, progress, wiki.doc]);
-  const failedPageCount = progress?.failed ?? 0;
+    const remapped = new Map(analysis.pendingStatusById);
+    remapped.set(progress.generatingPageId, "waiting");
+    return remapped;
+  }, [analysis, generating, progress]);
+  const failedPageCount = analysis.failedPageCount;
   const currentPageTitle =
     wiki.doc?.pages.find((page) => page.id === progress?.generatingPageId)?.title ?? null;
+
+  // 上一页/下一页（spec v3「正文阅读」）：仅在已完成页面（目录深度优先序）间跳转。
+  const { prevPage, nextPage } = useMemo(
+    () => getWikiPageNeighbors(wiki.doc, analysis.readablePageIds, selectedPageId),
+    [analysis, selectedPageId, wiki.doc],
+  );
+
+  // 切页正文回顶（spec v3）：长页底部切页不残留旧偏移。
+  const contentViewRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    contentViewRef.current?.scrollTo({ top: 0 });
+  }, [selectedPageId]);
 
   const languageLabel = (lang: "zh-CN" | "en-US"): string =>
     intl.formatMessage({ id: lang === "zh-CN" ? "repoWiki.language.zhCN" : "repoWiki.language.enUS" });
@@ -285,6 +253,7 @@ export function RepoWikiWorkbench({
   const catalogPanelRef = usePanelRef();
   const [catalogCollapsed, setCatalogCollapsed] = useState(false);
 
+  const isGitRepository = gitSummary?.isRepository === true;
   const showMetaBar = wiki.phase === "ready" || generating;
   const selectedPageView = selectedPage && !selectedPagePending ? selectedPage : null;
 
@@ -331,11 +300,11 @@ export function RepoWikiWorkbench({
       {showMetaBar ? (
         <RepoWikiMetaBar
           repoName={repoName}
+          workspacePath={workspacePath}
           branchName={isGitRepository ? (gitSummary?.branchName ?? null) : null}
           languageLabel={languageLabel(wiki.doc?.language ?? wikiLanguage)}
           updatedAtLabel={docUpdatedAt ? new Date(docUpdatedAt).toLocaleString() : "—"}
-          commitId={headCommitId}
-          fileCount={wikiFileCount}
+          isGitRepository={isGitRepository}
           progress={generating ? progress : null}
           currentPageTitle={currentPageTitle}
           analyzing={generating && !wiki.doc}
@@ -369,26 +338,24 @@ export function RepoWikiWorkbench({
             </ResizablePanel>
             <ResizableHandle />
             <ResizablePanel id="repo-wiki-content" minSize="40%">
-              <div className="h-full min-w-0 overflow-y-auto px-6 py-5">
+              <div ref={contentViewRef} className="h-full min-w-0 overflow-y-auto px-6 py-5">
                 {selectedPageView ? (
-                  <RepoWikiPageView
-                    page={selectedPageView}
-                    workspacePath={workspacePath}
-                    workspaceIdentity={workspaceIdentity}
-                    workspaceRemoteSessionId={workspaceRemoteSessionId}
-                    onOpenCodeViewer={handleOpenFileLink}
-                    onOpenSource={(source) =>
-                      onOpenCodeViewer({
-                        type: "file",
-                        title: getPathLeaf(source.path),
-                        path: source.path,
-                        workspacePath,
-                        workspaceIdentity,
-                        workspaceRemoteSessionId,
-                      })
-                    }
-                    onOpenBrowserUrl={onOpenBrowserUrl}
-                  />
+                  <>
+                    <RepoWikiPageView
+                      page={selectedPageView}
+                      workspacePath={workspacePath}
+                      workspaceIdentity={workspaceIdentity}
+                      workspaceRemoteSessionId={workspaceRemoteSessionId}
+                      onOpenCodeViewer={handleOpenFileLink}
+                      onOpenSource={handleOpenSource}
+                      onOpenBrowserUrl={onOpenBrowserUrl}
+                    />
+                    <RepoWikiPageNav
+                      prevPage={prevPage}
+                      nextPage={nextPage}
+                      onSelect={selectPage}
+                    />
+                  </>
                 ) : selectedPagePending ? (
                   <div className="flex h-full items-center justify-center text-ui-sm text-foreground-subtle">
                     {intl.formatMessage({ id: "repoWiki.pageStatus.generating" })}
@@ -417,6 +384,7 @@ export function RepoWikiWorkbench({
           generateDisabled={generateDisabled}
           onGenerate={handleGenerate}
           generationOptions={generationOptions}
+          invalidExistingWiki={wiki.invalid}
         />
       )}
     </main>

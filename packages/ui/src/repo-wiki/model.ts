@@ -141,7 +141,9 @@ export function normalizeWikiDocument(raw: unknown): WikiDocument | null {
   const catalogTree = normalizeCatalogTree(raw.catalogTree);
 
   return {
-    ...(optionalString(raw.workspacePath) ? { workspacePath: optionalString(raw.workspacePath) } : {}),
+    ...(optionalString(raw.workspacePath)
+      ? { workspacePath: optionalString(raw.workspacePath) }
+      : {}),
     ...(optionalString(raw.workspaceKey) ? { workspaceKey: optionalString(raw.workspaceKey) } : {}),
     language,
     ...(optionalString(raw.generationModel)
@@ -171,9 +173,23 @@ function normalizeCatalogTree(raw: unknown, depth = 0): WikiCatalogTreeNode[] | 
   return nodes.length > 0 ? nodes : undefined;
 }
 
+/**
+ * 节点排序键：页面取自身 order；分组节点取**子树内页面的最小 order**。
+ * 此前取 children[0] 的 order——同一个分组树只因输入顺序不同就会排出不同结果，
+ * 修复为递归取最小值，保证排序只取决于页面 order 本身。
+ */
+function nodeSortOrder(node: WikiCatalogNode): number {
+  if (node.page) return node.page.order ?? Number.MAX_SAFE_INTEGER;
+  let min = Number.MAX_SAFE_INTEGER;
+  for (const child of node.children) {
+    min = Math.min(min, nodeSortOrder(child));
+  }
+  return min;
+}
+
 const compareNodes = (a: WikiCatalogNode, b: WikiCatalogNode): number => {
-  const orderA = a.page?.order ?? a.children[0]?.page?.order ?? Number.MAX_SAFE_INTEGER;
-  const orderB = b.page?.order ?? b.children[0]?.page?.order ?? Number.MAX_SAFE_INTEGER;
+  const orderA = nodeSortOrder(a);
+  const orderB = nodeSortOrder(b);
   if (orderA !== orderB) return orderA - orderB;
   return a.title.localeCompare(b.title);
 };
@@ -248,7 +264,10 @@ export interface RepoWikiGenerateArgs {
  * 生成提示词（深度对齐官方版 wiki：主题深潜页 + 按需 mermaid 图 + 行级源码出处）：
  * 指示 Agent 把 wiki.json 写到文档约定路径，目录先落盘、页面渐进补齐。
  */
-export function buildRepoWikiGeneratePrompt(args: RepoWikiGenerateArgs, repoNameHint: string): string {
+export function buildRepoWikiGeneratePrompt(
+  args: RepoWikiGenerateArgs,
+  repoNameHint: string,
+): string {
   const wikiPath = getRepoWikiJsonPath(args.homePath, args.workspaceHash);
   const repoName = repoNameHint;
   const languageWord = args.language === "zh-CN" ? "简体中文" : "English";
@@ -281,52 +300,101 @@ export function buildRepoWikiGeneratePrompt(args: RepoWikiGenerateArgs, repoName
   ].join("\n");
 }
 
-export interface WikiGenerationProgress {
-  /** 目录规划的总页数。 */
-  total: number;
-  /** 已完成（正文非占位/失败标记）的页数。 */
-  done: number;
-  /** 失败（FAILED 标记）页数。 */
-  failed: number;
-  /** 目录序第一个未完成页：UI 显示为「正在生成」。 */
-  generatingPageId: string | null;
-  /** 其余未完成页 id：目录显示「等待生成」。 */
-  waitingPageIds: string[];
-}
+// 每页小写检索文本缓存（v7 性能不变量）：WeakMap 按 page 对象引用——轮询去重保证
+// 内容不变时对象引用稳定，缓存跨击键复用；生成期间对象每轮新建，旧条目随对象回收。
+// 纯函数语义不变：同输入同输出、不改原树。
+const pageSearchTextCache = new WeakMap<WikiPage, readonly [string, string, string]>();
 
-function isPendingPageMarkdown(markdown: string): boolean {
-  const trimmed = markdown.trim();
-  return (
-    trimmed === REPO_WIKI_PAGE_PENDING_MARKER ||
-    trimmed === `${REPO_WIKI_PAGE_PENDING_MARKER}…` ||
-    trimmed === REPO_WIKI_PAGE_FAILED_MARKER
-  );
+function getWikiPageSearchText(page: WikiPage): readonly [string, string, string] {
+  let entry = pageSearchTextCache.get(page);
+  if (entry === undefined) {
+    entry = [
+      page.title.toLowerCase(),
+      (page.description ?? "").toLowerCase(),
+      page.markdown.toLowerCase(),
+    ];
+    pageSearchTextCache.set(page, entry);
+  }
+  return entry;
 }
 
 /**
- * 从磁盘 wiki.json 推导生成进度（纯函数）：done = 正文已就绪的页数，
- * generating = 目录序第一个未完成页。全部完成时返回 null（非生成中）。
+ * 目录过滤（纯函数，不改原树）：query 对页面 title/description/markdown 做
+ * 大小写不敏感子串匹配；分组节点在子树有命中时保留、否则剪除。
+ * query 为空（或全空白）时原样返回入参数组。
  */
-export function summarizeWikiGeneration(doc: WikiDocument | null): WikiGenerationProgress | null {
-  if (!doc || doc.pages.length === 0) return null;
-  const byOrder = [...doc.pages].sort(
-    (a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER),
-  );
-  const pending = byOrder.filter((page) => isPendingPageMarkdown(page.markdown));
-  if (pending.length === 0) return null;
-  const failed = pending.filter((page) => page.markdown.trim() === REPO_WIKI_PAGE_FAILED_MARKER);
-  // 「正在生成」取目录序第一个非失败未完成页；失败页只计入失败数。
-  const generatingPage = pending.find(
-    (page) => page.markdown.trim() !== REPO_WIKI_PAGE_FAILED_MARKER,
-  );
-  const waitingPageIds = pending
-    .filter((page) => page.id !== generatingPage?.id)
-    .map((page) => page.id);
-  return {
-    total: doc.pages.length,
-    done: doc.pages.length - pending.length,
-    failed: failed.length,
-    generatingPageId: generatingPage?.id ?? null,
-    waitingPageIds,
+export function filterWikiCatalogTree(nodes: WikiCatalogNode[], query: string): WikiCatalogNode[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return nodes;
+  const walk = (list: WikiCatalogNode[]): WikiCatalogNode[] => {
+    const kept: WikiCatalogNode[] = [];
+    for (const node of list) {
+      const children = walk(node.children);
+      const page = node.page;
+      const selfMatch = page
+        ? getWikiPageSearchText(page).some((text) => text.includes(needle))
+        : false;
+      if (selfMatch || children.length > 0) {
+        kept.push({ ...node, children });
+      }
+    }
+    return kept;
   };
+  return walk(nodes);
+}
+
+/** 目录深度优先遍历的页面 id 序（含未完成页）：「上一页/下一页」导航的目录序依据。 */
+export function flattenWikiCatalogPageIds(nodes: WikiCatalogNode[]): string[] {
+  const ids: string[] = [];
+  const walk = (list: WikiCatalogNode[]): void => {
+    for (const node of list) {
+      if (node.page) ids.push(node.page.id);
+      walk(node.children);
+    }
+  };
+  walk(nodes);
+  return ids;
+}
+
+export interface WikiPageOutlineItem {
+  level: 2 | 3;
+  title: string;
+}
+
+const OUTLINE_HEADING_PATTERN = /^(#{2,3})\s+(.+?)\s*#*\s*$/;
+const OUTLINE_FENCE_PATTERN = /^\s{0,3}(`{3,5}|~{3,5})/;
+
+/**
+ * 从页面 markdown 源提取「本页大纲」（h2/h3，按文档序；spec v5）：
+ * - 围栏代码块（``` / ~~~）内的 # 行不视为标题；
+ * - h1 与 h4 及更深层级不入纲（页面标题已在正文头部单独展示）；
+ * - 去掉行尾闭合的 # 装饰与首尾空白。
+ * 大纲渲染为可点击目录，点击滚动到渲染后的对应标题元素。
+ */
+export function extractWikiPageOutline(markdown: string): WikiPageOutlineItem[] {
+  const items: WikiPageOutlineItem[] = [];
+  // 围栏标记允许缩进与 3~5 个反引号/波浪线，成对切换进出代码块；``` 内嵌 ~~~ 不换围栏。
+  let fenceMarker: string | null = null;
+  for (const line of markdown.split("\n")) {
+    const fenceMatch = line.match(OUTLINE_FENCE_PATTERN);
+    if (fenceMatch) {
+      const marker = fenceMatch[1] ?? "";
+      if (fenceMarker === null) {
+        fenceMarker = marker[0] ?? "";
+      } else if (marker[0] === fenceMarker) {
+        fenceMarker = null;
+      }
+      continue;
+    }
+    if (fenceMarker !== null) continue;
+    const headingMatch = line.match(OUTLINE_HEADING_PATTERN);
+    if (headingMatch) {
+      const title = headingMatch[2]?.trim() ?? "";
+      const level = headingMatch[1]?.length;
+      if (title && (level === 2 || level === 3)) {
+        items.push({ level, title });
+      }
+    }
+  }
+  return items;
 }
