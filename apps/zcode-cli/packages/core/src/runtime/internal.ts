@@ -24,6 +24,7 @@ import type {
   SmartRoutingPort,
   DesktopSettingsPort,
   ImageGenerationPort,
+  VoicePipelinePort,
   SkillPort,
   McpPort,
   DynamicWorkflowRunPort,
@@ -103,6 +104,8 @@ export interface AgentRuntimeInternal
   desktopSettingsPort?: DesktopSettingsPort;
   /** 图像生成/编辑端口；存在时注册 image_gen/image_edit（specs/image-tools.md）。 */
   imageGenerationPort?: ImageGenerationPort;
+  /** 语音转写/合成端口；存在时注册 asr_transcribe/tts_speech（specs/voice-pipeline.md）。 */
+  voicePipelinePort?: VoicePipelinePort;
   skillPort?: SkillPort;
   mcpPort?: McpPort;
   mcpStartupPromise?: Promise<McpConnectionSnapshot>;

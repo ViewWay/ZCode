@@ -412,6 +412,7 @@ async function executeToolCallImpl(
       sessionChatPort: deps.sessionChatPort,
       desktopSettingsPort: deps.desktopSettingsPort,
       imageGenerationPort: deps.imageGenerationPort,
+      voicePipelinePort: deps.voicePipelinePort,
       sessionStore: deps.sessionStore,
       sessionModePort: deps.sessionModePort,
       workflowPort: deps.workflowPort,

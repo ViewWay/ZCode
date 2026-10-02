@@ -69,6 +69,8 @@ export * from "./external-session.js";
 export * from "./desktop-setting.js";
 // 图像工具（specs/image-tools.md）：image_gen/image_edit 契约。
 export * from "./image-tool.js";
+// 语音工具（specs/voice-pipeline.md）：asr_transcribe/tts_speech 契约。
+export * from "./voice-tool.js";
 
 // Shared types (only once to avoid duplicates)
 export type { DiffHunk, GitDiff } from "./write.js";

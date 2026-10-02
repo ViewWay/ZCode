@@ -168,6 +168,7 @@ export type {
   PermissionBrokerRequest,
   DesktopSettingsPort,
   ImageGenerationPort,
+  VoicePipelinePort,
   PermissionBrokerRequestOptions,
   PermissionBrokerResult,
   PermissionUpdate,

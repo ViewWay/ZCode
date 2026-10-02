@@ -33,6 +33,8 @@ export * from "./interfaces/smart-routing.port.js";
 export * from "./interfaces/desktop-settings.port.js";
 // 图像生成/编辑端口（specs/image-tools.md）：bootstrap 本地装配，缺席 fail-closed。
 export * from "./interfaces/image-generation.port.js";
+// 语音转写/合成端口（specs/voice-pipeline.md）：bootstrap 本地装配，缺席 fail-closed。
+export * from "./interfaces/voice-pipeline.port.js";
 export * from "./interfaces/mcp.port.js";
 
 export * from "./interfaces/runtime-input-presentation.js";

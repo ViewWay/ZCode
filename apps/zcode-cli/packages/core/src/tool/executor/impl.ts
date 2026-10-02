@@ -54,6 +54,7 @@ export class ToolExecutorImpl implements ToolExecutor {
       sessionChatPort: options.sessionChatPort,
       desktopSettingsPort: options.desktopSettingsPort,
       imageGenerationPort: options.imageGenerationPort,
+      voicePipelinePort: options.voicePipelinePort,
       sessionStore: options.sessionStore,
       sessionModePort: options.sessionModePort,
       workflowPort: options.workflowPort,

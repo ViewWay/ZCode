@@ -86,6 +86,9 @@ function registerRuntimeBuiltInTools(runtime: AgentRuntimeInternal, deps: AgentR
     // 图像工具（specs/image-tools.md）：端口在场才注册；subagent 子会话不暴露。
     includeImageTools:
       Boolean(deps.imageGenerationPort) && runtime.config.taskType !== "subagent_child",
+    // 语音工具（specs/voice-pipeline.md）：端口在场才注册；subagent 子会话不暴露。
+    includeVoiceTools:
+      Boolean(deps.voicePipelinePort) && runtime.config.taskType !== "subagent_child",
     // 动态工作流灰度门：与 off-peak 相反，
     // 这里不能用端口在场做判据——十个工具的端口在任何 CLI 里都装配齐全，灰度是 Host 的决定。
     // 取值收在 tool-allowlist.ts，与分支刷新那个入口共用同一个推导。
@@ -211,6 +214,7 @@ function createRuntimeToolExecutor(
     sessionChatPort: deps.sessionChatPort,
     desktopSettingsPort: deps.desktopSettingsPort,
     imageGenerationPort: deps.imageGenerationPort,
+    voicePipelinePort: deps.voicePipelinePort,
     sessionStore: deps.sessionStore,
     sessionModePort: createRuntimeSessionModePort(runtime),
     workflowPort: deps.workflowPort,

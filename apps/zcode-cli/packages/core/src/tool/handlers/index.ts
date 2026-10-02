@@ -89,7 +89,14 @@ import {
 // 图像工具（specs/image-tools.md）：端口在场才注册（fail-closed）。
 import { imageGenToolEntry } from "./image-gen.js";
 import { imageEditToolEntry } from "./image-edit.js";
+// 语音工具（specs/voice-pipeline.md）：端口在场才注册（fail-closed）。
+import { asrTranscribeToolEntry } from "./asr-transcribe.js";
+import { ttsSpeechToolEntry } from "./tts-speech.js";
 import { IMAGE_GEN_TOOL_NAME, IMAGE_EDIT_TOOL_NAME } from "@zcode/contracts";
+import {
+  ASR_TRANSCRIBE_TOOL_NAME,
+  TTS_SPEECH_TOOL_NAME,
+} from "@zcode/contracts";
 import { amendWorkflowToolEntry } from "./amend-workflow.js";
 import { createWorkflowToolEntry } from "./create-workflow.js";
 import { saveWorkflowToolEntry } from "./save-workflow.js";
@@ -150,6 +157,9 @@ export const builtInTools: ToolEntry[] = [
   // 图像工具（specs/image-tools.md）：端口在场才注册（fail-closed）。
   imageGenToolEntry,
   imageEditToolEntry,
+  // 语音工具（specs/voice-pipeline.md）：端口在场才注册（fail-closed）。
+  asrTranscribeToolEntry,
+  ttsSpeechToolEntry,
   submitResultToolEntry,
   // actor 的升级通道。与 submit_result 完全同构：
   // 端口在场即注册（includeEscalate），`tools:"none"` 下由 workflow_child 的 allowlist
@@ -235,6 +245,8 @@ interface RegisterBuiltInToolsOptions {
   includeDesktopSettings?: boolean;
   /** 图像工具（specs/image-tools.md）：image_gen/image_edit，端口在场才注册。 */
   includeImageTools?: boolean;
+  /** 语音工具（specs/voice-pipeline.md）：asr_transcribe/tts_speech，端口在场才注册。 */
+  includeVoiceTools?: boolean;
   includeSubmitResult?: boolean;
   /**
    * 在场时 submit_result 以 typed 声明注册（`{ result: <schema> }`，strict 资格），供 dwf mono
@@ -335,6 +347,13 @@ export function registerBuiltInTools(
     if (
       (entry.metadata.name === IMAGE_GEN_TOOL_NAME || entry.metadata.name === IMAGE_EDIT_TOOL_NAME) &&
       options.includeImageTools !== true
+    ) {
+      continue;
+    }
+    if (
+      (entry.metadata.name === ASR_TRANSCRIBE_TOOL_NAME ||
+        entry.metadata.name === TTS_SPEECH_TOOL_NAME) &&
+      options.includeVoiceTools !== true
     ) {
       continue;
     }

@@ -97,6 +97,8 @@ import { collectDisabledPaths } from "../skill-command-overrides.js";
 import { loadPluginAgentProfiles, loadZCodeAgentProfiles } from "../subagents.js";
 // 图像工具（specs/image-tools.md）：CLI 进程内本地端口装配。
 import { createLocalImageGenerationPort } from "../image-generation/image-generation-port.js";
+// 语音工具（specs/voice-pipeline.md）：CLI 进程内本地端口装配。
+import { createLocalVoicePipelinePort } from "../voice-pipeline/voice-pipeline-port.js";
 import { createRuntimeAiSdkModelExecutionConfig } from "../model-config.js";
 import { ApiProviderModelRuntime } from "./provider-registry-model-runtime.js";
 import {
@@ -781,6 +783,9 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       // 图像工具（specs/image-tools.md）：CLI 进程内本地装配；v1 端点未配置时
       // 生成/编辑返回可读指引错误（spec 验收 3），产品确认端点后填入 seam。
       imageGenerationPort: createLocalImageGenerationPort(),
+      // 语音工具（specs/voice-pipeline.md）：CLI 进程内本地装配；v1 端点未配置时
+      // 返回可读指引错误（spec 待定项），产品确认端点后填入 seam。
+      voicePipelinePort: createLocalVoicePipelinePort(),
       smartRoutingPort: options.smartRoutingPort,
       appVersion,
       traceContext,
