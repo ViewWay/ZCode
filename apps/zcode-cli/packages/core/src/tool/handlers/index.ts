@@ -94,6 +94,8 @@ import { asrTranscribeToolEntry } from "./asr-transcribe.js";
 import { ttsSpeechToolEntry } from "./tts-speech.js";
 // PDF 预览联动（specs/pdf-preview-linkage.md）：桌面形态门待 UI 链路接入，当前休眠。
 import { pdfLocateToolEntry } from "./pdf-locate.js";
+// 交付物卡片（specs/deliverable-cards.md）：纯声明工具，always-on。
+import { presentFilesToolEntry } from "./present-files.js";
 import { IMAGE_GEN_TOOL_NAME, IMAGE_EDIT_TOOL_NAME } from "@zcode/contracts";
 import {
   ASR_TRANSCRIBE_TOOL_NAME,
@@ -165,6 +167,8 @@ export const builtInTools: ToolEntry[] = [
   ttsSpeechToolEntry,
   // PDF 预览联动（specs/pdf-preview-linkage.md）：桌面形态门待 UI 链路，当前休眠不注册。
   pdfLocateToolEntry,
+  // 交付物卡片（specs/deliverable-cards.md）：纯声明工具，always-on。
+  presentFilesToolEntry,
   submitResultToolEntry,
   // actor 的升级通道。与 submit_result 完全同构：
   // 端口在场即注册（includeEscalate），`tools:"none"` 下由 workflow_child 的 allowlist

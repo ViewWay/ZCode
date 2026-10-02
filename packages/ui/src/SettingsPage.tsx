@@ -711,6 +711,7 @@ export function SettingsPage({
   const [autoDownloadAndInstallUpdates, setAutoDownloadAndInstallUpdates] = useState(false);
   const [messageStreamShowReasoning, setMessageStreamShowReasoning] = useState(true);
   const [messageStreamShowTodos, setMessageStreamShowTodos] = useState(false);
+  const [messageStreamZwidgetEnabled, setMessageStreamZwidgetEnabled] = useState(true);
   const [toolGroupingExploreEnabled, setToolGroupingExploreEnabled] = useState(true);
   const [toolGroupingTerminalEnabled, setToolGroupingTerminalEnabled] = useState(true);
   const [toolGroupingChangesEnabled, setToolGroupingChangesEnabled] = useState(false);
@@ -795,6 +796,7 @@ export function SettingsPage({
         setAutoDownloadAndInstallUpdates(settings.autoDownloadAndInstallUpdates ?? false);
         setMessageStreamShowReasoning(settings.messageStreamShowReasoning ?? true);
         setMessageStreamShowTodos(settings.messageStreamShowTodos ?? false);
+        setMessageStreamZwidgetEnabled(settings.messageStreamZwidgetEnabled !== false);
         setToolGroupingExploreEnabled(settings.toolGroupingExploreEnabled ?? true);
         setToolGroupingTerminalEnabled(settings.toolGroupingTerminalEnabled ?? true);
         setToolGroupingChangesEnabled(settings.toolGroupingChangesEnabled ?? false);
@@ -828,6 +830,7 @@ export function SettingsPage({
     }
     setMessageStreamShowReasoning(sharedSettings.messageStreamShowReasoning ?? true);
     setMessageStreamShowTodos(sharedSettings.messageStreamShowTodos ?? false);
+    setMessageStreamZwidgetEnabled(sharedSettings.messageStreamZwidgetEnabled !== false);
     setToolGroupingExploreEnabled(sharedSettings.toolGroupingExploreEnabled ?? true);
     setToolGroupingTerminalEnabled(sharedSettings.toolGroupingTerminalEnabled ?? true);
     setToolGroupingChangesEnabled(sharedSettings.toolGroupingChangesEnabled ?? false);
@@ -1219,6 +1222,22 @@ export function SettingsPage({
         },
       });
       setMessageStreamShowTodos(enabled);
+    },
+    [updateSharedSettings],
+  );
+  const handleMessageStreamZwidgetEnabledChange = useCallback(
+    async (enabled: boolean) => {
+      await runSettingsActionAsync({
+        featureId: "settings.conversation",
+        action: "toggle_zwidget_render",
+        trigger: "switch",
+        operation: () => updateSharedSettings({ messageStreamZwidgetEnabled: enabled }),
+        completed: {
+          resultSource: "shared_settings",
+          stateAfter: enabled ? "enabled" : "disabled",
+        },
+      });
+      setMessageStreamZwidgetEnabled(enabled);
     },
     [updateSharedSettings],
   );
@@ -1733,6 +1752,7 @@ export function SettingsPage({
                             taskAutoArchiveOlderThanDays={taskAutoArchiveOlderThanDays}
                             messageStreamShowReasoning={messageStreamShowReasoning}
                             messageStreamShowTodos={messageStreamShowTodos}
+                            messageStreamZwidgetEnabled={messageStreamZwidgetEnabled}
                             toolGroupingExploreEnabled={toolGroupingExploreEnabled}
                             toolGroupingTerminalEnabled={toolGroupingTerminalEnabled}
                             toolGroupingChangesEnabled={toolGroupingChangesEnabled}
@@ -1776,6 +1796,9 @@ export function SettingsPage({
                               handleMessageStreamShowReasoningChange
                             }
                             onMessageStreamShowTodosChange={handleMessageStreamShowTodosChange}
+                            onMessageStreamZwidgetEnabledChange={
+                              handleMessageStreamZwidgetEnabledChange
+                            }
                             onToolGroupingExploreEnabledChange={
                               handleToolGroupingExploreEnabledChange
                             }

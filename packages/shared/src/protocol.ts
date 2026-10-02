@@ -299,6 +299,11 @@ export interface AppSettings {
   messageStreamShowReasoningMigrationInitialized?: boolean;
   /** 是否在消息流中展示 todo 工具渲染；不影响摘要面板的 todo */
   messageStreamShowTodos?: boolean;
+  /**
+   * 是否在消息流中渲染 ```zwidget 沙箱交互组件（specs/deliverable-cards.md）；
+   * undefined 即默认开启，显式 false 关闭后围栏退回普通代码块展示。
+   */
+  messageStreamZwidgetEnabled?: boolean;
   /** 是否把连续的只读工具调用聚合成 Explore。 */
   toolGroupingExploreEnabled?: boolean;
   /** 是否把连续的非只读 Shell 工具调用聚合成 Terminal。 */

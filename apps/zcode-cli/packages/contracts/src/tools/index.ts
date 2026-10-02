@@ -73,6 +73,8 @@ export * from "./image-tool.js";
 export * from "./voice-tool.js";
 // PDF 预览联动（specs/pdf-preview-linkage.md）：pdf_locate 契约。
 export * from "./pdf-locate.js";
+// 交付物卡片（specs/deliverable-cards.md）：present_files 契约。
+export * from "./present-files.js";
 
 // Shared types (only once to avoid duplicates)
 export type { DiffHunk, GitDiff } from "./write.js";
