@@ -410,6 +410,8 @@ import { createPluginSyncService } from "./plugin-sync/pluginSyncService.js";
 import { createPluginsService } from "./plugins/pluginsService.js";
 import { createPluginManagementService } from "./plugins/pluginManagementService.js";
 import { createSubagentsService } from "./subagents/subagentsService.js";
+import { ITeamsService } from "./teams/teams.js";
+import { createTeamsService } from "./teams/teamsDiscoveryService.js";
 import { createCommandsService } from "./commands/commandsService.js";
 import { createHooksService } from "./hooks/hooksService.js";
 import { createMemoryService } from "./memory/memoryService.js";
@@ -2588,6 +2590,8 @@ export function createLocalServices(options: {
     // 设置页插件管理薄服务——plugins/* 旧协议词的 host 侧唯一消费点。
     .register(IPluginManagementService, createPluginManagementService({ zcodeAgentService }))
     .register(ISubagentsService, subagentsService)
+    // Agent Teams 只读发现服务（roster 数据事实源在 agent runtime；desktop 宿主频道在此暴露）。
+    .register(ITeamsService, createTeamsService())
     .register(ICommandsService, createCommandsService({ isDesktopRuntime: true }))
     .register(
       IHooksService,
