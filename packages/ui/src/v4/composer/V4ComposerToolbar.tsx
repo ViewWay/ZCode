@@ -445,6 +445,11 @@ function V4ComposerModelControlsImpl({
     return resolveDraftDisplayedConfig(draftConfig ?? {});
   }, [draftConfig]);
 
+  // Smart 模式：触发器显示固定文案，不显示具体模型名（agent 调度）。
+  // 必须先于 rawModelValue 声明——rawModelValue 的 useMemo 引用它（TDZ）。
+  const isSmartSelection =
+    effectiveConfig?.provider === "smart" && effectiveConfig?.model === "auto";
+
   const handleOpenStartPlanUpgrade = useCallback(
     (providerId: string) => {
       openCodingPlanUpgrade({
@@ -820,9 +825,6 @@ function V4ComposerModelControlsImpl({
   );
   const normalizedModelValue = triggerDisplay.value ?? "";
 
-  // Smart 模式：触发器显示固定文案，不显示具体模型名（agent 调度）。
-  const isSmartSelection =
-    effectiveConfig?.provider === "smart" && effectiveConfig?.model === "auto";
   const modelTriggerDisplay = useMemo(() => {
     if (isSmartSelection) {
       const smartLabel = intl.formatMessage({ id: "chat.model.smart" });
