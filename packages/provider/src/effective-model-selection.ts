@@ -37,7 +37,25 @@ export function resolveEffectiveModelSelection(input: {
       if (!routed) {
         return Object.freeze({ effectiveSelection: null, selectionIssue: "provider-not-found" });
       }
-      original = routed;
+      // 路由结果若命中要求思考档位的模型而未携带档位，按目录补全（取末档，与
+      // completeNewModelSelection 同语义），否则模型创建会因档位缺失失败。
+      const routedModel = input.registry.providers
+        .find((provider) => provider.providerId === routed.providerId)
+        ?.models.find((candidate) => candidate.modelId === routed.modelId);
+      const reasoningValues = (
+        routedModel?.config as
+          | { optionSpecs?: { reasoningLevel?: { values?: readonly string[] } } }
+          | undefined
+      )?.optionSpecs?.reasoningLevel?.values;
+      const reasoningLevel =
+        reasoningValues && reasoningValues.length > 0
+          ? reasoningValues[reasoningValues.length - 1]
+          : undefined;
+      original = {
+        providerId: routed.providerId,
+        modelId: routed.modelId,
+        ...(reasoningLevel === undefined ? {} : { options: { reasoningLevel } }),
+      };
     } else {
       return Object.freeze({
         effectiveSelection: Object.freeze({
