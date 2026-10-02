@@ -60,6 +60,9 @@ export * from "./team.js";
 export * from "./team-task.js";
 export * from "./teammate-spawn.js";
 export * from "./team-knowledge.js";
+// 会话互聊（实验）：三个工具的名字常量与 schema 被 core 的工具注册与 handler 读走；
+// 漏掉这行注册门拿不到 SESSION_*_TOOL_NAME，工具面静默缺失。
+export * from "./session-chat.js";
 
 // Shared types (only once to avoid duplicates)
 export type { DiffHunk, GitDiff } from "./write.js";

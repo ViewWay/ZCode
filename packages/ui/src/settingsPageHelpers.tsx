@@ -82,6 +82,7 @@ export function GeneralSectionContent({
   zcodeInteractionBehavior,
   askUserQuestionAutoResolutionEnabled = true,
   modelIoFullRetentionEnabled = false,
+  sessionChatEnabled = false,
   onDataBaseDirChange,
   onSelectDataBaseDir,
   onTerminalInheritSystemProfileChange = async () => {},
@@ -106,6 +107,7 @@ export function GeneralSectionContent({
   onZCodeInteractionBehaviorChange,
   onAskUserQuestionAutoResolutionEnabledChange = async () => {},
   onModelIoFullRetentionEnabledChange = async () => {},
+  onSessionChatEnabledChange = async () => {},
   onOpenOnboardingDialog,
 }: {
   localePreference: LocalePreference;
@@ -145,6 +147,7 @@ export function GeneralSectionContent({
   zcodeInteractionBehavior: ZCodeInteractionBehavior;
   askUserQuestionAutoResolutionEnabled?: boolean;
   modelIoFullRetentionEnabled?: boolean;
+  sessionChatEnabled?: boolean;
   onDataBaseDirChange: (dir: string) => Promise<void>;
   onSelectDataBaseDir: () => Promise<string | null>;
   onTerminalInheritSystemProfileChange: (enabled: boolean) => Promise<void>;
@@ -169,6 +172,7 @@ export function GeneralSectionContent({
   onZCodeInteractionBehaviorChange: (behavior: ZCodeInteractionBehavior) => Promise<void>;
   onAskUserQuestionAutoResolutionEnabledChange?: (enabled: boolean) => Promise<void>;
   onModelIoFullRetentionEnabledChange?: (enabled: boolean) => Promise<void>;
+  onSessionChatEnabledChange?: (enabled: boolean) => Promise<void>;
   onOpenOnboardingDialog: () => void;
 }) {
   const { intl } = useZCodeIntl();
@@ -728,6 +732,19 @@ export function GeneralSectionContent({
               checked={modelIoFullRetentionEnabled}
               onCheckedChange={(checked) => {
                 void onModelIoFullRetentionEnabledChange(checked);
+              }}
+            />
+          }
+        />
+        <SettingsRow
+          label={intl.formatMessage({ id: "settings.sessionChat" })}
+          description={intl.formatMessage({ id: "settings.sessionChatDescription" })}
+          control={
+            <Switch
+              aria-label={intl.formatMessage({ id: "settings.sessionChat" })}
+              checked={sessionChatEnabled}
+              onCheckedChange={(checked) => {
+                void onSessionChatEnabledChange(checked);
               }}
             />
           }

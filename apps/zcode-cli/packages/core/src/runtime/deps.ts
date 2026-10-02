@@ -170,6 +170,7 @@ export type {
   PermissionBrokerResult,
   PermissionUpdate,
   ProjectId,
+  SessionChatPort,
   SessionEvent,
   SessionEntryInfo,
   SessionEventSink,

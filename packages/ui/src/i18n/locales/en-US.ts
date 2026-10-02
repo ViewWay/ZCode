@@ -2382,6 +2382,9 @@ const enUS: Record<string, string> = {
   "settings.modelIoFullRetention": "Keep complete model I/O",
   "settings.modelIoFullRetentionDescription":
     "Keep complete model requests and responses without compression, size limits, or automatic deletion.",
+  "settings.sessionChat": "Session inter-chat (experimental)",
+  "settings.sessionChatDescription":
+    "Let sessions call each other: new sessions get tools to list other live sessions in this workspace, message them, and create collaborator sessions. Applies to sessions created after the change.",
   "settings.performanceMode": "Performance mode",
   "settings.performanceModeDescription": "Simplify rendered output to improve performance.",
   "settings.taskAutoArchive": "Auto-archive old tasks",

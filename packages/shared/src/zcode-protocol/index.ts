@@ -2234,6 +2234,35 @@ export type ZCodeWorkspaceUpdateModelIoPreferencesResult = z.infer<
   typeof zcodeWorkspaceUpdateModelIoPreferencesResultSchema
 >;
 
+// 会话互聊（实验）工具面开关；与 modelIo 偏好同款独立方法（additive，旧 CLI
+// method-not-found 可降级，不污染既有 strict 偏好 payload）。
+export const zcodeSessionChatPreferencesSchema = z
+  .object({
+    sessionChatEnabled: z.boolean(),
+  })
+  .strict();
+export type ZCodeSessionChatPreferences = z.infer<typeof zcodeSessionChatPreferencesSchema>;
+
+export const zcodeWorkspaceUpdateSessionChatPreferencesParamsSchema = z
+  .object({
+    workspace: zcodeWorkspaceRefSchema,
+    preferences: zcodeSessionChatPreferencesSchema,
+  })
+  .strict();
+export type ZCodeWorkspaceUpdateSessionChatPreferencesParams = z.infer<
+  typeof zcodeWorkspaceUpdateSessionChatPreferencesParamsSchema
+>;
+
+export const zcodeWorkspaceUpdateSessionChatPreferencesResultSchema = z
+  .object({
+    workspace: zcodeWorkspaceRefSchema,
+    sessionChatEnabled: z.boolean(),
+  })
+  .strict();
+export type ZCodeWorkspaceUpdateSessionChatPreferencesResult = z.infer<
+  typeof zcodeWorkspaceUpdateSessionChatPreferencesResultSchema
+>;
+
 export const zcodeWorkspaceUpdateOffPeakToolPolicyParamsSchema = z
   .object({
     workspace: zcodeWorkspaceRefSchema,
@@ -3608,6 +3637,8 @@ export const zcodeProtocolMethods = {
   workspaceUpdateOffPeakToolPolicy: "workspace/updateOffPeakToolPolicy",
   // 动态工作流灰度门禁：同 Off-Peak 的同步模式。
   workspaceUpdateDynamicWorkflowPolicy: "workspace/updateDynamicWorkflowPolicy",
+  // 会话互聊（实验）工具面开关：同 modelIo 的同步模式（additive 独立方法）。
+  workspaceUpdateSessionChatPreferences: "workspace/updateSessionChatPreferences",
   // LLM 执行面在 CLI，直连不可行；消费仅 services 内部
   // （commit message），待 v4 workspace 查询/命令面覆盖后移除。
   workspaceGenerateText: "workspace/generateText",

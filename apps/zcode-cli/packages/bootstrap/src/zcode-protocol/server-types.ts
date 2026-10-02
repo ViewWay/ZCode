@@ -140,6 +140,12 @@ export interface ZCodeProtocolAgentServerContext {
      * 工作流工具面、`/workflow` 与 dynamic-workflows 技能一律不露出。
      */
     dynamicWorkflowEnabled: boolean;
+    /**
+     * host 同步的会话互聊（实验）工具面门。
+     * 缺省 false（fail-closed）：开关只影响之后创建/恢复的会话（端口在 runtime
+     * 装配时注入）；与 offPeakToolEnabled 的生命周期语义一致。
+     */
+    sessionChatEnabled: boolean;
   };
   // 竖切：v4 conversation 通道（订阅/帧/命令），与旧 session/* 方法并存。
   // 构造顺序问题（gateway 闭包持有 context）用可选字段收口，server 构造完立即赋值。

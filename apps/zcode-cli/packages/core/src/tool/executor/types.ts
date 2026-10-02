@@ -13,6 +13,7 @@ import type {
   ExecutionShellSelection,
   AutomationPort,
   OffPeakPort,
+  SessionChatPort,
   FileSystemPort,
   HttpClientPort,
   ImageProcessorPort,
@@ -106,6 +107,8 @@ export interface ToolExecutorOptions {
   artifactStore?: ToolArtifactStorePort;
   automationPort?: AutomationPort;
   offPeakPort?: OffPeakPort;
+  /** 会话互聊（实验）端口；存在即为该会话注册 SessionList/SessionTalk/SessionCreate。 */
+  sessionChatPort?: SessionChatPort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;
   workflowPort?: WorkflowPort;
@@ -214,6 +217,8 @@ export interface ToolExecutorDeps {
   artifactStore?: ToolArtifactStorePort;
   automationPort?: AutomationPort;
   offPeakPort?: OffPeakPort;
+  /** 会话互聊（实验）端口；存在即为该会话注册 SessionList/SessionTalk/SessionCreate。 */
+  sessionChatPort?: SessionChatPort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;
   workflowPort?: WorkflowPort;

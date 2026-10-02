@@ -685,6 +685,7 @@ export function SettingsPage({
   const askUserQuestionAutoResolutionEnabled =
     sharedSettings?.askUserQuestionAutoResolutionEnabled !== false;
   const modelIoFullRetentionEnabled = sharedSettings?.modelIoFullRetentionEnabled === true;
+  const sessionChatEnabled = sharedSettings?.sessionChatEnabled === true;
   const [dataBaseDir, setDataBaseDir] = useState("");
   const [terminalInheritSystemProfile, setTerminalInheritSystemProfile] = useState(true);
   const [terminalFontFamily, setTerminalFontFamily] = useState("");
@@ -917,6 +918,21 @@ export function SettingsPage({
         action: "toggle_model_io_retention",
         trigger: "switch",
         operation: () => updateSharedSettings({ modelIoFullRetentionEnabled: enabled }),
+        completed: {
+          resultSource: "shared_settings",
+          stateAfter: enabled ? "enabled" : "disabled",
+        },
+      });
+    },
+    [updateSharedSettings],
+  );
+  const handleSessionChatEnabledChange = useCallback(
+    async (enabled: boolean) => {
+      await runSettingsActionAsync({
+        featureId: "settings.conversation",
+        action: "toggle_session_chat",
+        trigger: "switch",
+        operation: () => updateSharedSettings({ sessionChatEnabled: enabled }),
         completed: {
           resultSource: "shared_settings",
           stateAfter: enabled ? "enabled" : "disabled",
@@ -1724,6 +1740,7 @@ export function SettingsPage({
                               askUserQuestionAutoResolutionEnabled
                             }
                             modelIoFullRetentionEnabled={modelIoFullRetentionEnabled}
+                            sessionChatEnabled={sessionChatEnabled}
                             onDataBaseDirChange={handleDataBaseDirChange}
                             onSelectDataBaseDir={selectDirectory}
                             onTerminalInheritSystemProfileChange={
@@ -1737,6 +1754,7 @@ export function SettingsPage({
                             onModelIoFullRetentionEnabledChange={
                               handleModelIoFullRetentionEnabledChange
                             }
+                            onSessionChatEnabledChange={handleSessionChatEnabledChange}
                             onHttpProxyChange={handleHttpProxyChange}
                             onHttpProxyNoProxyChange={handleHttpProxyNoProxyChange}
                             onHttpProxyCaCertPathChange={handleHttpProxyCaCertPathChange}

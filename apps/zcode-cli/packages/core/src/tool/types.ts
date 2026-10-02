@@ -6,6 +6,7 @@ import type {
   ExecutionShellSelection,
   AutomationPort,
   OffPeakPort,
+  SessionChatPort,
   EmbeddedSearchBackend,
   ExecutionPort,
   BrowserControlPort,
@@ -167,6 +168,8 @@ export interface ToolExecutionContext {
   artifactStore?: ToolArtifactStorePort;
   automationPort?: AutomationPort;
   offPeakPort?: OffPeakPort;
+  /** 会话互聊（实验）端口；端口缺席时 SessionList/SessionTalk/SessionCreate 不注册。 */
+  sessionChatPort?: SessionChatPort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;
   workflowPort?: WorkflowPort;

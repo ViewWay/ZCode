@@ -65,6 +65,11 @@ import {
   teamKnowledgeSearchToolEntry,
   teamKnowledgeWriteToolEntry,
 } from "./team-knowledge.js";
+import {
+  sessionCreateToolEntry,
+  sessionListToolEntry,
+  sessionTalkToolEntry,
+} from "./session-chat.js";
 import { createSubmitResultToolEntry, submitResultToolEntry } from "./submit-result.js";
 import { escalateToolEntry } from "./escalate.js";
 import { resolveWorkflowQuestionToolEntry } from "./resolve-workflow-question.js";
@@ -120,6 +125,11 @@ export const builtInTools: ToolEntry[] = [
   teamKnowledgeWriteToolEntry,
   teamKnowledgeSearchToolEntry,
   teamKnowledgePromoteToolEntry,
+  // TeamPlan（v2.10）：计划-审批-启动。TeamPlanApprove 走 needsApproval 人类权限面。
+  // 会话互聊（实验，默认关闭）：端口在场（宿主开关开启）才注册。
+  sessionListToolEntry,
+  sessionTalkToolEntry,
+  sessionCreateToolEntry,
   submitResultToolEntry,
   // actor 的升级通道。与 submit_result 完全同构：
   // 端口在场即注册（includeEscalate），`tools:"none"` 下由 workflow_child 的 allowlist
@@ -193,6 +203,11 @@ interface RegisterBuiltInToolsOptions {
   includeTeam?: boolean;
   /** Agent Teams 共享任务面（TaskCreate/TaskUpdate/TaskGet/TaskList）：lead 与 teammate 都可用。 */
   includeTeamTasks?: boolean;
+  /**
+   * 会话互聊（实验）：SessionList/SessionTalk/SessionCreate。门与 off-peak 同款
+   * ——只在宿主注入了 SessionChatPort 的会话注册；subagent_child 不暴露（无嵌套互聊）。
+   */
+  includeSessionChat?: boolean;
   includeSubmitResult?: boolean;
   /**
    * 在场时 submit_result 以 typed 声明注册（`{ result: <schema> }`，strict 资格），供 dwf mono
@@ -255,7 +270,10 @@ export function registerBuiltInTools(
       continue;
     }
     if (
-      (entry.metadata.name === "TeamCreate" || entry.metadata.name === "TeamDelete") &&
+      (entry.metadata.name === "TeamCreate" ||
+        entry.metadata.name === "TeamDelete" ||
+        entry.metadata.name === "TeamPlan" ||
+        entry.metadata.name === "TeamPlanApprove") &&
       options.includeTeam !== true
     ) {
       continue;
@@ -269,6 +287,14 @@ export function registerBuiltInTools(
         entry.metadata.name === "TeamKnowledgeSearch" ||
         entry.metadata.name === "TeamKnowledgePromote") &&
       options.includeTeamTasks !== true
+    ) {
+      continue;
+    }
+    if (
+      (entry.metadata.name === "SessionList" ||
+        entry.metadata.name === "SessionTalk" ||
+        entry.metadata.name === "SessionCreate") &&
+      options.includeSessionChat !== true
     ) {
       continue;
     }

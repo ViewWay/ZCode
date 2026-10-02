@@ -98,6 +98,7 @@ import {
   zcodeWorkspaceHookTrustGrantResultSchema,
   zcodeWorkspaceUpdateInteractionPreferencesResultSchema,
   zcodeWorkspaceUpdateModelIoPreferencesResultSchema,
+  zcodeWorkspaceUpdateSessionChatPreferencesResultSchema,
   zcodeProviderUpdateAccountConfigResultSchema,
   type ZCodeSessionStateSnapshot,
   type ZCodeAutomation,
@@ -1488,6 +1489,21 @@ export function createZCodeAgentService(
           );
         } catch (error) {
           // 新 Host 兼容尚未升级的 CLI：只有 method-not-found 可降级，其他同步失败仍需上抛。
+          if (!isProtocolMethodNotFoundError(error)) throw error;
+        }
+        try {
+          await params.client.request(
+            zcodeProtocolMethods.workspaceUpdateSessionChatPreferences,
+            {
+              workspace: buildWorkspaceRef(params.workspace),
+              preferences: {
+                sessionChatEnabled: params.preferences.sessionChatEnabled === true,
+              },
+            },
+            zcodeWorkspaceUpdateSessionChatPreferencesResultSchema,
+          );
+        } catch (error) {
+          // 会话互聊（实验）开关与 modelIo 同款降级：旧 CLI method-not-found 忽略。
           if (!isProtocolMethodNotFoundError(error)) throw error;
         }
       });

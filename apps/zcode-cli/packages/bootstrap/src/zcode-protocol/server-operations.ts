@@ -108,6 +108,7 @@ import { buildAppUsageSnapshot, resolveTzOffsetMs } from "./usage-stats-builder.
 import { createProtocolInteractionBroker } from "./interaction-broker.js";
 import { createProtocolAutomationPort } from "./automation-port.js";
 import { createProtocolOffPeakPort } from "./offpeak-port.js";
+import { createProtocolSessionChatPort } from "./session-chat-port.js";
 import { createProtocolBrowserControlBroker } from "./browser-control-broker.js";
 import { mapComputerUseOperationEvent } from "./computer-use-operation-event.js";
 import { protocolMcpServersToRuntimeMcpConfig } from "./protocol-mcp-config.js";
@@ -3381,6 +3382,16 @@ async function createRecord(
     ...(("offPeakToolEnabled" in params && params.offPeakToolEnabled === true) ||
     context.appRuntimePreferences.offPeakToolEnabled === true
       ? { offPeakPort: createProtocolOffPeakPort(context, () => ownSessionRecord) }
+      : {}),
+    // 会话互聊（实验）：Host 同步 sessionChatEnabled 后才注入端口；端口存在即注册
+    // SessionList/SessionTalk/SessionCreate（fail-closed，缺省不注入）。
+    // createRecord 依赖注入 createSessionRecordForV4，避免与 session-chat-port 模块循环依赖。
+    ...(context.appRuntimePreferences.sessionChatEnabled === true
+      ? {
+          sessionChatPort: createProtocolSessionChatPort(context, () => ownSessionRecord, {
+            createRecord: (rawParams) => createSessionRecordForV4(context, rawParams),
+          }),
+        }
       : {}),
     resolveInitialBashShellSelection: startupPreferences.resolveInitialBashShellSelection,
     // browser-use：agent.browsers.* 经此把命令转成 interaction/browserExecute 反向请求。

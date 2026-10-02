@@ -7,6 +7,8 @@ export const appRuntimePreferencesChangedBroadcastPayloadSchema = z
   .object({
     askUserQuestionAutoResolutionEnabled: z.boolean(),
     modelIoFullRetentionEnabled: z.boolean().default(false),
+    /** 会话互聊（实验）工具面开关；缺省 false（fail-closed）。 */
+    sessionChatEnabled: z.boolean().default(false),
   })
   .strict();
 

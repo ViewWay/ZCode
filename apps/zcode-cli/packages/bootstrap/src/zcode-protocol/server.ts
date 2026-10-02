@@ -85,6 +85,7 @@ import { listMcpServers } from "./mcp.js";
 import { updateInteractionPreferences } from "./interaction-preferences.js";
 import { updateAccountProviderConfig } from "./account-provider-config.js";
 import { updateModelIoPreferences } from "./model-io-preferences.js";
+import { updateSessionChatPreferences } from "./session-chat-preferences.js";
 import { updateOffPeakToolPolicy } from "./off-peak-tool-policy.js";
 import { updateDynamicWorkflowPolicy } from "./dynamic-workflow-policy.js";
 import { grantWorkspaceHookTrustForProtocol } from "./workspace-hook-trust.js";
@@ -253,6 +254,9 @@ export class ZCodeProtocolAgentServer {
         // 动态工作流灰度门 fail-closed：Host 必须显式 workspace/updateDynamicWorkflowPolicy
         // 才开启。
         dynamicWorkflowEnabled: false,
+        // 会话互聊（实验）fail-closed：Host 必须显式 workspace/updateSessionChatPreferences
+        // 才开启；之后创建/恢复的会话才带 SessionList/SessionTalk/SessionCreate 工具面。
+        sessionChatEnabled: false,
       },
       notify: (notification) => this.messageSink?.(notification),
       requestClient: (method, params, resultSchema, options) =>
@@ -629,6 +633,8 @@ export class ZCodeProtocolAgentServer {
         return await updateInteractionPreferences(this.context, request.params);
       case zcodeProtocolMethods.workspaceUpdateModelIoPreferences:
         return await updateModelIoPreferences(this.context, request.params);
+      case zcodeProtocolMethods.workspaceUpdateSessionChatPreferences:
+        return await updateSessionChatPreferences(this.context, request.params);
       case zcodeProtocolMethods.workspaceUpdateOffPeakToolPolicy:
         return await updateOffPeakToolPolicy(this.context, request.params);
       case zcodeProtocolMethods.workspaceUpdateDynamicWorkflowPolicy:

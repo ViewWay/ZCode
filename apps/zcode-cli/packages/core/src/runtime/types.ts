@@ -72,6 +72,7 @@ import type {
   ExecutionShellSelection,
   AutomationPort,
   OffPeakPort,
+  SessionChatPort,
   FileSystemPort,
   HttpClientPort,
   ImageProcessorPort,
@@ -376,6 +377,8 @@ export interface AgentRuntimeDeps {
   artifactStore?: ToolArtifactStorePort;
   automationPort?: AutomationPort;
   offPeakPort?: OffPeakPort;
+  /** 会话互聊（实验）端口；存在即在主会话注册 SessionList/SessionTalk/SessionCreate。 */
+  sessionChatPort?: SessionChatPort;
   contextSourcePort?: ContextSourcePort;
   eventSink?: SessionEventSink;
   logger?: Logger;

@@ -551,6 +551,8 @@ export type ZCodeAgentServiceEvent =
 export interface ZCodeAgentAppRuntimePreferences {
   askUserQuestionAutoResolutionEnabled: boolean;
   modelIoFullRetentionEnabled?: boolean;
+  /** 会话互聊（实验）工具面开关；缺省 false（fail-closed），只在显式 true 时下发。 */
+  sessionChatEnabled?: boolean;
 }
 
 export interface ZCodeAgentLocalRuntimeChildProcesses {

@@ -311,6 +311,11 @@ export interface AppSettings {
   askUserQuestionAutoResolutionEnabled?: boolean;
   /** 是否完整保留 Model I/O；开启后不轮转、不限额重置、不压缩或裁剪，鉴权信息仍会脱敏。 */
   modelIoFullRetentionEnabled?: boolean;
+  /**
+   * 会话互聊（实验）：开启后新会话向模型提供 SessionList/SessionTalk/SessionCreate
+   * 工具（呼叫同 workspace 其它会话、创建协作者会话）；默认关闭。
+   */
+  sessionChatEnabled?: boolean;
   /** 设置页中每个 Provider Family 当前唯一的结构化连接选择。 */
   providerFamilyConnectionSelections?: ProviderFamilyConnectionSelectionSettings;
   /** 用户通过 WelcomeScreen 成功连接后确认的 ZAI / BigModel provider family 运行域。 */
