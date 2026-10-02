@@ -167,6 +167,7 @@ export type {
   PermissionBrokerPort,
   PermissionBrokerRequest,
   DesktopSettingsPort,
+  ImageGenerationPort,
   PermissionBrokerRequestOptions,
   PermissionBrokerResult,
   PermissionUpdate,

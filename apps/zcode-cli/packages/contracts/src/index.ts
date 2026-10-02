@@ -31,6 +31,8 @@ export * from "./interfaces/session-chat.port.js";
 export * from "./interfaces/smart-routing.port.js";
 // agent 可调桌面设置（specs/agent-settings.md）：宿主端口，缺席 fail-closed。
 export * from "./interfaces/desktop-settings.port.js";
+// 图像生成/编辑端口（specs/image-tools.md）：bootstrap 本地装配，缺席 fail-closed。
+export * from "./interfaces/image-generation.port.js";
 export * from "./interfaces/mcp.port.js";
 
 export * from "./interfaces/runtime-input-presentation.js";

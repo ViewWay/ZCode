@@ -75,6 +75,7 @@ import type {
   SessionChatPort,
   SmartRoutingPort,
   DesktopSettingsPort,
+  ImageGenerationPort,
   FileSystemPort,
   HttpClientPort,
   ImageProcessorPort,
@@ -385,6 +386,8 @@ export interface AgentRuntimeDeps {
   smartRoutingPort?: SmartRoutingPort;
   /** agent 可调桌面设置端口；存在时注册 Get/SetDesktopSetting（specs/agent-settings.md）。 */
   desktopSettingsPort?: DesktopSettingsPort;
+  /** 图像生成/编辑端口；存在时注册 image_gen/image_edit（specs/image-tools.md）。 */
+  imageGenerationPort?: ImageGenerationPort;
   contextSourcePort?: ContextSourcePort;
   eventSink?: SessionEventSink;
   logger?: Logger;

@@ -23,6 +23,7 @@ import type {
   SkillLoadOutcome,
   SmartRoutingPort,
   DesktopSettingsPort,
+  ImageGenerationPort,
   SkillPort,
   McpPort,
   DynamicWorkflowRunPort,
@@ -100,6 +101,8 @@ export interface AgentRuntimeInternal
   smartRoutingPort?: SmartRoutingPort;
   /** agent 可调桌面设置端口；存在时注册 Get/SetDesktopSetting（specs/agent-settings.md）。 */
   desktopSettingsPort?: DesktopSettingsPort;
+  /** 图像生成/编辑端口；存在时注册 image_gen/image_edit（specs/image-tools.md）。 */
+  imageGenerationPort?: ImageGenerationPort;
   skillPort?: SkillPort;
   mcpPort?: McpPort;
   mcpStartupPromise?: Promise<McpConnectionSnapshot>;

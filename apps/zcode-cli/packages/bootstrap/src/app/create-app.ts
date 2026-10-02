@@ -95,6 +95,8 @@ import { resolveZCodeCustomCommandPrompt } from "../custom-command-prompt.js";
 import { resolveZCodeBuiltinPromptCommand } from "../builtin-prompt-command.js";
 import { collectDisabledPaths } from "../skill-command-overrides.js";
 import { loadPluginAgentProfiles, loadZCodeAgentProfiles } from "../subagents.js";
+// 图像工具（specs/image-tools.md）：CLI 进程内本地端口装配。
+import { createLocalImageGenerationPort } from "../image-generation/image-generation-port.js";
 import { createRuntimeAiSdkModelExecutionConfig } from "../model-config.js";
 import { ApiProviderModelRuntime } from "./provider-registry-model-runtime.js";
 import {
@@ -776,6 +778,9 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       offPeakPort: options.offPeakPort,
       sessionChatPort: options.sessionChatPort,
       desktopSettingsPort: options.desktopSettingsPort,
+      // 图像工具（specs/image-tools.md）：CLI 进程内本地装配；v1 端点未配置时
+      // 生成/编辑返回可读指引错误（spec 验收 3），产品确认端点后填入 seam。
+      imageGenerationPort: createLocalImageGenerationPort(),
       smartRoutingPort: options.smartRoutingPort,
       appVersion,
       traceContext,

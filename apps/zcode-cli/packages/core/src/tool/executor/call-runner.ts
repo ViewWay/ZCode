@@ -411,6 +411,7 @@ async function executeToolCallImpl(
       offPeakPort: deps.offPeakPort,
       sessionChatPort: deps.sessionChatPort,
       desktopSettingsPort: deps.desktopSettingsPort,
+      imageGenerationPort: deps.imageGenerationPort,
       sessionStore: deps.sessionStore,
       sessionModePort: deps.sessionModePort,
       workflowPort: deps.workflowPort,

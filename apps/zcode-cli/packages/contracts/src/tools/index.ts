@@ -67,6 +67,8 @@ export * from "./session-chat.js";
 export * from "./external-session.js";
 // agent 可调桌面设置（specs/agent-settings.md）：工具名常量与按 key value Schema。
 export * from "./desktop-setting.js";
+// 图像工具（specs/image-tools.md）：image_gen/image_edit 契约。
+export * from "./image-tool.js";
 
 // Shared types (only once to avoid duplicates)
 export type { DiffHunk, GitDiff } from "./write.js";
