@@ -63,6 +63,10 @@ export * from "./team-knowledge.js";
 // 会话互聊（实验）：三个工具的名字常量与 schema 被 core 的工具注册与 handler 读走；
 // 漏掉这行注册门拿不到 SESSION_*_TOOL_NAME，工具面静默缺失。
 export * from "./session-chat.js";
+// 外部会话只读互操作（specs/external-sessions.md）：工具名常量与 schema 被 core 工具注册读走。
+export * from "./external-session.js";
+// agent 可调桌面设置（specs/agent-settings.md）：工具名常量与按 key value Schema。
+export * from "./desktop-setting.js";
 
 // Shared types (only once to avoid duplicates)
 export type { DiffHunk, GitDiff } from "./write.js";

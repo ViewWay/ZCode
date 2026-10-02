@@ -76,6 +76,16 @@ import { resolveWorkflowQuestionToolEntry } from "./resolve-workflow-question.js
 import { taskOutputToolEntry } from "./task-output.js";
 import { taskStopToolEntry } from "./task-stop.js";
 import { readSessionContextToolEntry } from "./read-session-context.js";
+// 外部会话只读互操作（specs/external-sessions.md）：always-on 只读工具，端口无关。
+import { listExternalSessionsToolEntry } from "./external-session-list.js";
+import { readExternalSessionToolEntry } from "./external-session-read.js";
+// agent 可调桌面设置（specs/agent-settings.md）：端口在场才注册（fail-closed）。
+import { getDesktopSettingToolEntry } from "./get-desktop-setting.js";
+import { setDesktopSettingToolEntry } from "./set-desktop-setting.js";
+import {
+  GET_DESKTOP_SETTING_TOOL_NAME,
+  SET_DESKTOP_SETTING_TOOL_NAME,
+} from "@zcode/contracts";
 import { amendWorkflowToolEntry } from "./amend-workflow.js";
 import { createWorkflowToolEntry } from "./create-workflow.js";
 import { saveWorkflowToolEntry } from "./save-workflow.js";
@@ -130,6 +140,9 @@ export const builtInTools: ToolEntry[] = [
   sessionListToolEntry,
   sessionTalkToolEntry,
   sessionCreateToolEntry,
+  // agent 可调桌面设置（specs/agent-settings.md）：端口在场才注册（fail-closed）。
+  getDesktopSettingToolEntry,
+  setDesktopSettingToolEntry,
   submitResultToolEntry,
   // actor 的升级通道。与 submit_result 完全同构：
   // 端口在场即注册（includeEscalate），`tools:"none"` 下由 workflow_child 的 allowlist
@@ -139,6 +152,9 @@ export const builtInTools: ToolEntry[] = [
   taskOutputToolEntry,
   taskStopToolEntry,
   readSessionContextToolEntry,
+  // 外部会话只读互操作（specs/external-sessions.md）：always-on 只读工具。
+  listExternalSessionsToolEntry,
+  readExternalSessionToolEntry,
   agentToolEntry,
   taskToolEntry,
   skillToolEntry,
@@ -208,6 +224,8 @@ interface RegisterBuiltInToolsOptions {
    * ——只在宿主注入了 SessionChatPort 的会话注册；subagent_child 不暴露（无嵌套互聊）。
    */
   includeSessionChat?: boolean;
+  /** agent 可调桌面设置（specs/agent-settings.md）：Get/SetDesktopSetting，端口在场才注册。 */
+  includeDesktopSettings?: boolean;
   includeSubmitResult?: boolean;
   /**
    * 在场时 submit_result 以 typed 声明注册（`{ result: <schema> }`，strict 资格），供 dwf mono
@@ -295,6 +313,13 @@ export function registerBuiltInTools(
         entry.metadata.name === "SessionTalk" ||
         entry.metadata.name === "SessionCreate") &&
       options.includeSessionChat !== true
+    ) {
+      continue;
+    }
+    if (
+      (entry.metadata.name === GET_DESKTOP_SETTING_TOOL_NAME ||
+        entry.metadata.name === SET_DESKTOP_SETTING_TOOL_NAME) &&
+      options.includeDesktopSettings !== true
     ) {
       continue;
     }
