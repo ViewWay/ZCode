@@ -1,5 +1,6 @@
 import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
+import { parse } from "yaml";
 import { collectNpmNotices, hashBytes } from "./third-party-npm.mjs";
 import {
   noticesFileName,
@@ -23,9 +24,11 @@ export async function generateThirdPartyNotices(root = repositoryRoot) {
     if (hashBytes(await readInput(runtime.file)) !== runtime.sha256)
       throw new Error(`Changed Node ${runtime.version} license`);
   }
-  const pkg = await readJson("package.json");
+  // pnpm 10 起不再读取 package.json 的 pnpm 字段，overrides/patchedDependencies 以
+  // pnpm-workspace.yaml 为唯一配置源；package.json 仍作为 provenance 输入参与哈希。
+  await readInput("package.json");
   await readInput("pnpm-lock.yaml");
-  await readInput("pnpm-workspace.yaml");
+  const workspaceSettings = parse((await readInput("pnpm-workspace.yaml")).toString("utf8"));
   await readInput("third-party/native-search/sources.json");
   const { packages, notInstalled, workspaceManifests } = await collectNpmNotices(root, overrides);
   // 修复：递归扫描会把 bundled-agents/mock-cdn 的可删除缓存当作源码输入，重建立即失效。
@@ -109,7 +112,7 @@ export async function generateThirdPartyNotices(root = repositoryRoot) {
     "Apache License, Version 2.0",
   );
   const patches = [];
-  for (const [name, file] of Object.entries(pkg.pnpm?.patchedDependencies ?? {})) {
+  for (const [name, file] of Object.entries(workspaceSettings?.patchedDependencies ?? {})) {
     patches.push({ package: name, file, sha256: hashBytes(await readInput(file)) });
   }
   const native = await readNativeSearchNotices(root, { verify: true });
