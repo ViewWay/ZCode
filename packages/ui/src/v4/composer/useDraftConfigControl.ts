@@ -16,7 +16,7 @@ import type {
 } from "@zcode/shared";
 import type { SessionConfigState } from "@zcode/shared/zcode-protocol-v4";
 import type { IModelSelectionService } from "@zcode/services";
-import { completeNewModelSelection } from "@zcode/provider";
+import { completeNewModelSelection, SMART_PROVIDER_ID, SMART_MODEL_ID } from "@zcode/provider";
 import {
   useModelSelectionServiceView,
   type ModelSelectionRead,
@@ -411,10 +411,15 @@ export function useDraftConfigControl(params: {
     (modelProvider: string, model: string) => {
       const modelId = modelProvider ? `${modelProvider}/${model}` : model;
       const parsedSelection = parseModelPickerValue(modelId);
-      // 用户点击模型只确定模型身份；Reasoning 没有默认值，保持为空并等待用户选择。
-      const modelSelection = modelSelectionView
-        ? (completeNewModelSelection(modelSelectionView, parsedSelection) ?? parsedSelection)
-        : parsedSelection;
+      // Smart 虚拟选择不在目录里，completeNewModelSelection 会因找不到模型抛错，
+      // 且"档位补全"语义也不适用——原意图直接入草稿（调度由 core 回合的端口完成）。
+      const isSmartSelection =
+        modelProvider === SMART_PROVIDER_ID && model === SMART_MODEL_ID;
+      const modelSelection = isSmartSelection
+        ? parsedSelection
+        : modelSelectionView
+          ? (completeNewModelSelection(modelSelectionView, parsedSelection) ?? parsedSelection)
+          : parsedSelection;
       logger.debug("[v4-draft-config] select model", {
         modelProvider,
         model,
