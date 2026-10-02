@@ -99,7 +99,9 @@ export function buildSmartRoutingCatalog(
         access?.type === "zhipu-account"
           ? access.mode === "off-peak"
             ? ("account-offpeak" as const)
-            : access.mode === "individual-coding-plan" || access.mode === "team-coding-plan"
+            : access.mode === "individual-coding-plan" ||
+                access.mode === "team-coding-plan" ||
+                access.mode === "start-plan"
               ? ("account-plan" as const)
               : ("ordinary" as const)
           : ("ordinary" as const);
