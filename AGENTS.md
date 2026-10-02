@@ -17,6 +17,8 @@
 | Lint             | `pnpm lint` / `pnpm lint:fix`             |
 | 格式检查         | `pnpm fmt:check`                          |
 | 桌面开发         | `pnpm dev:desktop`                        |
+| 桌面开发（产物模式，低内存） | `pnpm dev:desktop:built`          |
+| 桌面挂机（零 watch 进程）   | `pnpm dev:desktop:static`         |
 | Web 开发         | `pnpm dev:web`                            |
 | 提交前检查       | `pnpm verify:pre-push`（Lint 与架构检查） |
 | 架构检查         | `pnpm architecture:check --changed`       |

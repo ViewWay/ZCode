@@ -33,6 +33,7 @@ import {
   IPluginsService,
   IPluginManagementService,
   ISubagentsService,
+  ITeamsService,
   ICommandsService,
   IHooksService,
   IMemoryService,
@@ -86,6 +87,7 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly pluginsService: IPluginsService;
   readonly pluginManagementService: IPluginManagementService;
   readonly subagentsService: ISubagentsService;
+  readonly teamsService: ITeamsService;
   readonly commandsService: ICommandsService;
   readonly hooksService: IHooksService;
   readonly memoryService: IMemoryService;
@@ -200,6 +202,9 @@ export class RemoteServiceAccess implements IServiceAccessor {
     );
     this.subagentsService = ProxyChannel.toService<ISubagentsService>(
       channelClient.getChannel(ISubagentsService.channelName),
+    );
+    this.teamsService = ProxyChannel.toService<ITeamsService>(
+      channelClient.getChannel(ITeamsService.channelName),
     );
     this.commandsService = ProxyChannel.toService<ICommandsService>(
       channelClient.getChannel(ICommandsService.channelName),

@@ -30,6 +30,7 @@ import {
   IPluginsService,
   IPluginManagementService,
   ISubagentsService,
+  ITeamsService,
   ICommandsService,
   IHooksService,
   IMemoryService,
@@ -62,6 +63,7 @@ import {
   createClientScenesService,
   createServiceLogger,
   createSubagentsService,
+  createTeamsService,
   createMemoryService,
   createRemoteConversationShareArtifactSource,
   OAuthCredentialRepo,
@@ -372,6 +374,7 @@ export function createRemoteWorkspaceServiceCollection(params: {
     .register(IPluginManagementService, params.connectionServices.pluginManagementService)
     .register(ICommandsService, params.connectionServices.commandsService)
     .register(ISubagentsService, createSubagentsService({ isDesktopRuntime: true }))
+    .register(ITeamsService, createTeamsService())
     .register(IHooksService, params.connectionServices.hooksService)
     .register(IMemoryService, createMemoryService())
     .register(

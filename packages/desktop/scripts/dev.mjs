@@ -15,6 +15,10 @@ const buildReadyMarkers = [
   { name: "preload", path: resolve(root, "out/.preload-build-ready") },
 ];
 const waitLogIntervalMs = 3_000;
+// 改动五（specs/desktop-dev-performance.md）：--renderer=built 切产物模式——
+// 等待 out/renderer/index.html 而非 vite server，且不注入 ELECTRON_RENDERER_URL，
+// Electron 走既有 loadFile 产物路径（与生产包同款加载形态，渲染进程内存大头解法）。
+const rendererBuilt = process.argv.includes("--renderer=built");
 const require = createRequire(import.meta.url);
 
 function resolveLocalElectronBinary() {
@@ -83,6 +87,26 @@ async function waitForReady() {
     await sleep(300);
   }
 
+  if (rendererBuilt) {
+    // 产物模式：等首个完整构建落盘（~1500 模块，数十秒一次性成本；之后 watch 增量为秒级）。
+    const rendererEntry = resolve(root, "out/renderer/index.html");
+    let lastRendererWaitLogAt = 0;
+    while (!existsSync(rendererEntry)) {
+      const now = Date.now();
+      if (now - lastRendererWaitLogAt >= waitLogIntervalMs) {
+        console.log(
+          "[dev] Waiting for renderer build (vite build --watch)... out/renderer/index.html missing",
+        );
+        lastRendererWaitLogAt = now;
+      }
+      await sleep(300);
+    }
+    console.log(
+      "[dev] Renderer build artifacts ready (built mode; 改代码后需手动刷新窗口 Cmd+R/Ctrl+R)",
+    );
+    return undefined;
+  }
+
   // Wait for Vite dev server
   // Vite 在不同本机 DNS/IPv6 配置下可能只监听 localhost/::1 或 127.0.0.1 其中之一。
   // 这里轮询多个 loopback 地址，避免 dev 脚本和 Vite 实际监听地址不一致导致 Electron 永远不启动。
@@ -129,10 +153,19 @@ if (process.platform === "darwin" && existsSync(electronBinary)) {
   console.log(`[dev] Prepared macOS ZCode Dev bundle: ${devBundle.appPath}`);
 }
 
+const electronEnv = { ...process.env };
+if (rendererBuilt) {
+  // 产物模式必须剥离 dev server 地址：loadFile 分支由 ELECTRON_RENDERER_URL 缺位触发，
+  // 继承的残留值会把窗口劫持回 :5174（与 desktopHostProcess.ts 顶部注释同款风险）。
+  delete electronEnv.ELECTRON_RENDERER_URL;
+} else {
+  electronEnv.ELECTRON_RENDERER_URL = rendererUrl;
+}
+
 const electron = spawn(electronCommand, ["."], {
   cwd: root,
   stdio: "inherit",
-  env: { ...process.env, ELECTRON_RENDERER_URL: rendererUrl },
+  env: electronEnv,
   windowsHide: true,
   detached: process.platform !== "win32",
 });

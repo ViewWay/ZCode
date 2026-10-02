@@ -186,7 +186,20 @@ export default defineConfig(({ mode }) => {
       },
       dedupe: ["react", "react-dom", "lucide-react"],
     },
-    server: { port: 5174, strictPort: true },
+    server: {
+      port: 5174,
+      strictPort: true,
+      // specs/desktop-dev-performance.md 改动二：dev server 就绪后立即在后台
+      // 并行 transform 渲染进程入口模块图（入口 + packages/ui 源码 ~1500 文件；
+      // 冷启动按需转换是首屏白屏的大头）。预热在空闲期进行，与 electron/tsup
+      // 启动并行重叠，首屏请求到达时依赖已转换完毕，明显缩短首帧等待。
+      warmup: {
+        clientFiles: [
+          "./src/**/*.{ts,tsx}",
+          "../../../packages/ui/src/**/*.{ts,tsx,css}",
+        ],
+      },
+    },
     define: {
       __ZCODE_ENDPOINT_ENV__: JSON.stringify(pickProductEndpointEnv(env)),
       __ZCODE_VERSION__: JSON.stringify(buildMetadata.appVersion),

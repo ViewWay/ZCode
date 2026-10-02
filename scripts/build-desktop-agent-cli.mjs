@@ -3,6 +3,10 @@ import { access } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stageAgentBundle } from "../packages/desktop/scripts/stage-agent-bundle.mjs";
+import {
+  evaluateFingerprintGate,
+  saveFingerprintStamp,
+} from "./dev-agent-build-fingerprint.mjs";
 import { runCommand } from "./spawn-command.mjs";
 
 // adapters tsc 在内存受限机器上会 OOM（exit 134），给整条构建链路提高堆上限。
@@ -147,6 +151,16 @@ if (!useTurboBuild) {
   // 会把 apps/zcode-cli 当根目录，并拒绝 turbo.json 中指向 ../../packages/shared 的 inputs。
   // 同时 agent 子 workspace 不包含根 packages/shared，但 agent 包依赖 @zcode/shared。
   // 因此默认改用仓库根 workspace 的明确 pnpm 包顺序构建，避免 WDIO 前置构建卡在子 workspace 解析。
+  // specs/desktop-dev-performance.md 改动一：输入指纹门——输入未变跳过重建（实测基线 30.8s），
+  // 只重跑幂等暂存；ZCODE_DESKTOP_AGENT_FORCE_BUILD=1 强制全量。
+  const fingerprintGate = await evaluateFingerprintGate(repoRoot);
+  if (fingerprintGate.skip) {
+    console.log(
+      "[build-desktop-agent-cli] agent 构建输入未变化，跳过重建（强制重建：ZCODE_DESKTOP_AGENT_FORCE_BUILD=1）",
+    );
+    stageDevAgentBundle();
+    process.exit(0);
+  }
   for (const filter of defaultBuildFilters) {
     runCommand("pnpm", ["--filter", filter, "build"], {
       env: pnpmRunEnv,
@@ -160,6 +174,8 @@ if (!useTurboBuild) {
     stdio: "inherit",
   });
   stageDevAgentBundle();
+  // 只在全量构建成功后落 stamp；skip 路径不写（防半次构建留下有效指纹）。
+  await saveFingerprintStamp(repoRoot, fingerprintGate.fingerprint);
   process.exit(0);
 }
 
