@@ -3393,6 +3393,11 @@ async function createRecord(
           }),
         }
       : {}),
+    // Smart v2 套餐路由：入口装配的进程级端口随会话注入；core 只在本轮选择仍是
+    // smart/auto 时询问端口（端口缺席完全保持 v1 目录择优）。
+    ...(context.deps.smartRoutingPort
+      ? { smartRoutingPort: context.deps.smartRoutingPort }
+      : {}),
     resolveInitialBashShellSelection: startupPreferences.resolveInitialBashShellSelection,
     // browser-use：agent.browsers.* 经此把命令转成 interaction/browserExecute 反向请求。
     browserControlPort: createProtocolBrowserControlBroker(context),

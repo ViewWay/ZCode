@@ -73,6 +73,7 @@ import type {
   AutomationPort,
   OffPeakPort,
   SessionChatPort,
+  SmartRoutingPort,
   FileSystemPort,
   HttpClientPort,
   ImageProcessorPort,
@@ -379,6 +380,8 @@ export interface AgentRuntimeDeps {
   offPeakPort?: OffPeakPort;
   /** 会话互聊（实验）端口；存在即在主会话注册 SessionList/SessionTalk/SessionCreate。 */
   sessionChatPort?: SessionChatPort;
+  /** Smart v2 套餐路由端口；存在时 Smart 虚拟选择先问端口再定本轮执行模型，缺席保持 v1。 */
+  smartRoutingPort?: SmartRoutingPort;
   contextSourcePort?: ContextSourcePort;
   eventSink?: SessionEventSink;
   logger?: Logger;

@@ -38,6 +38,7 @@ import type {
   ExecutionPort,
   FileSystemPort,
   ImageProcessorPort,
+  SmartRoutingPort,
   PdfDocumentPort,
   McpConnectionSnapshot,
   SkillLoadOutcome,
@@ -166,6 +167,7 @@ export class AgentRuntime {
   private memoryIndexContent?: string;
   private memoryExtractionScheduler?: ProjectMemoryExtractionScheduler;
   private contextSourcePort?: ContextSourcePort;
+  private smartRoutingPort?: SmartRoutingPort;
   private skillPort?: SkillPort;
   private mcpPort?: McpPort;
   private mcpStartupPromise?: Promise<McpConnectionSnapshot>;
@@ -281,6 +283,7 @@ export class AgentRuntime {
     this.runtimeCommandQueue = createRuntimeCommandQueue();
     this.workingDirectory = config.workingDirectory ?? ".";
     this.contextSourcePort = deps.contextSourcePort;
+    this.smartRoutingPort = deps.smartRoutingPort;
     this.skillPort = deps.skillPort;
     this.mcpPort = deps.mcpPort;
     this.runtimeTaskRegistry = deps.runtimeTaskRegistry ?? new InMemoryRuntimeTaskRegistry();

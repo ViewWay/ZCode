@@ -1,4 +1,8 @@
-import { beginLocalTurnPreparation, type LocalTtftDetail } from "@zcode/contracts";
+import {
+  beginLocalTurnPreparation,
+  isSmartRoutingSelection,
+  type LocalTtftDetail,
+} from "@zcode/contracts";
 import { runtimeInputMetadata } from "../../agent/runtime-input-presentation.js";
 import {
   CoreErrorType,
@@ -104,7 +108,9 @@ export async function executeTurnCommand(
   // 普通 Turn 过去在异步初始化完成后才读取 Session Selection/输出样式，
   // 初始化期间发生的切模会越过 admission 边界，错误影响已经开始的 Turn。
   // 这里在任何 await 之前冻结本轮事实；后续配置变化只作用于下一轮。
-  const admittedModelSelection = options?.intent?.modelSelection ?? this.getSessionModelSelection();
+  // Smart 虚拟选择是唯一的例外改写点：下方端口决策只是把冻结的 smart/auto
+  // 意图解析成本轮具体执行选择，不是切模。
+  let admittedModelSelection = options?.intent?.modelSelection ?? this.getSessionModelSelection();
   const admittedOutputStyle = this.config.outputStyle;
   const compactInstructions = parseCompactCommand(input);
   const rewindCommand = parseRewindCommand(input);
@@ -129,6 +135,46 @@ export async function executeTurnCommand(
       memoryRoot: this.memoryRoot,
       ...(evolveFocus === undefined ? {} : { instructions: evolveFocus }),
     });
+  }
+  // Smart v2 套餐路由：本轮冻结的选择仍是 smart/auto 且宿主注入端口时，先问端口拿
+  // 套餐额度感知决策。plan 改写本轮执行选择；catalog 携带宿主算好的 v1 目录择优
+  // provider/model 时改写，否则与端口缺席一样保持 v1 行为（解析期目录择优）；
+  // unavailable 保持 smart 原样，交给既有 factory 校验走 provider-not-found 路径。
+  // 端口抛错只记 warn 并回落 v1，不允许阻断 turn；note 只进日志不改 turn 语义。
+  if (isSmartRoutingSelection(admittedModelSelection)) {
+    const smartRoutingPort = this.smartRoutingPort;
+    if (smartRoutingPort) {
+      try {
+        const decision = await smartRoutingPort.getRoutingDecision();
+        this.logger?.info("Smart routing decision", {
+          event: "turn.smart_routing.decision",
+          kind: decision.kind,
+          module: "core.runtime",
+          modelId: "modelId" in decision ? decision.modelId : undefined,
+          note: decision.note,
+          providerId: "providerId" in decision ? decision.providerId : undefined,
+          turnId,
+        });
+        if (decision.kind === "plan") {
+          admittedModelSelection = {
+            providerId: decision.providerId,
+            modelId: decision.modelId,
+          };
+        } else if (decision.kind === "catalog" && decision.providerId && decision.modelId) {
+          admittedModelSelection = {
+            providerId: decision.providerId,
+            modelId: decision.modelId,
+          };
+        }
+      } catch (error) {
+        this.logger?.warn("Smart routing decision failed; keeping v1 catalog routing", {
+          errorMessage: error instanceof Error ? error.message : String(error),
+          event: "turn.smart_routing.failed",
+          module: "core.runtime",
+          turnId,
+        });
+      }
+    }
   }
   const turnTraceContext =
     startReservation?.traceContext ??

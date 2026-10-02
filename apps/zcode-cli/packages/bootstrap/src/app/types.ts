@@ -74,6 +74,7 @@ import type {
   SessionStorePort,
   SkillLoadOutcome,
   SkillPort,
+  SmartRoutingPort,
   ToolArtifactReadResult,
   ToolArtifactStorePort,
   TodoItem,
@@ -184,6 +185,8 @@ export interface ZCodeAppOptions {
   offPeakPort?: OffPeakPort;
   /** 会话互聊（实验）：宿主开关开启时注入；缺席即不注册 SessionList/SessionTalk/SessionCreate。 */
   sessionChatPort?: SessionChatPort;
+  /** Smart v2 套餐路由端口：注入后 core 在 Smart 虚拟选择时按套餐额度决策；缺席保持 v1 目录择优。 */
+  smartRoutingPort?: SmartRoutingPort;
   /** 首次真实用户执行或 cold-resume fallback 时解析一次，之后由 app 生命周期缓存。 */
   resolveInitialBashShellSelection?: () => Promise<ExecutionShellSelection | undefined>;
   /** Trusted embedder policy; workspace/project files cannot populate this field. */

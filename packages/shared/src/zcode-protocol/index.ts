@@ -3589,6 +3589,55 @@ export const zcodeOffPeakListResultSchema = z
   .strict();
 export type ZCodeOffPeakListProtocolResult = z.infer<typeof zcodeOffPeakListResultSchema>;
 
+// Smart v2 套餐路由：协议 server（CLI 进程）向宿主反向请求套餐额度事实与重置卡核销；
+// 宿主侧用 IUsageStatsService 兑现（与侧栏面板/手动「重置」按钮同源）。
+// accountAccess 是 Registry 静态访问类别（provider access 投影），宿主服务边界自行解析当前账号。
+export const zcodeSmartRoutingScopeParamsSchema = z
+  .object({
+    providerId: z.string().min(1),
+    accountAccess: zcodeProviderAccountAccessSchema,
+  })
+  .strict();
+export type ZCodeSmartRoutingScopeProtocolParams = z.infer<typeof zcodeSmartRoutingScopeParamsSchema>;
+
+export const zcodeSmartRoutingUsageSnapshotResultSchema = z
+  .object({
+    state: z.enum(["authenticated", "not_authenticated", "unavailable"]),
+    /** 剩余额度占比（0~1）；null 表示已认证但本轮拿不到百分比（查询失败/无额度数据面）。 */
+    remainingPercentage: z.number().min(0).max(1).nullable(),
+  })
+  .strict();
+export type ZCodeSmartRoutingUsageSnapshotProtocolResult = z.infer<
+  typeof zcodeSmartRoutingUsageSnapshotResultSchema
+>;
+
+export const zcodeSmartRoutingResetCardSchema = z
+  .object({
+    resetType: z.enum(["FIVE_HOUR", "WEEK"]),
+    expireAt: z.number().int().nonnegative(),
+  })
+  .strict();
+export const zcodeSmartRoutingResetStatusResultSchema = z
+  .object({ cards: z.array(zcodeSmartRoutingResetCardSchema) })
+  .strict();
+export type ZCodeSmartRoutingResetStatusProtocolResult = z.infer<
+  typeof zcodeSmartRoutingResetStatusResultSchema
+>;
+
+export const zcodeSmartRoutingUseResetParamsSchema = z
+  .object({
+    idempotencyKey: z.string().min(1).max(64),
+    resetType: z.enum(["FIVE_HOUR", "WEEK"]),
+  })
+  .and(zcodeSmartRoutingScopeParamsSchema);
+export type ZCodeSmartRoutingUseResetProtocolParams = z.infer<
+  typeof zcodeSmartRoutingUseResetParamsSchema
+>;
+export const zcodeSmartRoutingUseResetResultSchema = z.object({ used: z.boolean() }).strict();
+export type ZCodeSmartRoutingUseResetProtocolResult = z.infer<
+  typeof zcodeSmartRoutingUseResetResultSchema
+>;
+
 export const zcodeProtocolMethods = {
   runtimeCapabilities: "runtime/capabilities",
   computerUseOperationEvent: "computer-use/operation-event",
@@ -3680,6 +3729,10 @@ export const zcodeProtocolMethods = {
   // Off-Peak 会话内创建：与 automation 兄弟并列的独立方法族。
   offPeakCreate: "offPeak/create",
   offPeakList: "offPeak/list",
+  // Smart v2 套餐路由：agent 反向请求宿主查套餐剩余额度/重置卡并核销。
+  smartRoutingUsageSnapshot: "smartRouting/usageSnapshot",
+  smartRoutingResetStatus: "smartRouting/resetStatus",
+  smartRoutingUseReset: "smartRouting/useReset",
   // @deprecated：host 消费已清零（zcodeAgentService 改走 v4/usage/stats）。
   // 仅剩 CLI server 的 wire 兼容 case；随旧词整体删除时一并移除。
   usageStats: "usage/stats",

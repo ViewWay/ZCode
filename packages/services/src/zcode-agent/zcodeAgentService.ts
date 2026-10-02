@@ -63,6 +63,8 @@ import {
   zcodeAutomationUpdateParamsSchema,
   zcodeOffPeakCreateParamsSchema,
   zcodeOffPeakListParamsSchema,
+  zcodeSmartRoutingScopeParamsSchema,
+  zcodeSmartRoutingUseResetParamsSchema,
   OFF_PEAK_PROVIDER_IDS,
   zcodeComputerUseOperationEventSchema,
   zcodeProviderRuntimeHeadersCancelledSchema,
@@ -300,6 +302,7 @@ import { ZCodeAgentMcpStatusModeUnsupportedError } from "#src/zcode-agent/zcodeA
 import { ZCodeAgentProcessManager } from "./zcodeAgentProcessManager.js";
 import type { ZCodeAgentProcessManagerOptions } from "./zcodeAgentProcessManager.js";
 import type { IOffPeakTaskService } from "#src/session/offPeakTask.js";
+import type { IUsageStatsService } from "#src/usage-stats/usageStats.js";
 import {
   ZCodeProtocolRequestTimeoutError,
   type ZCodeProtocolClient,
@@ -894,6 +897,17 @@ interface CreateZCodeAgentServiceOptions extends Omit<
   resolveDynamicWorkflowClientConfig?: () => Promise<DynamicWorkflowClientConfig | undefined>;
   resolveOffPeakTaskService?: () =>
     | Pick<IOffPeakTaskService, "createTask" | "list" | "getCodingPlanSupport">
+    | undefined;
+  /**
+   * Smart v2 套餐路由的宿主数据面：协议 server（CLI 进程）经 smartRouting/* 反向请求
+   * 查询套餐剩余额度/重置卡并核销。服务集合装配时注入（晚于本 service 构造，用惰性
+   * resolver 解耦）；缺省（纯 CLI 装配）即端口侧按候选查询失败处理，回落 v1 目录择优。
+   */
+  resolveUsageStatsService?: () =>
+    | Pick<
+        IUsageStatsService,
+        "getEntitlementSnapshot" | "getCodingPlanResetStatus" | "useCodingPlanReset"
+      >
     | undefined;
   /**
    * browser-use 执行桥：把 agent 的 interaction/browserExecute 反向请求转发到 main
@@ -2707,6 +2721,140 @@ export function createZCodeAgentService(
               });
             } catch (error) {
               await respondOffPeakInternalError(client, request, workspace, error);
+            }
+          })();
+          return;
+        }
+
+        // Smart v2 套餐路由：CLI 进程的 Smart 虚拟选择按套餐额度择优时反向索取事实。
+        // 额度读取与侧栏面板同源（entitlement）；重置卡核销与手动「重置」按钮同一
+        // useCodingPlanReset 调用面。accountAccess 是 CLI Registry 的静态访问类别，
+        // 服务边界自行解析当前账号；查询失败按 -32603 回执，由端口侧降级处理。
+        if (request.method === zcodeProtocolMethods.smartRoutingUsageSnapshot) {
+          const parsed = zcodeSmartRoutingScopeParamsSchema.safeParse(request.params ?? {});
+          if (!parsed.success) {
+            void client.respondError(request.id, {
+              code: -32602,
+              message: "Invalid smart routing usage snapshot params",
+              data: parsed.error.flatten(),
+            });
+            return;
+          }
+          void (async () => {
+            try {
+              const usageStatsService = options?.resolveUsageStatsService?.();
+              if (!usageStatsService) {
+                await client.respondError(request.id, {
+                  code: -32601,
+                  message: "Usage stats service is unavailable on this host",
+                });
+                return;
+              }
+              const snapshot = await usageStatsService.getEntitlementSnapshot({
+                preferredProviderId: parsed.data.providerId,
+                requirePreferredProvider: true,
+                allowEnvApiKey: false,
+                ...(parsed.data.accountAccess
+                  ? { accountAccess: parsed.data.accountAccess }
+                  : {}),
+              });
+              await client.respond(request.id, {
+                state:
+                  snapshot.authenticated && snapshot.unavailableReason === undefined
+                    ? ("authenticated" as const)
+                    : snapshot.unavailableReason === "not_authenticated"
+                      ? ("not_authenticated" as const)
+                      : ("unavailable" as const),
+                remainingPercentage: snapshot.remaining?.percentage ?? null,
+              });
+            } catch (error) {
+              await client.respondError(request.id, {
+                code: -32603,
+                message: error instanceof Error ? error.message : String(error),
+              });
+            }
+          })();
+          return;
+        }
+
+        if (request.method === zcodeProtocolMethods.smartRoutingResetStatus) {
+          const parsed = zcodeSmartRoutingScopeParamsSchema.safeParse(request.params ?? {});
+          if (!parsed.success) {
+            void client.respondError(request.id, {
+              code: -32602,
+              message: "Invalid smart routing reset status params",
+              data: parsed.error.flatten(),
+            });
+            return;
+          }
+          void (async () => {
+            try {
+              const usageStatsService = options?.resolveUsageStatsService?.();
+              if (!usageStatsService) {
+                await client.respondError(request.id, {
+                  code: -32601,
+                  message: "Usage stats service is unavailable on this host",
+                });
+                return;
+              }
+              const status = await usageStatsService.getCodingPlanResetStatus({
+                preferredProviderId: parsed.data.providerId,
+                accountAccess: parsed.data.accountAccess,
+              });
+              await client.respond(request.id, {
+                cards: [
+                  ...status.availableFiveHourResets.map((card) => ({
+                    resetType: "FIVE_HOUR" as const,
+                    expireAt: card.expireAt,
+                  })),
+                  ...status.availableWeekResets.map((card) => ({
+                    resetType: "WEEK" as const,
+                    expireAt: card.expireAt,
+                  })),
+                ],
+              });
+            } catch (error) {
+              await client.respondError(request.id, {
+                code: -32603,
+                message: error instanceof Error ? error.message : String(error),
+              });
+            }
+          })();
+          return;
+        }
+
+        if (request.method === zcodeProtocolMethods.smartRoutingUseReset) {
+          const parsed = zcodeSmartRoutingUseResetParamsSchema.safeParse(request.params ?? {});
+          if (!parsed.success) {
+            void client.respondError(request.id, {
+              code: -32602,
+              message: "Invalid smart routing use reset params",
+              data: parsed.error.flatten(),
+            });
+            return;
+          }
+          void (async () => {
+            try {
+              const usageStatsService = options?.resolveUsageStatsService?.();
+              if (!usageStatsService) {
+                await client.respondError(request.id, {
+                  code: -32601,
+                  message: "Usage stats service is unavailable on this host",
+                });
+                return;
+              }
+              const result = await usageStatsService.useCodingPlanReset({
+                preferredProviderId: parsed.data.providerId,
+                accountAccess: parsed.data.accountAccess,
+                idempotencyKey: parsed.data.idempotencyKey,
+                resetType: parsed.data.resetType,
+              });
+              await client.respond(request.id, { used: result.used });
+            } catch (error) {
+              await client.respondError(request.id, {
+                code: -32603,
+                message: error instanceof Error ? error.message : String(error),
+              });
             }
           })();
           return;

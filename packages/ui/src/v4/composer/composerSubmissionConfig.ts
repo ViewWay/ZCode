@@ -24,6 +24,20 @@ export function createComposerSubmissionConfig(
   }
   const selection = composer.modelSelection;
   const mode = submissionModeSchema.safeParse(composer.mode);
+  // Smart 模式：虚拟选择不经目录校验，原意图直达 core（解析期由 provider smart-routing
+  // 或套餐感知端口择优）；目录视图里没有 smart/auto 条目，若走下方查找会被提交门禁卡死。
+  if (selection && selection.providerId === "smart" && selection.modelId === "auto") {
+    if (!mode.success) return null;
+    return Object.freeze({
+      mode: mode.data === "plan" ? "build" : mode.data,
+      planEnabled: resolveExecutionState(composer).planEnabled,
+      modelSelection: Object.freeze({
+        providerId: "smart",
+        modelId: "auto",
+        options: Object.freeze({}),
+      }),
+    });
+  }
   const model =
     selection &&
     view?.providers

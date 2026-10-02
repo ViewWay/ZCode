@@ -2075,6 +2075,14 @@ export function createLocalServices(options: {
   // OffPeakTaskService 单例在下方 DI register IIFE 中创建（晚于 agent service）；
   // 用前向引用 holder 惰性绑定——offPeak/create 协议请求只会发生在服务集合装配完成后。
   let offPeakTaskServiceForAgent: OffPeakTaskService | undefined;
+  // Smart v2 套餐路由的宿主数据面：IUsageStatsService 同样在下方 register 链创建，
+  // smartRouting/* 协议请求只发生在装配完成后，用同款前向引用 holder 惰性绑定。
+  let usageStatsServiceForAgent:
+    | Pick<
+        IUsageStatsService,
+        "getEntitlementSnapshot" | "getCodingPlanResetStatus" | "useCodingPlanReset"
+      >
+    | undefined;
   // desktop-attached-remote 装配不暴露 Off-Peak 工具面（远程不在支持范围）。
   const offPeakToolWiring =
     options?.serviceAuthorityMode === "desktop-attached-remote"
@@ -2091,6 +2099,7 @@ export function createLocalServices(options: {
     ...(modelSelectionReadinessSource ? { modelSelectionReadinessSource } : {}),
     authorizeLocalMediaPreviewPath: options?.authorizeLocalMediaPreviewPath,
     ...offPeakToolWiring,
+    resolveUsageStatsService: () => usageStatsServiceForAgent,
     // 动态工作流灰度：与 Off-Peak 不同，
     // 这里不按 serviceAuthorityMode 裁剪——SSH/WSL/Docker 的 desktop-attached-remote Host
     // 是它自己那些 workspace 的唯一裁决者，灰度开启时远程 workspace 同样提供工作流。
@@ -2650,6 +2659,10 @@ export function createLocalServices(options: {
       log.error("Provider 配置事实初始化失败", error);
     },
   );
+
+  // Smart v2：回写 usageStats 前向引用，供 zcodeAgentService 的 smartRouting/* 协议 handler
+  // 调用（与上方 offPeakTaskServiceForAgent 同款收口）。
+  usageStatsServiceForAgent = services.get(IUsageStatsService);
 
   // 见 sharedSqliteRepos 声明处注释：登记全部 tasks-index sqlite 句柄，dispose 链统一关闭
   sqliteReposToClose.push(taskIndexRepo);

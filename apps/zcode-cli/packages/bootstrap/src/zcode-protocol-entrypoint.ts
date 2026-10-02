@@ -42,6 +42,12 @@ import {
   resolveRuntimeZCodeEndpointOrigin,
 } from "@zcode/shared";
 import { ZCodeProtocolAgentServer } from "./zcode-protocol/server.js";
+import type { ZCodeProtocolAgentServerContext } from "./zcode-protocol/server-types.js";
+import {
+  buildSmartRoutingCatalog,
+  createProtocolSmartRoutingUsageStats,
+  createSmartRoutingPort,
+} from "./zcode-protocol/smart-routing-port.js";
 import { ZCodeProtocolNdjsonConnection } from "./zcode-protocol/transport.js";
 import { cleanupProtocolRuntime } from "./zcode-protocol/runtime-cleanup.js";
 import { startProtocolResourceSampler } from "./zcode-protocol/resource-sampler.js";
@@ -246,6 +252,23 @@ export async function runZCodeProtocolAgent(
       activeProviderRegistryRuntime.runtime.registryService,
     );
     options.lifecycle?.signal.throwIfAborted();
+    // Smart v2 套餐路由端口：进程级装配。额度/重置卡事实经 server→client 反向请求向宿主
+    // 索取（off-peak 端口同款通道），requestContext 在 server 构造完成后回填；宿主未实现
+    // smartRouting/* 方法时按候选查询失败处理，自动回落 v1 目录择优，不影响既有会话。
+    let smartRoutingRequestContext: Pick<ZCodeProtocolAgentServerContext, "requestClient"> | undefined;
+    const smartRoutingPort = createSmartRoutingPort({
+      usageStats: createProtocolSmartRoutingUsageStats(() => {
+        if (!smartRoutingRequestContext) {
+          throw new Error("Smart routing port used before protocol server start");
+        }
+        return smartRoutingRequestContext;
+      }),
+      getCatalog: () => {
+        const snapshot = activeProviderRegistryRuntime.runtime.registryService.getSnapshot();
+        return snapshot ? buildSmartRoutingCatalog(snapshot) : [];
+      },
+      getRegistryView: () => activeProviderRegistryRuntime.runtime.registryService.getView(),
+    });
     const server = (serverForCleanup = new ZCodeProtocolAgentServer({
       createZCodeApp: (appOptions = {}) =>
         createZCodeApp({
@@ -292,7 +315,9 @@ export async function runZCodeProtocolAgent(
         await activeProviderRegistryRuntime.runtime.registryService.refresh(reason);
       },
       version: options.version,
+      smartRoutingPort,
     }));
+    smartRoutingRequestContext = server.officialMcpAuthRequestContext;
     officialMcpAuthContext = server.officialMcpAuthRequestContext;
     if (configResult.config.features.mcp !== false) {
       nodeReplBrowserBroker = createNodeReplBrowserBroker({

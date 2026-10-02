@@ -28,6 +28,7 @@ export * from "./interfaces/model-catalog.port.js";
 export * from "./interfaces/automation.port.js";
 export * from "./interfaces/off-peak.port.js";
 export * from "./interfaces/session-chat.port.js";
+export * from "./interfaces/smart-routing.port.js";
 export * from "./interfaces/mcp.port.js";
 
 export * from "./interfaces/runtime-input-presentation.js";

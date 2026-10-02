@@ -21,6 +21,7 @@ import type {
   PdfDocumentPort,
   McpConnectionSnapshot,
   SkillLoadOutcome,
+  SmartRoutingPort,
   SkillPort,
   McpPort,
   DynamicWorkflowRunPort,
@@ -94,6 +95,8 @@ export interface AgentRuntimeInternal
   memoryIndexContent?: string;
   memoryExtractionScheduler?: ProjectMemoryExtractionScheduler;
   contextSourcePort?: ContextSourcePort;
+  /** Smart v2 套餐路由端口；turn 期 Smart 虚拟选择时读取（deps 注入，可缺席）。 */
+  smartRoutingPort?: SmartRoutingPort;
   skillPort?: SkillPort;
   mcpPort?: McpPort;
   mcpStartupPromise?: Promise<McpConnectionSnapshot>;

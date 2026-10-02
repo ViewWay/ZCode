@@ -179,6 +179,7 @@ export type {
   SessionMailboxEnvelope,
   SessionMailboxPort,
   SessionModePort,
+  SmartRoutingPort,
   StreamRecoveryAnchorPayload,
   StreamingToolExecutionTiming,
   StreamingToolLedgerPayload,

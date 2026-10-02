@@ -8,6 +8,7 @@ import {
   type SessionId,
   type SessionTaskType,
   type SessionStorePort,
+  type SmartRoutingPort,
   type TraceContext,
 } from "@zcode/contracts";
 import type { McpTelemetryTracker } from "@zcode/adapters";
@@ -58,6 +59,11 @@ export interface ZCodeProtocolAgentDependencies {
   sessionResidentTargetCount?: number;
   sessionStore?: SessionStorePort;
   version?: string;
+  /**
+   * Smart v2 套餐路由端口（进程级，非 per-session）。入口装配注入；
+   * createRecord 透传给每个会话的 AgentRuntimeDeps。缺席时 core 保持 v1 目录择优。
+   */
+  smartRoutingPort?: SmartRoutingPort;
   /** 受信 Host 管理的 Hook policy；workspace/project 配置不得覆盖。 */
   workspaceHookPolicyProvider?: WorkspaceHookPolicyProvider;
   /** 把 Host 账号状态形成的第三层 Config Overlay 同步给进程 Registry。 */
