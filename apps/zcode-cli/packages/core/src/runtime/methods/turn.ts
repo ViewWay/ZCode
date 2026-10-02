@@ -147,6 +147,7 @@ export async function executeTurnCommand(
       try {
         const decision = await smartRoutingPort.getRoutingDecision({
           taskPreview: (options?.displayInput ?? input).slice(0, 4000),
+          turnIndex: this.turnNumber,
         });
         this.logger?.info("Smart routing decision", {
           event: "turn.smart_routing.decision",

@@ -33,6 +33,9 @@ import type { ZCodeProtocolAgentServerContext } from "./server-types.js";
 /** 剩余额度低于该占比视为套餐即将耗尽，触发重置卡/切换候选。 */
 export const SMART_ROUTING_LOW_QUOTA_THRESHOLD = 0.05;
 
+/** s2 深会话阈值：轮次达到该值按复杂任务处理（specs/smart-routing-v3.md）。 */
+export const SMART_TIER_COMPLEX_TURN_INDEX = 6;
+
 /** 宿主侧额度/重置卡查询的单次超时；超时按该候选查询失败处理（跳过，不重试）。 */
 const SMART_ROUTING_REQUEST_TIMEOUT_MS = 10_000;
 
@@ -143,8 +146,11 @@ export function createSmartRoutingPort(input: {
 }): SmartRoutingPort {
   const now = input.now ?? Date.now;
   return {
-    async getRoutingDecision(taskInput?: { taskPreview?: string }): Promise<SmartRoutingDecision> {
-      const tier = classifyTaskTier(taskInput?.taskPreview);
+    async getRoutingDecision(taskInput?: {
+      taskPreview?: string;
+      turnIndex?: number;
+    }): Promise<SmartRoutingDecision> {
+      const tier = classifyTaskTier(taskInput?.taskPreview, taskInput?.turnIndex);
       const skipped: string[] = [];
       let catalog: readonly SmartRoutingCatalogEntry[] = [];
       try {
@@ -313,8 +319,10 @@ function flashModelOf(candidate: SmartRoutingCatalogEntry): {
 }
 
 /** 任务档位启发式：复杂→pro（主力模型），简单→flash（免费轨/Flash 优先消耗）。 */
-function classifyTaskTier(taskPreview?: string): "pro" | "flash" {
+function classifyTaskTier(taskPreview?: string, turnIndex?: number): "pro" | "flash" {
   const text = (taskPreview ?? "").trim();
+  // s2 深会话（specs/smart-routing-v3.md）：轮次达到阈值按复杂任务处理。
+  if (turnIndex !== undefined && turnIndex >= SMART_TIER_COMPLEX_TURN_INDEX) return "pro";
   if (text.length === 0) return "pro";
   if (text.length > 2000) return "pro";
   if ((text.match(/```/g) ?? []).length >= 2) return "pro";

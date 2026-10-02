@@ -44,5 +44,9 @@ export interface SmartRoutingPort {
    * 供宿主做任务档位评估（复杂→pro 档，简单→flash 档/免费轨优先）；
    * 实现方自行兜底，不允许向调用方抛错阻断 turn。
    */
-  getRoutingDecision(input?: { taskPreview?: string }): Promise<SmartRoutingDecision>;
+  getRoutingDecision(input?: {
+    taskPreview?: string;
+    /** 会话内轮次（0 基）；深会话按任务复杂处理（specs/smart-routing-v3.md s2）。 */
+    turnIndex?: number;
+  }): Promise<SmartRoutingDecision>;
 }

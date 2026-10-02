@@ -7,6 +7,7 @@ import { test } from "node:test";
 import type { ProviderRegistryView } from "@zcode/provider";
 import {
   SMART_ROUTING_LOW_QUOTA_THRESHOLD,
+  SMART_TIER_COMPLEX_TURN_INDEX,
   createSmartRoutingPort,
   type SmartRoutingCatalogEntry,
   type SmartRoutingPlanSnapshot,
@@ -416,6 +417,24 @@ test("flash 档 D1：额度归零不选 flash，无卡可用时回落 v1 目录�
   assert.equal(decision.kind, "catalog");
   assert.match(decision.note, /回落/u);
   assert.equal(usageStats.calls.useCalls.length, 0);
+});
+
+test("s2 深会话：轮次达阈值按复杂任务走 pro 档", async () => {
+  const usageStats = fakeUsageStats({
+    snapshots: { bigmodel: { state: "authenticated", remainingPercentage: 0.4 } },
+  });
+  const port = createSmartRoutingPort({
+    usageStats,
+    getCatalog: () => [planEntry("bigmodel", [["glm-5.3", 200_000]])],
+    getRegistryView: () => registryViewWithOrdinary("openai", "gpt-x", 100_000),
+    now: fixedClock,
+  });
+  const decision = await port.getRoutingDecision({
+    taskPreview: "继续",
+    turnIndex: SMART_TIER_COMPLEX_TURN_INDEX,
+  });
+  assert.equal(decision.kind, "plan");
+  if (decision.kind === "plan") assert.equal(decision.tier, "pro");
 });
 
 test("pro 档：复杂关键词或长文本走主力模型", async () => {
