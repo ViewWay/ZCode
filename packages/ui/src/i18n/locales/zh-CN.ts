@@ -4625,6 +4625,8 @@ const zhCN: Record<string, string> = {
   "chat.toolbar.draftConfigWriteFailed": "配置修改失败，请重试",
   "chat.toolbar.model.description": "选择当前任务使用的模型。快捷键只打开模型菜单。",
   "chat.toolbar.model.manageModels": "管理模型",
+  "chat.model.smart": "Smart（自动路由）",
+  "chat.model.smart.desc": "按上下文窗口与可用性自动选择最优模型",
   "chat.toolbar.model.searchPlaceholder": "搜索模型...",
   "chat.toolbar.model.empty": "未找到匹配模型",
   "chat.toolbar.modelSwitch.stage.settingModel": "正在切换模型...",

@@ -6,6 +6,7 @@ import {
   type ModelSelection,
   type ProviderRegistryView,
 } from "./registry.js";
+import { isSmartModelSelection, resolveSmartRoute } from "./smart-routing.js";
 
 export type ModelSelectionProviderKind = "ordinary" | "account-plan" | "account-offpeak";
 export type ModelSelectionProviderClassifier = (providerId: string) => ModelSelectionProviderKind;
@@ -21,9 +22,17 @@ export function resolveEffectiveModelSelection(input: {
   readonly classifyProvider: ModelSelectionProviderClassifier;
   readonly resolveLegacyReasoningLevel?: (selection: ModelSelection) => string | undefined;
 }): EffectiveModelSelectionResult {
-  const original = input.selection;
+  let original = input.selection;
   if (!original)
     return Object.freeze({ effectiveSelection: null, selectionIssue: "selection-missing" });
+  // Smart 虚拟选择：解析期在目录内择优改写为具体模型；后续流程（账号/隐藏/档位）照旧校验。
+  if (isSmartModelSelection(original)) {
+    const routed = resolveSmartRoute(input.registry);
+    if (!routed) {
+      return Object.freeze({ effectiveSelection: null, selectionIssue: "provider-not-found" });
+    }
+    original = routed;
+  }
   const kind = input.classifyProvider(original.providerId);
   let providerId = original.providerId;
   if (kind === "account-plan") {

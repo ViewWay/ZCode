@@ -731,7 +731,7 @@ function V4ComposerModelControlsImpl({
 
   const modelSelectGroups = useMemo<ModelSelectGroup[]>(() => {
     if (!modelSelectionView) return [];
-    return buildRegistryModelSelectGroups(displayProvider, modelSelectionView, {
+    const registryGroups = buildRegistryModelSelectGroups(displayProvider, modelSelectionView, {
       apiKeyLabel: intl.formatMessage({ id: "settings.modelProvider.apiKey" }),
       apiKeyBadgeLabel: intl.formatMessage({
         id: "settings.modelProvider.connectionMode.apiKeyBadge",
@@ -755,6 +755,25 @@ function V4ComposerModelControlsImpl({
         id: "settings.modelProvider.connectionMode.teamPlan",
       }),
     });
+    // Smart 模式：目录非空时置顶虚拟入口；选中保存 smart/auto，解析期由 provider 的 smart-routing 择优。
+    if (modelSelectionView.providers.some((provider) => provider.models.length > 0)) {
+      return [
+        {
+          key: "smart:auto",
+          label: intl.formatMessage({ id: "chat.model.smart" }),
+          directItems: true,
+          items: [
+            {
+              key: "smart:auto:item",
+              value: encodeCustomModelValue("smart", "auto"),
+              name: intl.formatMessage({ id: "chat.model.smart.desc" }),
+            },
+          ],
+        },
+        ...registryGroups,
+      ];
+    }
+    return registryGroups;
   }, [displayProvider, intl, modelSelectionView]);
 
   // 修复：恢复「管理模型」入口（老版 onManageModels = 打开设置页并定位模型供应商区）。
