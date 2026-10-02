@@ -52,6 +52,16 @@ export const BUILTIN_ZCODE_SLASH_COMMAND_HELP_ENTRIES: readonly BuiltinZCodeSlas
     },
     {
       details: [
+        "Runs a normal agent turn that self-evolves: the Main agent reviews what happened, the Reflector verifies claims against reality, and the Superego calibrates direction.",
+        "Appends to .zcode/evolve/GROWTH.md in the workspace; optional text becomes the evolution focus.",
+        "Requires an open workspace; no code self-modification, no resident heartbeat (session-scope by design).",
+      ],
+      name: "evolve",
+      summary: "Run one session self-evolution cycle (Main/Reflector/Superego).",
+      usage: "/evolve [focus]",
+    },
+    {
+      details: [
         "Runs a normal agent turn that inspects the current workspace and creates or updates AGENTS.md.",
         "Existing AGENTS.md files should be edited rather than overwritten.",
         "This command targets the workspace root, not the user default ~/.zcode/AGENTS.md.",

@@ -26,6 +26,7 @@ import type {
 import {
   parseCompactCommand,
   parseDreamCommand,
+  parseEvolveCommand,
   parseRewindCommand,
   createTurnAbortScope,
   throwIfTurnAborted,
@@ -61,6 +62,7 @@ import {
   openGoalStateChangeReminderDeferral,
 } from "./goal-state-reminder.js";
 import { buildDreamPrompt } from "../../memory/dream-prompt.js";
+import { buildEvolvePrompt } from "../../evolve/evolve-prompt.js";
 import { scheduleProjectMemoryExtraction } from "../helpers/project-memory-extraction.js";
 import { appendBrowserTurnScreenshot } from "./browser-turn-screenshot.js";
 import { clearBrowserTurnState } from "../../repl/browser-turn-state.js";
@@ -117,6 +119,15 @@ export async function executeTurnCommand(
       memoryRoot: this.memoryRoot,
       workspaceRoot: this.workspaceRoot,
       ...(dreamFocus === undefined ? {} : { instructions: dreamFocus }),
+    });
+  }
+  // /evolve 内置命令：主/反思我/超我三主体的会话级自进化回合（参考 MiMo evolve-seed）。
+  const evolveFocus = parseEvolveCommand(input);
+  if (evolveFocus !== null) {
+    input = buildEvolvePrompt({
+      workspaceRoot: this.workspaceRoot,
+      memoryRoot: this.memoryRoot,
+      ...(evolveFocus === undefined ? {} : { instructions: evolveFocus }),
     });
   }
   const turnTraceContext =

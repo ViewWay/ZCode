@@ -26,6 +26,18 @@ export function parseDreamCommand(input: string): string | undefined | null {
   return null;
 }
 
+export function parseEvolveCommand(input: string): string | undefined | null {
+  const trimmed = input.trim();
+  if (trimmed === "/evolve") {
+    return undefined;
+  }
+  if (trimmed.startsWith("/evolve ")) {
+    const focus = trimmed.slice("/evolve ".length).trim();
+    return focus.length > 0 ? focus : undefined;
+  }
+  return null;
+}
+
 export function parseRewindCommand(input: string): ParsedRewindCommand | null {
   const trimmed = input.trim();
   if (trimmed === "/fork") {
