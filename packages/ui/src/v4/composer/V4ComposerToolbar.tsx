@@ -789,8 +789,13 @@ function V4ComposerModelControlsImpl({
   });
 
   // 当前投影模型的编码值：provider 命中目录则按自定义模型编码，否则回落裸 model id。
+  // Smart 虚拟选择特判：provider 不在目录，必须走编码值与菜单条目对齐，否则触发器
+  // 找不到选中项会回落「选择模型」占位符。
   const rawModelValue = useMemo(() => {
     if (!effectiveConfig || !effectiveConfig.model) return "";
+    if (isSmartSelection) {
+      return encodeCustomModelValue("smart", "auto");
+    }
     const providerExists = modelSelectionView?.providers.some(
       (candidate) => candidate.providerId === effectiveConfig.provider,
     );
@@ -798,7 +803,7 @@ function V4ComposerModelControlsImpl({
       return encodeCustomModelValue(effectiveConfig.provider, effectiveConfig.model);
     }
     return effectiveConfig.model;
-  }, [effectiveConfig, modelSelectionView]);
+  }, [effectiveConfig, isSmartSelection, modelSelectionView]);
 
   // 触发器显示兜底——`<synthetic>`（Claude SDK 恢复合成模型）或当前模型
   // 不在可选组（失效/下线/退登）→ 回落占位/默认「选择模型」，不直显协议内部占位符或失效
