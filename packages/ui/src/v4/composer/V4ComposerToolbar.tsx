@@ -813,7 +813,14 @@ function V4ComposerModelControlsImpl({
   );
   const normalizedModelValue = triggerDisplay.value ?? "";
 
+  // Smart 模式：触发器显示固定文案，不显示具体模型名（agent 调度）。
+  const isSmartSelection =
+    effectiveConfig?.provider === "smart" && effectiveConfig?.model === "auto";
   const modelTriggerDisplay = useMemo(() => {
+    if (isSmartSelection) {
+      const smartLabel = intl.formatMessage({ id: "chat.model.smart" });
+      return { fullLabel: smartLabel, modelLabel: smartLabel };
+    }
     // 非可选值（未选 / synthetic / 不可用）：占位文案或默认「选择模型」。
     const fallbackLabel =
       triggerDisplay.placeholder ?? intl.formatMessage({ id: "chat.toolbar.model.label" });
@@ -1090,7 +1097,7 @@ function V4ComposerModelControlsImpl({
           providerSubmenuClassName={providerSubmenuClassName}
         />
       ) : null}
-      {thoughtOption ? (
+      {thoughtOption && !isSmartSelection ? (
         <ThoughtLevelCycleControl
           composerCollapsePriority={3}
           labelVisibilityClassName="inline-flex"
