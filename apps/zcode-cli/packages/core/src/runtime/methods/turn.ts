@@ -161,6 +161,7 @@ export async function executeTurnCommand(
           admittedModelSelection = {
             providerId: decision.providerId,
             modelId: decision.modelId,
+            ...(decision.options ? { options: decision.options } : {}),
           };
           // 智能体编排（v1）：pro 档（复杂任务）注入编排前言，提示模型可用 Agent
           // 工具组建小队并行分工；flash 档轻量直答不注入。
@@ -174,6 +175,7 @@ export async function executeTurnCommand(
           admittedModelSelection = {
             providerId: decision.providerId,
             modelId: decision.modelId,
+            ...(decision.options ? { options: decision.options } : {}),
           };
         }
       } catch (error) {

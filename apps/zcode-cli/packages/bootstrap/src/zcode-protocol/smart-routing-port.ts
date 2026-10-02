@@ -73,7 +73,12 @@ export interface SmartRoutingCatalogEntry {
   kind: "account-plan" | "account-offpeak" | "ordinary";
   /** 已登录且连接该套餐（account-plan 看 states.current；off-peak 看 availability）。 */
   usable: boolean;
-  models: readonly { modelId: string; contextWindow: number }[];
+  models: readonly {
+    modelId: string;
+    contextWindow: number;
+    /** 目录档位选项（来自 optionSpecs）；缺失=模型无档位要求。 */
+    reasoningValues?: readonly string[];
+  }[];
   accountAccess?: ZCodeProviderAccountAccess;
 }
 
@@ -110,13 +115,22 @@ export function buildSmartRoutingCatalog(
         providerId: provider.providerId,
         kind,
         usable,
-        models: provider.models.map((model) => ({
-          modelId: model.modelId,
-          contextWindow:
-            typeof model.config.properties?.contextWindow === "number"
-              ? model.config.properties.contextWindow
-              : 0,
-        })),
+        models: provider.models.map((model) => {
+          const optionSpecs = (
+            model.config as {
+              optionSpecs?: { reasoningLevel?: { values?: readonly string[] } };
+            }
+          )?.optionSpecs;
+          const reasoningValues = optionSpecs?.reasoningLevel?.values;
+          return {
+            modelId: model.modelId,
+            contextWindow:
+              typeof model.config.properties?.contextWindow === "number"
+                ? model.config.properties.contextWindow
+                : 0,
+            ...(reasoningValues && reasoningValues.length > 0 ? { reasoningValues } : {}),
+          };
+        }),
         ...(access?.type === "zhipu-account" && kind !== "ordinary"
           ? {
               accountAccess: {
@@ -208,6 +222,9 @@ export function createSmartRoutingPort(input: {
             kind: "plan",
             providerId: best.candidate.providerId,
             modelId: flash.modelId,
+            ...(optionsFor(best.candidate, flash.modelId)
+              ? { options: optionsFor(best.candidate, flash.modelId) }
+              : {}),
             tier,
             note: `Smart flash 档：任务简单，优先消耗剩余最高的轨（${best.candidate.providerId}/${flash.modelId}，剩余 ${percent}%）`,
           };
@@ -238,6 +255,9 @@ export function createSmartRoutingPort(input: {
             providerId: candidate.providerId,
             tier,
             modelId: pickModel(candidate, tier),
+            ...(optionsFor(candidate, pickModel(candidate, tier))
+              ? { options: optionsFor(candidate, pickModel(candidate, tier)) }
+              : {}),
             note: `Smart 已选套餐 ${label}：剩余额度 ${percent}%（阈值 5%）${
               candidate.kind === "account-offpeak" ? "，闲时套餐可用优先" : ""
             }${tier === "flash" ? "（flash 档无 Flash 模型，回退主力模型）" : ""}`,
@@ -252,6 +272,9 @@ export function createSmartRoutingPort(input: {
             providerId: candidate.providerId,
             tier,
             modelId: pickModel(candidate, tier),
+            ...(optionsFor(candidate, pickModel(candidate, tier))
+              ? { options: optionsFor(candidate, pickModel(candidate, tier)) }
+              : {}),
             note: `Smart 已选套餐 ${label}：剩余 ${percent}% 低于阈值，已自动使用最早过期的重置卡（${resetOutcome.resetType}），恢复到 ${afterPercent}%`,
           };
         }
@@ -260,10 +283,23 @@ export function createSmartRoutingPort(input: {
       // 套餐耗尽/未登录：回落 v1 目录择优（与解析期 v1 同一函数，语义完全一致）。
       const routed = safeResolveSmartRoute(input.getRegistryView);
       if (routed) {
+        // catalog 回落同样补齐思考档位（v1 择优模型可能要求档位）。
+        const routedModel = input
+          .getRegistryView()
+          ?.providers.find((provider) => provider.providerId === routed.providerId)
+          ?.models.find((candidate) => candidate.modelId === routed.modelId);
+        const reasoningValues = (
+          routedModel?.config as
+            | { optionSpecs?: { reasoningLevel?: { values?: readonly string[] } } }
+            | undefined
+        )?.optionSpecs?.reasoningLevel?.values;
         return {
           kind: "catalog",
           providerId: routed.providerId,
           modelId: routed.modelId,
+          ...(reasoningValues && reasoningValues.length > 0
+            ? { options: { reasoningLevel: reasoningValues[reasoningValues.length - 1]! } }
+            : {}),
           note:
             skipped.length > 0
               ? `Smart 套餐不可用（${skipped.join("；")}），回落普通目录择优 ${routed.providerId}/${routed.modelId}`
@@ -320,6 +356,15 @@ function classifyTaskTier(taskPreview?: string): "pro" | "flash" {
     return "pro";
   }
   return "flash";
+}
+
+/** 按选中模型补齐思考档位 options；模型无档位要求时返回 undefined。 */
+function optionsFor(
+  candidate: SmartRoutingCatalogEntry,
+  modelId: string,
+): { reasoningLevel: string } | undefined {
+  const values = candidate.models.find((model) => model.modelId === modelId)?.reasoningValues;
+  return values && values.length > 0 ? { reasoningLevel: values[values.length - 1]! } : undefined;
 }
 
 async function tryUseEarliestResetCard(
