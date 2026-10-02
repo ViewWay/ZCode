@@ -143,7 +143,8 @@ export function createSmartRoutingPort(input: {
 }): SmartRoutingPort {
   const now = input.now ?? Date.now;
   return {
-    async getRoutingDecision(): Promise<SmartRoutingDecision> {
+    async getRoutingDecision(taskInput?: { taskPreview?: string }): Promise<SmartRoutingDecision> {
+      const tier = classifyTaskTier(taskInput?.taskPreview);
       const skipped: string[] = [];
       let catalog: readonly SmartRoutingCatalogEntry[] = [];
       try {
@@ -162,20 +163,68 @@ export function createSmartRoutingPort(input: {
         ...accountCandidates.filter((entry) => entry.kind === "account-offpeak"),
         ...accountCandidates.filter((entry) => entry.kind === "account-plan"),
       ];
+      // 第一阶段：预取全部候选的额度快照（服务端有缓存，逐候选双查询代价可控）。
+      const evaluated: {
+        candidate: SmartRoutingCatalogEntry;
+        snapshot?: SmartRoutingPlanSnapshot;
+        queryError?: string;
+      }[] = [];
       for (const candidate of ordered) {
-        const label = `${candidate.providerId}/${pickModel(candidate)}`;
-        let snapshot: SmartRoutingPlanSnapshot;
         try {
-          snapshot = await input.usageStats.getPlanUsageSnapshot(
-            candidate.providerId,
-            candidate.accountAccess,
-          );
+          evaluated.push({
+            candidate,
+            snapshot: await input.usageStats.getPlanUsageSnapshot(
+              candidate.providerId,
+              candidate.accountAccess,
+            ),
+          });
         } catch (error) {
-          skipped.push(`${label}（额度查询失败：${errorMessage(error)}）`);
+          evaluated.push({ candidate, queryError: errorMessage(error) });
+        }
+      }
+      // flash 档：有 Flash 模型的已认证候选里取剩余最高（免费轨通常满额，天然优先消耗）。
+      if (tier === "flash") {
+        let best: { candidate: SmartRoutingCatalogEntry; percentage: number } | undefined;
+        for (const entry of evaluated) {
+          const flashSnapshot = entry.snapshot;
+          if (
+            !flashSnapshot ||
+            flashSnapshot.state !== "authenticated" ||
+            flashSnapshot.remainingPercentage === null
+          ) {
+            continue;
+          }
+          if (flashSnapshot.remainingPercentage < SMART_ROUTING_LOW_QUOTA_THRESHOLD) continue;
+          const flash = flashModelOf(entry.candidate);
+          if (!flash) continue;
+          if (best === undefined || flashSnapshot.remainingPercentage > best.percentage) {
+            best = { candidate: entry.candidate, percentage: flashSnapshot.remainingPercentage };
+          }
+        }
+        if (best) {
+          const flash = flashModelOf(best.candidate)!;
+          const percent = Math.round(best.percentage * 1000) / 10;
+          return {
+            kind: "plan",
+            providerId: best.candidate.providerId,
+            modelId: flash.modelId,
+            tier,
+            note: `Smart flash 档：任务简单，优先消耗剩余最高的轨（${best.candidate.providerId}/${flash.modelId}，剩余 ${percent}%）`,
+          };
+        }
+      }
+
+      // pro 档（或 flash 档无可用 Flash 模型的回退）：first-fit + 低额度自动用卡。
+      for (const entry of evaluated) {
+        const candidate = entry.candidate;
+        const label = `${candidate.providerId}/${pickModel(candidate, tier)}`;
+        const snapshot = entry.snapshot;
+        if (entry.queryError !== undefined) {
+          skipped.push(`${label}（额度查询失败：${entry.queryError}）`);
           continue;
         }
-        if (snapshot.state !== "authenticated") {
-          skipped.push(`${label}（${snapshot.state === "not_authenticated" ? "未登录" : "暂不可用"}）`);
+        if (!snapshot || snapshot.state !== "authenticated") {
+          skipped.push(`${label}（${snapshot?.state === "not_authenticated" ? "未登录" : "暂不可用"}）`);
           continue;
         }
         if (snapshot.remainingPercentage === null) {
@@ -187,10 +236,11 @@ export function createSmartRoutingPort(input: {
           return {
             kind: "plan",
             providerId: candidate.providerId,
-            modelId: pickModel(candidate),
+            tier,
+            modelId: pickModel(candidate, tier),
             note: `Smart 已选套餐 ${label}：剩余额度 ${percent}%（阈值 5%）${
               candidate.kind === "account-offpeak" ? "，闲时套餐可用优先" : ""
-            }`,
+            }${tier === "flash" ? "（flash 档无 Flash 模型，回退主力模型）" : ""}`,
           };
         }
         // 低额度：先用最早过期的重置卡（核销失败不阻塞，降级为无卡路径）。
@@ -200,7 +250,8 @@ export function createSmartRoutingPort(input: {
           return {
             kind: "plan",
             providerId: candidate.providerId,
-            modelId: pickModel(candidate),
+            tier,
+            modelId: pickModel(candidate, tier),
             note: `Smart 已选套餐 ${label}：剩余 ${percent}% 低于阈值，已自动使用最早过期的重置卡（${resetOutcome.resetType}），恢复到 ${afterPercent}%`,
           };
         }
@@ -230,13 +281,45 @@ export function createSmartRoutingPort(input: {
   };
 }
 
-/** provider 内模型择优与 v1 同尺：上下文窗口最大者优先，平手取目录顺序第一。 */
-function pickModel(candidate: SmartRoutingCatalogEntry): string {
+/** provider 内模型择优：pro 档取上下文窗口最大者；flash 档优先 modelId 含 flash（大小写不敏感）者，无则回退最大者。 */
+function pickModel(candidate: SmartRoutingCatalogEntry, tier: "pro" | "flash"): string {
+  if (tier === "flash") {
+    const flash = flashModelOf(candidate);
+    if (flash) {
+      return flash.modelId;
+    }
+  }
   let best = candidate.models[0]!;
   for (const model of candidate.models) {
     if (model.contextWindow > best.contextWindow) best = model;
   }
   return best.modelId;
+}
+
+/** flash 档模型：modelId 含 flash（大小写不敏感）者中上下文最大；无则 undefined。 */
+function flashModelOf(candidate: SmartRoutingCatalogEntry): {
+  modelId: string;
+  contextWindow: number;
+} | undefined {
+  const flash = candidate.models.filter((model) => /flash/i.test(model.modelId));
+  if (flash.length === 0) return undefined;
+  return flash.reduce((best, model) => (model.contextWindow > best.contextWindow ? model : best));
+}
+
+/** 任务档位启发式：复杂→pro（主力模型），简单→flash（免费轨/Flash 优先消耗）。 */
+function classifyTaskTier(taskPreview?: string): "pro" | "flash" {
+  const text = (taskPreview ?? "").trim();
+  if (text.length === 0) return "pro";
+  if (text.length > 2000) return "pro";
+  if ((text.match(/```/g) ?? []).length >= 2) return "pro";
+  if (
+    /(实现|重构|架构|迁移|排查|调试|调研|设计|优化|性能|安全|实现类|refactor|architect|migrat|debug|design|optimize|security)/i.test(
+      text,
+    )
+  ) {
+    return "pro";
+  }
+  return "flash";
 }
 
 async function tryUseEarliestResetCard(

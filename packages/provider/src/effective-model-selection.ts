@@ -21,12 +21,17 @@ export function resolveEffectiveModelSelection(input: {
   readonly accountStates?: AccountProviderStates;
   readonly classifyProvider: ModelSelectionProviderClassifier;
   readonly resolveLegacyReasoningLevel?: (selection: ModelSelection) => string | undefined;
+  /**
+   * Smart 虚拟选择的改写时机：仅在执行边界（core 回合解析）为 true。
+   * 显示/保存路径保持 false——Smart 原意图直达到 core，由套餐感知端口逐回合调度。
+   */
+  readonly resolveSmartSelection?: boolean;
 }): EffectiveModelSelectionResult {
   let original = input.selection;
   if (!original)
     return Object.freeze({ effectiveSelection: null, selectionIssue: "selection-missing" });
-  // Smart 虚拟选择：解析期在目录内择优改写为具体模型；后续流程（账号/隐藏/档位）照旧校验。
-  if (isSmartModelSelection(original)) {
+  // Smart 虚拟选择：执行边界改写为具体模型；显示/保存路径保持 Smart 原意图。
+  if (input.resolveSmartSelection === true && isSmartModelSelection(original)) {
     const routed = resolveSmartRoute(input.registry);
     if (!routed) {
       return Object.freeze({ effectiveSelection: null, selectionIssue: "provider-not-found" });

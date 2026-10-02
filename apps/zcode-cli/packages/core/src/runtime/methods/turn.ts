@@ -145,7 +145,9 @@ export async function executeTurnCommand(
     const smartRoutingPort = this.smartRoutingPort;
     if (smartRoutingPort) {
       try {
-        const decision = await smartRoutingPort.getRoutingDecision();
+        const decision = await smartRoutingPort.getRoutingDecision({
+          taskPreview: (options?.displayInput ?? input).slice(0, 4000),
+        });
         this.logger?.info("Smart routing decision", {
           event: "turn.smart_routing.decision",
           kind: decision.kind,
@@ -160,6 +162,14 @@ export async function executeTurnCommand(
             providerId: decision.providerId,
             modelId: decision.modelId,
           };
+          // 智能体编排（v1）：pro 档（复杂任务）注入编排前言，提示模型可用 Agent
+          // 工具组建小队并行分工；flash 档轻量直答不注入。
+          if (decision.tier === "pro") {
+            input = [
+              input,
+              "[Smart 调度] 本回合由复杂档模型执行。若任务可并行拆分，建议使用 Agent 工具组建小队分工协作。",
+            ].join("\n\n");
+          }
         } else if (decision.kind === "catalog" && decision.providerId && decision.modelId) {
           admittedModelSelection = {
             providerId: decision.providerId,

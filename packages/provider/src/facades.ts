@@ -196,6 +196,8 @@ export interface ModelSelectionProviderView extends Pick<
 
 export interface ModelSelectionViewInput {
   readonly selection: ModelSelection | null;
+  /** 执行边界专用：为 true 时 Smart 虚拟选择改写为具体模型；显示/保存路径保持 Smart。 */
+  readonly resolveSmartSelection?: boolean;
 }
 
 export interface ModelSelectionView extends Partial<EffectiveModelSelectionResult> {
@@ -557,6 +559,7 @@ export class ModelSelectionFacade {
             accountStates: snapshot?.account.states,
             classifyProvider: this.#classifyProvider,
             resolveLegacyReasoningLevel,
+            ...(input.resolveSmartSelection ? { resolveSmartSelection: true } : {}),
           })
         : {}),
     });

@@ -271,9 +271,10 @@ test("可用的闲时套餐排在付费套餐之前（时间窗能力的临时�
   const decision = await port.getRoutingDecision();
   assert.equal(decision.kind, "plan");
   assert.equal(decision.providerId, "zai-offpeak");
+  // v2 两阶段评估：全部候选都会预取快照；顺序仍验证闲时优先。
   assert.deepEqual(
     usageStats.calls.snapshotCalls.map((call) => call.providerId),
-    ["zai-offpeak"],
+    ["zai-offpeak", "bigmodel"],
   );
   assert.match(decision.note, /闲时/u);
 });
@@ -347,4 +348,58 @@ test("额度查询抛错按候选失败处理，回落目录择优", async () =>
 
 test("阈值常量为 5%", () => {
   assert.equal(SMART_ROUTING_LOW_QUOTA_THRESHOLD, 0.05);
+});
+
+test("flash 档：简单任务优先消耗剩余最高的轨（免费轨满额时天然优先）", async () => {
+  const usageStats = fakeUsageStats({
+    snapshots: {
+      bigmodel: { state: "authenticated", remainingPercentage: 0.4 },
+      start: { state: "authenticated", remainingPercentage: 0.9 },
+    },
+  });
+  const port = createSmartRoutingPort({
+    usageStats,
+    getCatalog: () => [
+      planEntry("bigmodel", [
+        ["glm-5.3", 200_000],
+        ["glm-5.3-flash", 130_000],
+      ]),
+      planEntry("start", [["glm-5.3-flash-free", 130_000]]),
+    ],
+    getRegistryView: () => registryViewWithOrdinary("openai", "gpt-x", 100_000),
+    now: fixedClock,
+  });
+  const decision = await port.getRoutingDecision({ taskPreview: "帮我看看这段代码怎么改" });
+  assert.equal(decision.kind, "plan");
+  assert.equal(decision.providerId, "start");
+  assert.equal(decision.modelId, "glm-5.3-flash-free");
+  assert.equal(decision.tier, "flash");
+});
+
+test("pro 档：复杂关键词或长文本走主力模型", async () => {
+  const usageStats = fakeUsageStats({
+    snapshots: {
+      bigmodel: { state: "authenticated", remainingPercentage: 0.4 },
+      start: { state: "authenticated", remainingPercentage: 0.9 },
+    },
+  });
+  const port = createSmartRoutingPort({
+    usageStats,
+    getCatalog: () => [
+      planEntry("bigmodel", [
+        ["glm-5.3", 200_000],
+        ["glm-5.3-flash", 130_000],
+      ]),
+      planEntry("start", [["glm-5.3-flash-free", 13_000]]),
+    ],
+    getRegistryView: () => registryViewWithOrdinary("pro-ordinary", "gpt-x", 100_000),
+    now: fixedClock,
+  });
+  const decision = await port.getRoutingDecision({
+    taskPreview: "请重构这个模块的架构，并设计新的迁移方案实现性能优化",
+  });
+  assert.equal(decision.kind, "plan");
+  assert.equal(decision.providerId, "bigmodel");
+  assert.equal(decision.modelId, "glm-5.3");
+  assert.equal(decision.tier, "pro");
 });

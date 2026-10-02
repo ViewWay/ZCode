@@ -278,8 +278,12 @@ export async function runZCodeProtocolAgent(
             activeProviderRegistryRuntime.configuredDefaultModelSelection,
           ),
           // 只读同进程已应用快照；不为子任务另发 Host RPC，也不在 ModelFactory 偷换模型。
+          // Smart 虚拟选择在此（执行边界）改写：UI 显示/保存路径保持 Smart 原意图。
           resolveEffectiveModelSelection: (selection) => {
-            const view = modelSelectionFacade.getView(undefined, undefined, { selection });
+            const view = modelSelectionFacade.getView(undefined, undefined, {
+              selection,
+              resolveSmartSelection: true,
+            });
             return {
               effectiveSelection: view.effectiveSelection ?? null,
               selectionIssue: view.selectionIssue,

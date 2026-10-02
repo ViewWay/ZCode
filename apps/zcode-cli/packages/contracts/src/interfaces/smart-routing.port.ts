@@ -27,11 +27,22 @@ export function isSmartRoutingSelection(
  * - unavailable：套餐与目录都无候选，调用方走既有 provider-not-found 路径。
  */
 export type SmartRoutingDecision =
-  | { kind: "plan"; providerId: string; modelId: string; note: string }
+  | {
+      kind: "plan";
+      providerId: string;
+      modelId: string;
+      /** 任务档位：pro=复杂（GLM-5.3 级），flash=简单（Flash 级/免费轨优先）。 */
+      tier: "pro" | "flash";
+      note: string;
+    }
   | { kind: "catalog"; note: string; providerId?: string; modelId?: string }
   | { kind: "unavailable"; note: string };
 
 export interface SmartRoutingPort {
-  /** 获取本轮 Smart 选择的执行决策；实现方自行兜底，不允许向调用方抛错阻断 turn。 */
-  getRoutingDecision(): Promise<SmartRoutingDecision>;
+  /**
+   * 获取本轮 Smart 选择的执行决策。taskPreview 为本轮用户输入预览（截断即可），
+   * 供宿主做任务档位评估（复杂→pro 档，简单→flash 档/免费轨优先）；
+   * 实现方自行兜底，不允许向调用方抛错阻断 turn。
+   */
+  getRoutingDecision(input?: { taskPreview?: string }): Promise<SmartRoutingDecision>;
 }
