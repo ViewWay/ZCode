@@ -64,6 +64,8 @@ import {
   zcodeOffPeakCreateParamsSchema,
   zcodeOffPeakListParamsSchema,
   zcodeSmartRoutingScopeParamsSchema,
+  zcodeDesktopSettingsGetParamsSchema,
+  zcodeDesktopSettingsSetParamsSchema,
   zcodeSmartRoutingUseResetParamsSchema,
   OFF_PEAK_PROVIDER_IDS,
   zcodeComputerUseOperationEventSchema,
@@ -302,6 +304,9 @@ import { ZCodeAgentMcpStatusModeUnsupportedError } from "#src/zcode-agent/zcodeA
 import { ZCodeAgentProcessManager } from "./zcodeAgentProcessManager.js";
 import type { ZCodeAgentProcessManagerOptions } from "./zcodeAgentProcessManager.js";
 import type { IOffPeakTaskService } from "#src/session/offPeakTask.js";
+// agent 可调桌面设置（specs/agent-settings.md）：Setting/Broadcast 走同包公开路径。
+import type { ISettingService } from "#src/setting/setting.js";
+import type { IBroadcastService } from "#src/broadcast/broadcast.js";
 import type { IUsageStatsService } from "#src/usage-stats/usageStats.js";
 import {
   ZCodeProtocolRequestTimeoutError,
@@ -862,6 +867,13 @@ function createRuntimeUnavailableError(params: ZCodeAgentWorkspaceTarget): Error
   return error;
 }
 
+// agent 可调桌面设置（specs/agent-settings.md）：theme 的宿主侧回读缓存——host 无真源
+// （真源在 renderer localStorage），缓存最近一次 set 的值供 get 回读；WeakMap 按 options
+// 分实例，不跨 Host 生命周期泄漏。
+const desktopThemeHostCache = new WeakMap<object, string>();
+/** theme 是白名单里唯一的 appearance scope 键（其余四键走 AppSettings）。 */
+const DESKTOP_THEME_PROTOCOL_KEY = "theme";
+
 interface CreateZCodeAgentServiceOptions extends Omit<
   ZCodeAgentProcessManagerOptions,
   "idleTimeoutMs"
@@ -898,6 +910,10 @@ interface CreateZCodeAgentServiceOptions extends Omit<
   resolveOffPeakTaskService?: () =>
     | Pick<IOffPeakTaskService, "createTask" | "list" | "getCodingPlanSupport">
     | undefined;
+  /** agent 可调桌面设置（specs/agent-settings.md）：AppSettings 唯一事实源的宿主读取入口。 */
+  resolveSettingService?: () => ISettingService | undefined;
+  /** theme 跨窗口广播出口；Web host（无 parentPort）缺席时 theme set 返回结构化不可用。 */
+  resolveBroadcastService?: () => IBroadcastService | undefined;
   /**
    * Smart v2 套餐路由的宿主数据面：协议 server（CLI 进程）经 smartRouting/* 反向请求
    * 查询套餐剩余额度/重置卡并核销。服务集合装配时注入（晚于本 service 构造，用惰性
@@ -2767,6 +2783,95 @@ export function createZCodeAgentService(
                       : ("unavailable" as const),
                 remainingPercentage: snapshot.remaining?.percentage ?? null,
               });
+            } catch (error) {
+              await client.respondError(request.id, {
+                code: -32603,
+                message: error instanceof Error ? error.message : String(error),
+              });
+            }
+          })();
+          return;
+        }
+
+        // agent 可调桌面设置（specs/agent-settings.md）：白名单内读写桌面设置。
+        // app scope 走 settingService（AppSettings 唯一写入路径）；theme 为 appearance
+        // scope：写经跨窗口广播（renderer setTheme 接收端 applyingBroadcast 防回环），
+        // 读回无真源，v1 回读 WeakMap 缓存。白名单已由协议边界 enum 与 bootstrap 端口
+        // 契约尺两道把关，这里按解析后的联合类型分支，不把原始 params 透传 update()。
+        if (
+          request.method === zcodeProtocolMethods.desktopSettingsGet ||
+          request.method === zcodeProtocolMethods.desktopSettingsSet
+        ) {
+          const parsed = (
+            request.method === zcodeProtocolMethods.desktopSettingsGet
+              ? zcodeDesktopSettingsGetParamsSchema
+              : zcodeDesktopSettingsSetParamsSchema
+          ).safeParse(request.params ?? {});
+          if (!parsed.success) {
+            void client.respondError(request.id, {
+              code: -32602,
+              message: "Invalid desktop settings params",
+              data: parsed.error.flatten(),
+            });
+            return;
+          }
+          void (async () => {
+            try {
+              const { key, value } = parsed.data as { key: string; value?: string | boolean };
+              if (request.method === zcodeProtocolMethods.desktopSettingsGet) {
+                if (key === DESKTOP_THEME_PROTOCOL_KEY) {
+                  const cached = desktopThemeHostCache.get(options ?? {});
+                  await client.respond(request.id, {
+                    key,
+                    ...(cached !== undefined ? { value: cached } : {}),
+                    scope: "appearance",
+                  });
+                  return;
+                }
+                const settingService = options?.resolveSettingService?.();
+                if (!settingService) {
+                  await client.respondError(request.id, {
+                    code: -32601,
+                    message: "Settings service is unavailable on this host",
+                  });
+                  return;
+                }
+                const settings = await settingService.get();
+                await client.respond(request.id, {
+                  key,
+                  value: settings[key as keyof typeof settings],
+                  scope: "app",
+                });
+                return;
+              }
+              if (key === DESKTOP_THEME_PROTOCOL_KEY) {
+                const broadcastService = options?.resolveBroadcastService?.();
+                if (!broadcastService) {
+                  await client.respondError(request.id, {
+                    code: -32601,
+                    message: "Theme sync is unavailable on this host",
+                  });
+                  return;
+                }
+                desktopThemeHostCache.set(options ?? {}, String(value));
+                broadcastService.send({ channel: "state:theme", payload: value });
+                await client.respond(request.id, { key, value, applied: true });
+                return;
+              }
+              const settingService = options?.resolveSettingService?.();
+              if (!settingService) {
+                await client.respondError(request.id, {
+                  code: -32601,
+                  message: "Settings service is unavailable on this host",
+                });
+                return;
+              }
+              // 仅白名单键进入写入路径；计算键名收窄为 Partial 更新，由
+              // settingService 的 appSettingsPatchSchema 校验值本身。
+              await settingService.update({ [key]: value } as Parameters<
+                ISettingService["update"]
+              >[0]);
+              await client.respond(request.id, { key, value, applied: true });
             } catch (error) {
               await client.respondError(request.id, {
                 code: -32603,

@@ -14,6 +14,7 @@ import type {
   AutomationPort,
   OffPeakPort,
   SessionChatPort,
+  DesktopSettingsPort,
   FileSystemPort,
   HttpClientPort,
   ImageProcessorPort,
@@ -109,6 +110,8 @@ export interface ToolExecutorOptions {
   offPeakPort?: OffPeakPort;
   /** 会话互聊（实验）端口；存在即为该会话注册 SessionList/SessionTalk/SessionCreate。 */
   sessionChatPort?: SessionChatPort;
+  /** agent 可调桌面设置端口；存在时注册 Get/SetDesktopSetting（specs/agent-settings.md）。 */
+  desktopSettingsPort?: DesktopSettingsPort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;
   workflowPort?: WorkflowPort;
@@ -219,6 +222,8 @@ export interface ToolExecutorDeps {
   offPeakPort?: OffPeakPort;
   /** 会话互聊（实验）端口；存在即为该会话注册 SessionList/SessionTalk/SessionCreate。 */
   sessionChatPort?: SessionChatPort;
+  /** agent 可调桌面设置端口；存在时注册 Get/SetDesktopSetting（specs/agent-settings.md）。 */
+  desktopSettingsPort?: DesktopSettingsPort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;
   workflowPort?: WorkflowPort;

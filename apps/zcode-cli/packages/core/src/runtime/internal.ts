@@ -22,6 +22,7 @@ import type {
   McpConnectionSnapshot,
   SkillLoadOutcome,
   SmartRoutingPort,
+  DesktopSettingsPort,
   SkillPort,
   McpPort,
   DynamicWorkflowRunPort,
@@ -97,6 +98,8 @@ export interface AgentRuntimeInternal
   contextSourcePort?: ContextSourcePort;
   /** Smart v2 套餐路由端口；turn 期 Smart 虚拟选择时读取（deps 注入，可缺席）。 */
   smartRoutingPort?: SmartRoutingPort;
+  /** agent 可调桌面设置端口；存在时注册 Get/SetDesktopSetting（specs/agent-settings.md）。 */
+  desktopSettingsPort?: DesktopSettingsPort;
   skillPort?: SkillPort;
   mcpPort?: McpPort;
   mcpStartupPromise?: Promise<McpConnectionSnapshot>;

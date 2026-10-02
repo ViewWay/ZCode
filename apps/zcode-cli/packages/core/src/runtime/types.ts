@@ -74,6 +74,7 @@ import type {
   OffPeakPort,
   SessionChatPort,
   SmartRoutingPort,
+  DesktopSettingsPort,
   FileSystemPort,
   HttpClientPort,
   ImageProcessorPort,
@@ -382,6 +383,8 @@ export interface AgentRuntimeDeps {
   sessionChatPort?: SessionChatPort;
   /** Smart v2 套餐路由端口；存在时 Smart 虚拟选择先问端口再定本轮执行模型，缺席保持 v1。 */
   smartRoutingPort?: SmartRoutingPort;
+  /** agent 可调桌面设置端口；存在时注册 Get/SetDesktopSetting（specs/agent-settings.md）。 */
+  desktopSettingsPort?: DesktopSettingsPort;
   contextSourcePort?: ContextSourcePort;
   eventSink?: SessionEventSink;
   logger?: Logger;

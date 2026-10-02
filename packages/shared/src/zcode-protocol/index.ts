@@ -3638,6 +3638,63 @@ export type ZCodeSmartRoutingUseResetProtocolResult = z.infer<
   typeof zcodeSmartRoutingUseResetResultSchema
 >;
 
+// Agent 可调桌面设置（specs/agent-settings.md）：协议 server（CLI 进程）反向请求宿主
+// 读写白名单桌面设置。宿主侧 scope=app 经 settingService 唯一路径兑现。白名单键集与
+// contracts 的 desktop-settings.port.ts 同步（那边另有按 key 的 value Schema 与
+// scope 映射）；这里在协议边界再拦一次敏感 key（代理/证书/快捷键等不在枚举内）。
+export const zcodeDesktopSettingKeySchema = z.enum([
+  "locale",
+  "messageStreamShowReasoning",
+  "messageStreamShowTodos",
+  "taskAutoArchiveEnabled",
+  "theme",
+]);
+export type ZCodeDesktopSettingProtocolKey = z.infer<typeof zcodeDesktopSettingKeySchema>;
+
+const zcodeDesktopSettingValueSchema = z.union([z.string(), z.boolean()]);
+const zcodeDesktopSettingScopeSchema = z.enum(["app", "appearance"]);
+
+export const zcodeDesktopSettingsGetParamsSchema = z
+  .object({ key: zcodeDesktopSettingKeySchema })
+  .strict();
+export type ZCodeDesktopSettingsGetProtocolParams = z.infer<
+  typeof zcodeDesktopSettingsGetParamsSchema
+>;
+
+export const zcodeDesktopSettingsSetParamsSchema = z
+  .object({
+    key: zcodeDesktopSettingKeySchema,
+    value: zcodeDesktopSettingValueSchema,
+  })
+  .strict();
+export type ZCodeDesktopSettingsSetProtocolParams = z.infer<
+  typeof zcodeDesktopSettingsSetParamsSchema
+>;
+
+export const zcodeDesktopSettingsSnapshotResultSchema = z
+  .object({
+    key: zcodeDesktopSettingKeySchema,
+    value: zcodeDesktopSettingValueSchema,
+    scope: zcodeDesktopSettingScopeSchema,
+  })
+  .strict();
+export type ZCodeDesktopSettingsSnapshotProtocolResult = z.infer<
+  typeof zcodeDesktopSettingsSnapshotResultSchema
+>;
+
+export const zcodeDesktopSettingsSetResultSchema = z
+  .object({
+    key: zcodeDesktopSettingKeySchema,
+    value: zcodeDesktopSettingValueSchema,
+    scope: zcodeDesktopSettingScopeSchema,
+    /** 写入路径唯一且成功才回包；失败走 JSON-RPC error，不存在 applied:false 的半成功。 */
+    applied: z.literal(true),
+  })
+  .strict();
+export type ZCodeDesktopSettingsSetProtocolResult = z.infer<
+  typeof zcodeDesktopSettingsSetResultSchema
+>;
+
 export const zcodeProtocolMethods = {
   runtimeCapabilities: "runtime/capabilities",
   computerUseOperationEvent: "computer-use/operation-event",
@@ -3733,6 +3790,9 @@ export const zcodeProtocolMethods = {
   smartRoutingUsageSnapshot: "smartRouting/usageSnapshot",
   smartRoutingResetStatus: "smartRouting/resetStatus",
   smartRoutingUseReset: "smartRouting/useReset",
+  // Agent 可调桌面设置：get/set_desktop_setting 工具反向请求宿主读写白名单设置。
+  desktopSettingsGet: "desktopSettings/get",
+  desktopSettingsSet: "desktopSettings/set",
   // @deprecated：host 消费已清零（zcodeAgentService 改走 v4/usage/stats）。
   // 仅剩 CLI server 的 wire 兼容 case；随旧词整体删除时一并移除。
   usageStats: "usage/stats",

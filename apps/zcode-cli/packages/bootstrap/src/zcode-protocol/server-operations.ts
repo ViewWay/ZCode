@@ -109,6 +109,7 @@ import { createProtocolInteractionBroker } from "./interaction-broker.js";
 import { createProtocolAutomationPort } from "./automation-port.js";
 import { createProtocolOffPeakPort } from "./offpeak-port.js";
 import { createProtocolSessionChatPort } from "./session-chat-port.js";
+import { createProtocolDesktopSettingsPort } from "./desktop-settings-port.js";
 import { createProtocolBrowserControlBroker } from "./browser-control-broker.js";
 import { mapComputerUseOperationEvent } from "./computer-use-operation-event.js";
 import { protocolMcpServersToRuntimeMcpConfig } from "./protocol-mcp-config.js";
@@ -3383,8 +3384,8 @@ async function createRecord(
     context.appRuntimePreferences.offPeakToolEnabled === true
       ? { offPeakPort: createProtocolOffPeakPort(context, () => ownSessionRecord) }
       : {}),
-    // 会话互聊（实验）：Host 同步 sessionChatEnabled 后才注入端口；端口存在即注册
-    // SessionList/SessionTalk/SessionCreate（fail-closed，缺省不注入）。
+    // 会话互聊：Host 同步 sessionChatEnabled 后才注入端口；端口存在即注册
+    // SessionList/SessionTalk/SessionCreate（fail-closed，缺省不注入——CLI/TUI 终态）。
     // createRecord 依赖注入 createSessionRecordForV4，避免与 session-chat-port 模块循环依赖。
     ...(context.appRuntimePreferences.sessionChatEnabled === true
       ? {
@@ -3398,6 +3399,10 @@ async function createRecord(
     ...(context.deps.smartRoutingPort
       ? { smartRoutingPort: context.deps.smartRoutingPort }
       : {}),
+    // agent 可调桌面设置（specs/agent-settings.md）：协议 server 在场即装配（无条件）；
+    // CLI 直跑无协议 server 天然缺席 → 工具不注册（fail-closed）。白名单由协议边界
+    // （zcodeDesktopSettingKeySchema）与宿主 handler 二次校验两道把关。
+    desktopSettingsPort: createProtocolDesktopSettingsPort(context),
     resolveInitialBashShellSelection: startupPreferences.resolveInitialBashShellSelection,
     // browser-use：agent.browsers.* 经此把命令转成 interaction/browserExecute 反向请求。
     browserControlPort: createProtocolBrowserControlBroker(context),

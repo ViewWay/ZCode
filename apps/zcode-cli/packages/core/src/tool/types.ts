@@ -5,6 +5,7 @@
 import type {
   ExecutionShellSelection,
   AutomationPort,
+  DesktopSettingsPort,
   OffPeakPort,
   SessionChatPort,
   EmbeddedSearchBackend,
@@ -170,6 +171,8 @@ export interface ToolExecutionContext {
   offPeakPort?: OffPeakPort;
   /** 会话互聊（实验）端口；端口缺席时 SessionList/SessionTalk/SessionCreate 不注册。 */
   sessionChatPort?: SessionChatPort;
+  /** agent 可调桌面设置端口；端口缺席时 get/set_desktop_setting 不注册（fail-closed）。 */
+  desktopSettingsPort?: DesktopSettingsPort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;
   workflowPort?: WorkflowPort;

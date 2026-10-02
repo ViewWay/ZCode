@@ -410,6 +410,7 @@ async function executeToolCallImpl(
       automationPort: deps.automationPort,
       offPeakPort: deps.offPeakPort,
       sessionChatPort: deps.sessionChatPort,
+      desktopSettingsPort: deps.desktopSettingsPort,
       sessionStore: deps.sessionStore,
       sessionModePort: deps.sessionModePort,
       workflowPort: deps.workflowPort,

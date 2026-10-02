@@ -166,6 +166,7 @@ export type {
   PartId,
   PermissionBrokerPort,
   PermissionBrokerRequest,
+  DesktopSettingsPort,
   PermissionBrokerRequestOptions,
   PermissionBrokerResult,
   PermissionUpdate,
