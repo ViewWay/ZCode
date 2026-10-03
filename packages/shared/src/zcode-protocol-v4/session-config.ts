@@ -18,6 +18,17 @@ export const sessionConfigStateSchema = z.object({
   planEnabled: z.boolean().optional(),
   /** 明确审批结果；草稿按 interactionId 消费一次，普通 mode 更新不重置它。 */
   permissionGrant: z.object({ interactionId: z.string().min(1) }).optional(),
+  /**
+   * Smart 路由决策面（specs/smart-routing-v3.md B3 UI 消费面）：当前生效档位与最近一次
+   * 切换原因。只随 Smart 换档的 ModelSelected 事件出现；非 Smart 换档（显式切换）不带
+   * 该字段，投影按「事件不带 → 清除」裁决。缺失字段兼容旧快照。
+   */
+  smartRouting: z
+    .object({
+      tier: z.enum(["pro", "flash"]),
+      note: z.string(),
+    })
+    .optional(),
   /** 最近工具转换的关联，供草稿定向同步；不新增可见历史事件。 */
   planTransition: z
     .object({
@@ -41,3 +52,21 @@ export const sessionModelTransitionSchema = z.object({
   }),
 });
 export type SessionModelTransition = z.infer<typeof sessionModelTransitionSchema>;
+
+/** Smart 决策档位与原因的值类型（`sessionConfigStateSchema.smartRouting` 的非空形态）。 */
+export type SmartRoutingDecision = NonNullable<
+  z.infer<typeof sessionConfigStateSchema>["smartRouting"]
+>;
+
+/**
+ * Smart 决策值比较（specs/smart-routing-v3.md B3 UI 消费面）。
+ * CLI 投影（config patch 变化门）与 renderer 摄取链（trail 落记录）共用同一份语义，
+ * 防止两侧各写一份比较导致「投影判定无变化、摄取判定有变化」的漂移。
+ */
+export function sameSmartRoutingDecision(
+  left: SmartRoutingDecision | null | undefined,
+  right: SmartRoutingDecision | null | undefined,
+): boolean {
+  if (!left || !right) return left === right;
+  return left.tier === right.tier && left.note === right.note;
+}

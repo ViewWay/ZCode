@@ -134,6 +134,7 @@ import {
   createInitialConversationSnapshot,
   deltaBumpsRevision,
 } from "./projection-state.js";
+import { resolveSmartRoutingConfigValue } from "./smart-routing-config.js";
 import {
   normalizeConversationEvent,
   type CanonicalAssistantSegmentFact,
@@ -4412,6 +4413,14 @@ export class ProductProjection {
     // 选型事件只更新 config，不在选型时落 modelChange
     // marker——切换动作是意向，marker 归 onTurnStarted 按「与上一轮实际选型不同」
     // 裁决（见彼处注释与 Bug 背景）。
+    // B3 UI 消费面（specs/smart-routing-v3.md）：Smart 决策档位与原因进 v4 config 投影。
+    // Smart 换档事件必带 smartRouting（设值）；非 Smart 换档事件不带（清除）；
+    // hydration 合成事件不触碰该面。值无变化不产生 patch 键，避免无意义广播。
+    const smartRoutingResolution = resolveSmartRoutingConfigValue({
+      previous: prev.smartRouting ?? null,
+      payloadSmartRouting: payload.smartRouting,
+      isHydration: String(event.traceId) === HYDRATION_TRACE_ID,
+    });
     const configChanged = !(
       prev.provider === provider &&
       prev.model === model &&
@@ -4435,15 +4444,31 @@ export class ProductProjection {
             to: { provider, model },
           }
         : undefined;
-    if (!configChanged && !contextWindowChanged && modelTransition === undefined) {
+    if (
+      !configChanged &&
+      !contextWindowChanged &&
+      modelTransition === undefined &&
+      !smartRoutingResolution.changed
+    ) {
       return [];
     }
     return [
       {
         op: "state.updated",
         patch: {
-          ...(configChanged
-            ? { config: { ...prev, modelSelection, provider, model, thought, thoughtLevels } }
+          ...(configChanged || smartRoutingResolution.changed
+            ? {
+                config: {
+                  ...prev,
+                  modelSelection,
+                  provider,
+                  model,
+                  thought,
+                  thoughtLevels,
+                  // next 为 null 表示清除：键级整体替换语义下显式写 undefined。
+                  smartRouting: smartRoutingResolution.next ?? undefined,
+                },
+              }
             : {}),
           // Bug 原因：仅投影 config 会丢失“由 registry fallback 触发”的来源，
           // renderer 无法安全地区分自动恢复和显式/历史切换。保留事件 ID 与起止身份，
