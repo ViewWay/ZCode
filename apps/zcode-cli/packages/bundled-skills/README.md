@@ -16,17 +16,27 @@ ZCode 内置技能包（随分发物携带；`bootstrap/src/app/bundled-skills.t
 - 与闭源 `documents-plugin`（LibreOffice 25.8.7 打包版）的关系：开源形态的能力对齐
   （specs/doc-env-bootstrap.md 待定项① 就此落定——承载位置 = bundled-skills）。
 
-## 其他内置（MIT）
+## 其他内置（MiMo-Code，MIT 全仓已核实）
 
-- **skill-creator**：技能创作指南（模型自举扩展 ZCode 技能面的元能力）；MIT。
-- **arxiv**：arXiv 论文检索/读取（走 arxiv.org 与 SemanticScholar 公开 API）；MIT。
+来源仓库 [XiaomiMiMo/MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code)（GitHub API 核实 MIT）。按「比 ZCode 现有能力更优才收录」逐域裁定：
 
-## 收录规则（对照 mimocode 全 24 技能）
+**收录（7）**：
+- **deep-research**：并行子代理深调研（纯用 ZCode 原生 WebSearch/WebFetch + 免费 API，完美契合）。
+- **super-research**：长时自主调研（minutes-to-overnight，可审计证据）——与 deep-research 轻重互补。
+- **data-analytics**：定量业务分析全流程（数据质量/指标诊断/KPI/看板/语义层，含资产与工作流）。
+- **product-design**：产品设计探索 / UX 研究与审计 / 产品面克隆。
+- **research-paper-writing**：ML/CV/NLP 学术论文写作与打磨。
+- **learn-everything**：PDF/论文/URL/主题 → 结构化互动学习课程。
+- **modern-python-toolchain**：uv/ruff/pyright 现代项目初始化。
 
-- 有对应能力且集成更深的不替换：浏览器域保留 `browser-use-plugin` 的
-  control-browser / web-gui-tester（桥接集成，优于 playwright-cli 指引型技能）；
-  工作流域保留 `dynamic-workflows`（必需路径完整性门控）。
-- 无许可证声明的 13 个技能（deep-research/data-analytics/super-research 等）不收录
-  （默认版权保留，无法进 Apache 开源仓）；claude-code/codex 为其它工具的使用手册、
-  mimocode-docs 为上游产品文档，均不收录。
+**不收录（9）及理由**：
+- claude-code / codex / grok-build：其它 CLI 工具的使用手册，ZCode 产品面语义混淆。
+- loop：ZCode 原生 cron / 闲时任务 / 定时回放已覆盖同一需求。
+- mate：桌面宠物精灵图，窄域玩具级。
+- memory-search：查询的是 MiMo 的 trajectory SQLite 结构，对 ZCode 的存储不适用。
+- compose-next：与 ZCode 原生 dynamic-workflows / plan-mode 流程重叠。
+- sales：544K 垂直销售域，超出通用编码 agent 的产品面。
+- playwright（Apache）：浏览器域保留 browser-use 插件的 control-browser / web-gui-tester
+  （与桌面桥集成更深；playwright-cli 指引型如有需要可自装）。
+- mimocode-docs：上游产品文档。
 
