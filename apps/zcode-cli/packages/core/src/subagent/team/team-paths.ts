@@ -44,10 +44,12 @@ export function resolveTeamIdentityKey(input: {
 export interface TeamWorkspaceDirs {
   /** 该 workspace 的团队根目录。 */
   teamsRoot: string;
-  /** 单个团队的目录：config.json / tasks.json / inboxes/ / locks/ 都在这里。 */
+  /** 单个团队的目录：config.json / tasks.json / plan.json / inboxes/ / locks/ 都在这里。 */
   teamDir(teamName: string): string;
   teamConfigFile(teamName: string): string;
   teamTasksFile(teamName: string): string;
+  /** 团队计划（v2.10）：与 config/tasks 同所有权的 plan.json。 */
+  teamPlanFile(teamName: string): string;
   teamInboxDir(teamName: string): string;
   teamInboxFile(teamName: string, memberName: string): string;
   teamLockDir(teamName: string): string;
@@ -65,6 +67,7 @@ export function resolveTeamWorkspaceDirs(
     teamDir,
     teamConfigFile: (teamName) => join(teamDir(teamName), "config.json"),
     teamTasksFile: (teamName) => join(teamDir(teamName), "tasks.json"),
+    teamPlanFile: (teamName) => join(teamDir(teamName), "plan.json"),
     teamInboxDir: (teamName) => join(teamDir(teamName), "inboxes"),
     teamInboxFile: (teamName, memberName) =>
       join(teamDir(teamName), "inboxes", `${memberName}.json`),

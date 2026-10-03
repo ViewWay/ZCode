@@ -7,5 +7,7 @@
   "[typescript]": {
     "editor.defaultFormatter": "oxc.oxc-vscode",
     "editor.formatOnSave": true
-  }
+  },
+  "cmake.sourceDirectory": "/Users/yimiliya/Projects/ZCode/scripts/native-search-tools-windows",
+  "js/ts.experimental.useTsgo": false
 }

@@ -65,6 +65,7 @@ import {
   teamKnowledgeSearchToolEntry,
   teamKnowledgeWriteToolEntry,
 } from "./team-knowledge.js";
+import { teamPlanApproveToolEntry, teamPlanToolEntry } from "./team-plan.js";
 import {
   sessionCreateToolEntry,
   sessionListToolEntry,
@@ -152,6 +153,8 @@ export const builtInTools: ToolEntry[] = [
   teamKnowledgeSearchToolEntry,
   teamKnowledgePromoteToolEntry,
   // TeamPlan（v2.10）：计划-审批-启动。TeamPlanApprove 走 needsApproval 人类权限面。
+  teamPlanApproveToolEntry,
+  teamPlanToolEntry,
   // 会话互聊（实验，默认关闭）：端口在场（宿主开关开启）才注册。
   sessionListToolEntry,
   sessionTalkToolEntry,

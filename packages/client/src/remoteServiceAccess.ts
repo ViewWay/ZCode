@@ -196,12 +196,6 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.distillKnowledgeService = ProxyChannel.toService<IDistillKnowledgeService>(
       channelClient.getChannel(IDistillKnowledgeService.channelName),
     );
-    // Bugfix（存量缺口）: accessor 自 commit 引入 teamsService 后要求该字段，
-    // RemoteServiceAccess 一直缺 proxy 实现，导致 tsc -b packages/client 必挂；
-    // 这里按同款 ProxyChannel 范式补齐，恢复 IServiceAccessor 契约一致。
-    this.teamsService = ProxyChannel.toService<ITeamsService>(
-      channelClient.getChannel(ITeamsService.channelName),
-    );
     this.skillsService = ProxyChannel.toService<ISkillsService>(
       channelClient.getChannel(ISkillsService.channelName),
     );
@@ -222,6 +216,9 @@ export class RemoteServiceAccess implements IServiceAccessor {
     );
     this.subagentsService = ProxyChannel.toService<ISubagentsService>(
       channelClient.getChannel(ISubagentsService.channelName),
+    );
+    this.teamsService = ProxyChannel.toService<ITeamsService>(
+      channelClient.getChannel(ITeamsService.channelName),
     );
     this.commandsService = ProxyChannel.toService<ICommandsService>(
       channelClient.getChannel(ICommandsService.channelName),

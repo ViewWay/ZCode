@@ -3,11 +3,12 @@ import type { IServiceAccessor } from "@zcode/services";
 import {
   buildWikiCatalogTree,
   computeWorkspaceWikiHash,
+  flattenWikiCatalogPageIds,
   getRepoWikiJsonPath,
   normalizeWikiDocument,
   type WikiCatalogNode,
   type WikiDocument,
-} from "@/lib/repoWiki.js";
+} from "./model.js";
 import { useWorkspaceHomePath } from "@/hooks/useWorkspaceHomePath.js";
 
 const POLL_INTERVAL_MS = 2500;
@@ -24,6 +25,8 @@ export interface UseRepoWikiWorkspaceParams {
 
 export interface RepoWikiWorkspaceState {
   phase: RepoWikiPhase;
+  /** wiki.json 存在但读取/解析失败（二进制/截断/坏 JSON）：空态需提示覆盖风险，不能伪装成未生成。 */
+  invalid: boolean;
   homePath?: string;
   workspaceHash?: string;
   wikiJsonPath?: string;
@@ -40,9 +43,9 @@ export function useRepoWikiWorkspace(
   services: IServiceAccessor,
   params: UseRepoWikiWorkspaceParams,
 ): RepoWikiWorkspaceState {
-  const { homePath, workspaceHash, wikiJsonPath, doc, catalog, phase, refresh } =
+  const { homePath, workspaceHash, wikiJsonPath, doc, catalog, phase, invalid, refresh } =
     useRepoWikiWorkspaceInner(services, params);
-  return { phase, homePath, workspaceHash, wikiJsonPath, doc, catalog, refresh };
+  return { phase, invalid, homePath, workspaceHash, wikiJsonPath, doc, catalog, refresh };
 }
 
 function useRepoWikiWorkspaceInner(
@@ -59,14 +62,20 @@ function useRepoWikiWorkspaceInner(
   const [workspaceHash, setWorkspaceHash] = useState<string | null>(null);
   const [doc, setDoc] = useState<WikiDocument | null>(null);
   const [phase, setPhase] = useState<RepoWikiPhase>("resolving");
+  const [invalid, setInvalid] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
   const loadGenerationRef = useRef(0);
+  // 轮询去重（spec v5）：记录上次成功读到的原文，内容一致时跳过解析与 setState——
+  // 磁盘仍是唯一事实源，去重只避免每 2.5s 的全量 JSON.parse 与派生重算/重渲染。
+  const lastContentRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setWorkspaceHash(null);
     setDoc(null);
     setPhase("resolving");
+    setInvalid(false);
+    lastContentRef.current = null;
     if (!homePath || !params.workspacePath) {
       return;
     }
@@ -105,6 +114,8 @@ function useRepoWikiWorkspaceInner(
         if (!existence[0]?.exists) {
           setPhase("missing");
           setDoc(null);
+          setInvalid(false);
+          lastContentRef.current = null;
           return;
         }
         const result = await services.fileService.readTextFile({
@@ -114,8 +125,14 @@ function useRepoWikiWorkspaceInner(
         });
         if (cancelled || generation !== loadGenerationRef.current) return;
         if (result.isBinary || result.truncated || !result.content) {
+          // 文件在但读不出可用内容：标记 invalid，让空态提示覆盖风险（spec v4）。
           setPhase("missing");
           setDoc(null);
+          setInvalid(true);
+          return;
+        }
+        // 内容与上次一致：状态已是该内容的产物，跳过解析与 setState。
+        if (result.content === lastContentRef.current) {
           return;
         }
         const parsed = normalizeWikiDocument(JSON.parse(result.content));
@@ -123,15 +140,21 @@ function useRepoWikiWorkspaceInner(
         if (!parsed) {
           setPhase("missing");
           setDoc(null);
+          setInvalid(true);
+          lastContentRef.current = result.content;
           return;
         }
+        lastContentRef.current = result.content;
         setDoc(parsed);
         setPhase("ready");
+        setInvalid(false);
       } catch {
         if (cancelled || generation !== loadGenerationRef.current) return;
-        // 文件不存在 = 尚未生成（正常空态）。
+        // 抛错多为文件被并发删除（正常空态）；invalid 只在「确认存在但读坏」时置位，
+        // 这里无法区分，回落为不存在语义，等下一次存在性检查纠正。
         setPhase("missing");
         setDoc(null);
+        lastContentRef.current = null;
       }
     };
     void load();
@@ -151,6 +174,7 @@ function useRepoWikiWorkspaceInner(
 
   return {
     phase,
+    invalid,
     homePath,
     workspaceHash: workspaceHash ?? undefined,
     wikiJsonPath: wikiJsonPath ?? undefined,
@@ -164,25 +188,15 @@ export function useRepoWikiSelection(catalog: WikiCatalogNode[]): {
   selectedPageId: string | null;
   selectPage: (pageId: string) => void;
 } {
-  const firstPageId = useMemo(() => {
-    // 目录树含分组节点（page=null）：默认选中深度优先遇到的第一个页面节点。
-    const findFirstPage = (nodes: WikiCatalogNode[]): string | null => {
-      for (const node of nodes) {
-        if (node.page) return node.page.id;
-        const inChildren = findFirstPage(node.children);
-        if (inChildren) return inChildren;
-      }
-      return null;
-    };
-    return findFirstPage(catalog);
-  }, [catalog]);
+  // 目录树含分组节点（page=null）：默认选中深度优先遇到的第一个页面节点
+  // （v7 复用 flattenWikiCatalogPageIds，避免与导航序各写一套递归）。
+  const firstPageId = useMemo(() => flattenWikiCatalogPageIds(catalog)[0] ?? null, [catalog]);
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   // 目录变化（首次生成/重新生成）时若当前选中页不存在则回落入口页。
   useEffect(() => {
     if (!selectedPageId) return;
-    const exists = (nodes: WikiCatalogNode[]): boolean =>
-      nodes.some((node) => node.page?.id === selectedPageId || exists(node.children));
-    if (catalog.length > 0 && !exists(catalog)) {
+    const existsInCatalog = flattenWikiCatalogPageIds(catalog).includes(selectedPageId);
+    if (catalog.length > 0 && !existsInCatalog) {
       setSelectedPageId(firstPageId);
     }
   }, [catalog, firstPageId, selectedPageId]);

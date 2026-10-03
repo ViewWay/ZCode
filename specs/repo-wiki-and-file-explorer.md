@@ -85,6 +85,12 @@ PreviewPane（视图）：live editor 渲染、懒建会话、Mod+S
 - 目录树：优先读信封 `catalogTree`（`{id,title,order,children,pageId?}` 递归节点，
   允许纯分组节点）；缺失时按 `parentId` 派生；再缺失则按 `order` 平铺。
 - 磁盘为唯一事实源；UI 不缓存页面内容，激活期间 2.5s 轮询重读。
+- 轮询去重（v5 修订）：读到的原文与上次一致时跳过 JSON 解析与状态更新
+  （文档对象保持引用稳定，派生目录/进度不重算、视图不重渲染）；
+  文件消失、内容变化或读取抛错时恢复正常处理。磁盘仍是唯一事实源。
+- wiki.json 存在但读取失败（二进制/截断/解析失败）时（v4 修订）：视图仍走空态，
+  但表单下方提示「wiki.json 存在但无法解析，重新生成将覆盖该文件」（`invalid` 标记，
+  随下次成功读取清除）——不能把「损坏」伪装成「未生成」，避免用户在不知情时覆盖既有 Wiki。
 - 页面 sources / markdown 内 `path#L行号` 引用 → code-viewer 打开；
   mermaid 代码块 → 既有 streamdown mermaid 插件渲染。
 
@@ -104,16 +110,40 @@ PreviewPane（视图）：live editor 渲染、懒建会话、Mod+S
   提交 ID（`getCommitGraph maxCount=1` 短哈希）· 文件数（`listWorkspaceFilesLength`）。
 - 生成状态机（磁盘推导，无独立服务状态）：
   - wiki.json 不存在 → 阶段「正在分析代码库」（进度条不显示 N/M）。
-  - 存在且含未完成页（markdown ==「生成中」/「生成失败」精确标记）→
-    「正在生成页面 done/total」+ 进度条 + 当前页名（目录序第一个未完成页）。
+  - 存在且含非失败未完成页（markdown ==「生成中」精确标记）→
+    「正在生成页面 done/total」+ 进度条 + 当前页名（目录序第一个「生成中」页）。
+  - 仅剩「生成失败」标记页（目录序无「生成中」页）→ 视图空闲：无页面正在生成，
+    顶栏完整控件回归；目录区继续显示失败计数与失败标记，已完成页面照常阅读
+    （会话异常中断且仍有「生成中」页时视图停留在生成中，可用「停止」兜底转空闲）。
   - 全部完成 → 空闲（完整控件回归）。停止/失败不影响已完成页面的阅读。
 - 页面状态进目录树：进行中页（目录序第一个未完成）标「正在生成」，其余未完成标
   「等待生成」，失败标记页标「生成失败」（目录区显示失败计数）；已完成正常，
   未完成页条目置灰不可选。
 - 两栏：React ResizablePanelGroup 横向，目录面板可拖宽、可整体收起（「项目」头 +
   收起/展开柄）；窄面板自动上下堆叠记为后续。
-- 目录：分组节点 = 小节标题（不可选中）；页面节点 = 标题 + `description` 副标题
-  （+ 生成中状态行）。
+- 目录：分组节点 = 可折叠小节标题（v4 修订：默认全部展开，点击切换；展开/收起为
+  面板视图态，不持久化；目录过滤激活时忽略折叠状态、直接展示全部命中路径）；
+  页面节点 = 标题 + `description` 副标题（+ 生成中状态行）。
+- 目录定位（v4 修订）：选中页变化时目录滚动容器自动滚动到当前页条目
+  （`scrollIntoView` block=nearest，不干扰用户正在进行的滚动）。
+- 目录过滤（v3 修订）：目录面板头部下方提供过滤输入框（视图态，不持久化），
+  按页面 `title` / `description` / `markdown` 大小写不敏感子串匹配；分组节点在其
+  子树有命中页面时保留，其余剪除；无命中显示「没有匹配的页面」空态；过滤激活时
+  面板头展示命中页数。过滤纯函数
+  `filterWikiCatalogTree` 不修改原树。键盘路径（v5 修订）：`Enter` 选中第一个匹配
+  页面（目录深度优先序），`Escape` 清空关键词。
+- 目录排序（v6 修订）：页面按 `order`，分组节点按**子树内页面的最小 order** 排序
+  （此前取首个子页的 order，同一目录树会因输入顺序不同排出不同结果）；同序按标题。
+- 页面 filePaths（v6 修订）：正文描述下方以「关键文件」chips 呈现页面 `filePaths`
+  （仓库相对路径，点击跳 code-viewer）；以 `/` 结尾的条目视为目录、不渲染。
+- 正文阅读（v3 修订）：切换页面时正文滚动容器回到顶部（长页底部切页不残留旧偏移）；
+  页面底部提供「上一页 / 下一页」导航，仅在已完成页面（目录深度优先序）间跳转，
+  端点处对应按钮禁用。
+- 本页大纲（v5 修订）：页面标题/描述之下提供可折叠「本页大纲」（默认展开；
+  从 markdown 源提取 h2/h3，跳过围栏代码块，纯函数 `extractWikiPageOutline` 含单测；
+  h1 与 h4 及更深层级不入纲）。点击大纲项滚动到对应标题：先按标题文本精确匹配
+  （同名标题取第 N 次出现），DOM 标题数量与大纲一致时按下标兜底，无匹配则不滚动。
+  大纲少于 2 项时不展示。
 - 入口：文件树面板头项目名右侧「仓库 Wiki」图标（已接 `onOpenRepoWiki`）；
   远程只读/断连时隐藏入口（记录为约束）。
 - 「返回对话」切回 `chat`；默认选中页 = 目录树深度优先第一个已完成页面节点。
@@ -122,7 +152,8 @@ PreviewPane（视图）：live editor 渲染、懒建会话、Mod+S
 
 - 顶栏「删除 Wiki」（仅空闲态显示）→ `useConfirmDialog` 确认 →
   `IFileService.deleteFile({ path })` → `{ deleted: boolean }`（不存在返回 false）。
-- 只删 `wiki.json` 文件本身，不递归删目录；删除成功后回到空态卡片。
+- 只删 `wiki.json` 文件本身，不递归删目录；删除成功后**立即触发一次重读**
+  （`refresh`，v5 修订），不等下一轮轮询，随即回到空态卡片。
 - 失败（权限等）：toast 报错，视图保持现状。远程 workspace 走同一 service channel。
 
 ### 生成（与对话 composer 解耦；跨重挂载可停止）
@@ -146,6 +177,17 @@ PreviewPane（视图）：live editor 渲染、懒建会话、Mod+S
   「停止」= 向登记 sessionId 发 `stop {}`（v4 协议命令，payload 可为空），
   已落盘页面保留、视图转空闲。
 - pending 为 hook 本地防双击态；生成进度只从 wiki.json 轮询推导（`summarizeWikiGeneration`）。
+- 单生成任务互斥（v5 修订）：`createSession` ACK 之后、目录骨架落盘之前存在一个
+  无视觉反馈的窗口，仅靠 pending 防不住重复发起——两个会话并发写同一 wiki.json
+  会互相覆盖。因此 `start` 在登记表已有本仓库会话时直接拒绝（`generation_in_flight`，
+  不发命令、无会话残留），生成/重新生成按钮在该状态下同步禁用；互斥随登记表
+  清理（完成/停止）自动解除。
+- 登记表生命周期（v3 修订）：登记表是 UI 对「生成会话在跑」的近似，磁盘为唯一事实源；
+  当磁盘推导出「无页面正在生成」（全部完成，或仅剩失败标记页）时清除对应登记条目
+  （`clearTrackedGeneration`，幂等）。否则残留登记会把「删除 Wiki 后的空态」误判为
+  「正在分析代码库」，只能靠手动停止逃离。
+- 完成通知（v3 修订）：自然完成（非用户停止，且视图内经历了「生成中 → 空闲」跳变）
+  时 toast 提示；仅剩失败页完成时提示含失败页数。重挂载/切视图回来不补发通知。
 - 成功后停留在 repo-wiki 视图；新会话经既有 sessions-index 刷新出现在任务列表。
 - 失败语义：`createSession` 被拒/抛错 → 无会话残留、wiki.json 不变、toast 报错；
   生成中途失败/停止 → wiki.json 保持最后成功状态，已完成页面照常阅读。
@@ -169,11 +211,40 @@ useRepoWikiGeneration：pendingRef 防双击 → createSession{firstInput} → A
   （旧设计把生成动作路由到 UI 元素，而 repo-wiki 视图本身会卸载 composer，主路径必然失败）。
 - 旧 v1 的 `*.md` 多文件布局废弃，读取端只认 wiki.json。
 
+### 模块布局与性能不变量（v7 修订）
+
+- 模块布局：RepoWiki 全部组件、hooks 与纯逻辑收拢在 `packages/ui/src/repo-wiki/`
+  功能目录（平铺，对齐 workspace-file-tree 先例）：
+  - 纯逻辑与类型：`repo-wiki/model.ts`（存储路径/归一/目录树/过滤/大纲）与
+    `repo-wiki/analysis.ts`（进度与上一页/下一页推导，`analyzeWikiDocument`
+    单遍扫描；单测 `packages/ui/test/repoWiki.test.ts`）。
+  - 生成登记表（module 级单例）：`repo-wiki/generationRegistry.ts`——所有权显式独立
+    成模块，track/has/clear 幂等；import 该文件即取得同一实例。
+  - 组件与 hooks（useRepoWikiWorkspace / useRepoWikiGeneration /
+    useRepoWikiGenerationStatus / useRepoWikiGenerationOptions）同目录平铺。
+  - 对外唯一挂载：`WorkspaceShellLayout` import `@/repo-wiki/RepoWikiWorkbench.js`；
+    其余入口（quickpick / sidebar / 文件树 / 侧面板）经既有 prop 与字符串耦合，
+    不受文件布局影响。
+- 性能不变量（回归线）：
+  - 正文 markdown 经 `MessageResponse` 深度 memo 渲染；传入回调链（`onOpenExternalUrl`
+    等）必须引用稳定（useCallback 全链），不得传 inline 箭头——否则本组件任意状态变化
+    都会触发整页 markdown 重渲。
+  - 目录过滤的每页小写检索文本按 page 对象经 WeakMap 缓存（page 引用由轮询去重保证
+    稳定）；`filterWikiCatalogTree` 保持纯函数语义：不改原树、同输入同输出；面板内
+    目录扁平化每轮只做一次（首命中页与命中计数共用同一结果）。
+  - 页面状态 / 进度 / 失败计数 / 可读页序由 `analyzeWikiDocument` 单遍扫描统一产出
+    （每页 markdown 至多 trim 一次）；`summarizeWikiGeneration` 为其兼容包装
+    （旧调用方与单测不破）。
+  - PageView 派生（本页大纲 / 来源去重 / 关键文件过滤）必须 `useMemo`（依赖 page）。
+  - 生成状态双推导语义固定：`busy`（登记表 + pending，禁用按钮）与 `generating`
+    （磁盘 + 登记表 + userStopped，视图态）统一由 useRepoWikiGenerationStatus 返回。
+
 ## 四、跨切面
 
 - 新 UI 遵守 `DESIGN.md`：`text-ui-*` 字号、语义色 token、按钮/圆角既有体系；复用 `packages/ui/src/components/ui/` 原语。
 - i18n：zh-CN / en-US 同步补 key，不得硬编码文案。
-- 纯逻辑（wiki 路径/链接解析）抽为 `packages/ui/src/lib/repoWiki.ts` 纯函数并配单测。
+- 纯逻辑（wiki 路径/链接解析/目录树/进度推导）收在 `packages/ui/src/repo-wiki/model.ts`
+  纯函数并配单测（模块布局见下节）。
 - 架构边界：ui → services 仅经公开入口与 service descriptor（`useWorkspaceServices`）；shared 仅类型/描述符；services 不反向依赖 ui。
 
 ## 五、验收场景
@@ -190,3 +261,16 @@ useRepoWikiGeneration：pendingRef 防双击 → createSession{firstInput} → A
    （不依赖已打开对话、不弹「未找到输入框」）；被拒时 toast 报错且无会话残留。
 7. Agent 生成过程中 repo-wiki 视图目录先出现、页面逐页补齐（轮询 wiki.json）；生成会话出现在任务列表。
 8. `pnpm architecture:check --changed`、`pnpm typecheck`、`pnpm lint` 全部通过（如实报告）。
+9. 生成自然完成后 toast 通知；仅剩失败页时提示失败数且顶栏完整控件回归；
+   完成后「删除 Wiki」直接回空态，不误显示「正在分析代码库」。
+10. 目录过滤按关键词命中标题/描述/正文（大小写不敏感），命中页所在分组保留、
+    未命中分组剪除；清空关键词恢复全树；无命中显示空态文案。
+11. 切换页面正文回到顶部；页面底部「上一页/下一页」只在已完成页面间按目录序跳转，
+    首/末页对应按钮禁用。
+12. 分组标题点击可折叠/展开该分组（默认展开）；过滤激活时忽略折叠展示全部命中；
+    切换选中页时目录自动滚动到当前条目。
+13. wiki.json 存在但解析失败时空态卡片显示覆盖提示；文件不存在时无此提示。
+14. 生成会话运行中（含 ACK 后骨架未落盘窗口）时生成/重新生成按钮禁用，重复触发
+    被 start 守卫拒绝且不产生第二个会话；停止或完成后恢复可用。
+15. 长页面标题下方展示「本页大纲」，点击大纲项滚动到对应小节；无 h2/h3 的页面
+    不展示大纲。

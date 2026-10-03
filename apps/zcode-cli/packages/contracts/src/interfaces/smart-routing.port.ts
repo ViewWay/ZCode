@@ -31,11 +31,19 @@ export type SmartRoutingDecision =
       kind: "plan";
       providerId: string;
       modelId: string;
+      /** 路由模型要求的思考档位（目录 optionSpecs 末档）；缺席=模型无档位要求。 */
+      options?: { reasoningLevel: string };
       /** 任务档位：pro=复杂（GLM-5.3 级），flash=简单（Flash 级/免费轨优先）。 */
       tier: "pro" | "flash";
       note: string;
     }
-  | { kind: "catalog"; note: string; providerId?: string; modelId?: string }
+  | {
+      kind: "catalog";
+      note: string;
+      providerId?: string;
+      modelId?: string;
+      options?: { reasoningLevel: string };
+    }
   | { kind: "unavailable"; note: string };
 
 export interface SmartRoutingPort {

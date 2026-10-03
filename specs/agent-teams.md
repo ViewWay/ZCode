@@ -279,3 +279,14 @@ lead 消费循环由 runner 端口闭包持有：首个 teammate spawn 时启动
 **团队角色模板**：`TeamCreate({template})` 读取 `<workspaceRoot>/.zcode/team-templates/<name>.md`（行式 markdown：description + `## member: <name>` 段（成员 prompt）+ `## task: <subject>` 段（owner/depends/detail）），解析为 templatePlan（成员 spawn 计划 + 任务创建计划，含 owner 与 depends 提示）随输出回灌 lead 模型，lead 按剧本 Agent spawn + TaskCreate 实例化。模板名走路径安全校验；段数上限 32。
 
 **协作闭环补全**：用户一句需求 → lead 自主选角色模板建队 → 成员按知识库/技能工作 → 经验沉淀 → 可提升为跨项目技能。
+### v2.10 增量（2026-10-01，P1）：TeamPlan 计划-审批-启动
+
+**契约**：`contracts/src/tools/team-plan.ts` 定稿 TeamPlanRecord（schemaVersion 1、teamName、sessionId、revision、state、members[≤8]、tasks[≤32]、feedback?、approvedAt?）。成员含 id/name/agentType?/prompt/model?（v1 仅记录不路由）/reason?/difficulty?；任务 owner 引用 member.name、depends 引用计划内任务 subject（自然语言键，校验存在性并拒绝依赖环）。
+
+**状态机**：draft → review_pending → approved（cancelled 终态）。plan.json 落 `<team-dir>/`，与 config/tasks 同所有权；revision 从 1 起每次成功写 +1；全部写入持 withTeamFileLock + 原子写；replace/submit/approve 走 expected_revision CAS（team_plan_conflict）。approved/cancelled 后一切写入拒绝（team_plan_locked）；approve 仅 review_pending 可进（team_plan_not_review_pending）；submit 仅 draft 可进。
+
+**工具面**：`TeamPlan`（get/replace/submit，needsApproval=false，注册门与 TeamCreate 同款 includeTeam=lead only）与 `TeamPlanApprove`（approve，needsApproval=true + alwaysAsk + 不允许「总是允许」——确认弹窗即人类批准面，关掉它等于让 lead 自批）。TeamPlan 收到 operation=approve 一律拒绝（team_plan_approve_gate），模型侧制度性不能绕过审批；submit 后输出明示「等待用户批准，不要开始工作、认领任务或 spawn 成员」。用户拒绝确认即驳回：lead 带 feedback 重新 replace（回到 draft）再 submit。TeamPlan 登记进 shared ZCODE_KNOWN_TOOL_NAMES（family=team，UI 复用 TeamToolCallBlock）。
+
+**启动剧本**：approve 成功输出 launchPlan（与 v2.8 templatePlan 同构）：lead 读后 `Agent({team_name, name})` spawn 成员 + TaskCreate 按序建任务（depends 映射 blockedBy 任务 id）。
+
+**对齐**：cc-haha v0.6.7 TeamPlanTool 的计划-审批-启动语义，裁剪为 v1 无 launching/running 等执行态（实例化由 lead 按剧本完成，运行态即团队本身）。FlowPilot dispatch=team 的编排依赖本 approved 状态作为启动前置。

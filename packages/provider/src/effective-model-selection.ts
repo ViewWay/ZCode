@@ -30,13 +30,40 @@ export function resolveEffectiveModelSelection(input: {
   let original = input.selection;
   if (!original)
     return Object.freeze({ effectiveSelection: null, selectionIssue: "selection-missing" });
-  // Smart 虚拟选择：执行边界改写为具体模型；显示/保存路径保持 Smart 原意图。
-  if (input.resolveSmartSelection === true && isSmartModelSelection(original)) {
-    const routed = resolveSmartRoute(input.registry);
-    if (!routed) {
-      return Object.freeze({ effectiveSelection: null, selectionIssue: "provider-not-found" });
+  // Smart 虚拟选择：执行边界改写为具体模型；显示/保存路径原意图透传（编排由 core 回合端口完成）。
+  if (isSmartModelSelection(original)) {
+    if (input.resolveSmartSelection === true) {
+      const routed = resolveSmartRoute(input.registry);
+      if (!routed) {
+        return Object.freeze({ effectiveSelection: null, selectionIssue: "provider-not-found" });
+      }
+      // 路由结果若命中要求思考档位的模型而未携带档位，按目录补全（取末档，与
+      // completeNewModelSelection 同语义），否则模型创建会因档位缺失失败。
+      const routedModel = input.registry.providers
+        .find((provider) => provider.providerId === routed.providerId)
+        ?.models.find((candidate) => candidate.modelId === routed.modelId);
+      const reasoningValues = (
+        routedModel?.config as
+          | { optionSpecs?: { reasoningLevel?: { values?: readonly string[] } } }
+          | undefined
+      )?.optionSpecs?.reasoningLevel?.values;
+      const reasoningLevel =
+        reasoningValues && reasoningValues.length > 0
+          ? reasoningValues[reasoningValues.length - 1]
+          : undefined;
+      original = {
+        providerId: routed.providerId,
+        modelId: routed.modelId,
+        ...(reasoningLevel === undefined ? {} : { options: { reasoningLevel } }),
+      };
+    } else {
+      return Object.freeze({
+        effectiveSelection: Object.freeze({
+          providerId: original.providerId,
+          modelId: original.modelId,
+        }),
+      });
     }
-    original = routed;
   }
   const kind = input.classifyProvider(original.providerId);
   let providerId = original.providerId;

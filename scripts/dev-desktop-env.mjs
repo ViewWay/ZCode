@@ -7,6 +7,11 @@ import { quoteArgsForWindowsShell } from "./spawn-command.mjs";
 
 const requestedEnv = process.argv[2]?.trim().toLowerCase();
 const agentBytecode = process.argv.slice(3).includes("--agent-bytecode");
+// 改动五（specs/desktop-dev-performance.md）：--renderer=built 切渲染进程产物模式
+// （vite build --watch + loadFile），失去 HMR 换取渲染进程内存大头。
+const rendererBuilt = process.argv.slice(3).includes("--renderer=built");
+// 静态挂机模式：一次性构建后零 watch 进程（specs/desktop-dev-performance.md 改动六）。
+const rendererStatic = process.argv.slice(3).includes("--renderer=static");
 if (requestedEnv !== "test" && requestedEnv !== "production") {
   console.error("Usage: node scripts/dev-desktop-env.mjs <test|production> [--agent-bytecode]");
   process.exit(1);
@@ -67,7 +72,12 @@ try {
       resolve(repoRoot, "scripts/build-desktop-agent-bytecode.mjs"),
     ]);
   }
-  await run(pnpmCommand, ["--filter", "@zcode/desktop", "dev:runtime"]);
+  const runtimeScript = rendererStatic
+    ? "dev:runtime:static"
+    : rendererBuilt
+      ? "dev:runtime:built"
+      : "dev:runtime";
+  await run(pnpmCommand, ["--filter", "@zcode/desktop", runtimeScript]);
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
   process.exit(1);

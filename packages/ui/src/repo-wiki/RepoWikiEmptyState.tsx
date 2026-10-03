@@ -1,23 +1,27 @@
-import { FolderTreeIcon, SparklesIcon } from "lucide-react";
+import { AlertTriangleIcon, FolderTreeIcon, SparklesIcon } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import {
   RepoWikiGenerationOptions,
   type RepoWikiGenerationOptionsProps,
-} from "@/app-shell/RepoWikiGenerationOptions.js";
+} from "./RepoWikiGenerationOptions.js";
 
 /**
  * Repo Wiki 空态：居中的生成配置表单（语言/模型/重试/图表可选）+ 生成入口。
  * spec：未生成时展示居中的可选配置列表，选好再生成。
+ * `invalidExistingWiki`（spec v4）：wiki.json 存在但无法解析时提示覆盖风险，
+ * 避免用户在不知情时重新生成并覆盖既有 Wiki。
  */
 export function RepoWikiEmptyState({
   generateDisabled,
   onGenerate,
   generationOptions,
+  invalidExistingWiki = false,
 }: {
   generateDisabled: boolean;
   onGenerate: () => void;
   generationOptions: RepoWikiGenerationOptionsProps;
+  invalidExistingWiki?: boolean;
 }) {
   const { intl } = useZCodeIntl();
   return (
@@ -40,6 +44,12 @@ export function RepoWikiEmptyState({
             <span className="block truncate font-mono text-ui-xs text-foreground-subtlest">
               ~/.zcode/v2/repo-wiki/&lt;workspace-hash&gt;/wiki.json
             </span>
+            {invalidExistingWiki ? (
+              <span className="mt-1 flex items-start gap-1 text-ui-xs leading-4 text-warning">
+                <AlertTriangleIcon className="mt-0.5 size-3 shrink-0" />
+                {intl.formatMessage({ id: "repoWiki.card.invalidJson" })}
+              </span>
+            ) : null}
           </div>
         </div>
         <Button size="sm" onClick={onGenerate} disabled={generateDisabled}>

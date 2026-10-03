@@ -44,6 +44,8 @@ export const ZCODE_KNOWN_TOOL_NAMES = [
   // 团队知识库(specs/agent-teams.md v2.3):family = team,UI 复用 TeamToolCallBlock。
   "TeamKnowledgeWrite",
   "TeamKnowledgeSearch",
+  // TeamPlan(v2.10):团队计划-审批-启动(对齐 cc-haha v0.6.7 TeamPlanTool)。
+  "TeamPlan",
 ] as const;
 
 export type ZCodeKnownToolName = (typeof ZCODE_KNOWN_TOOL_NAMES)[number];
@@ -108,6 +110,7 @@ const TOOL_FAMILY_BY_NAME: Record<ZCodeKnownToolName, ZCodeToolFamily> = {
   TaskList: "team",
   TeamKnowledgeWrite: "team",
   TeamKnowledgeSearch: "team",
+  TeamPlan: "team",
 };
 
 const TOOL_NAME_BY_LOWER = new Map<string, ZCodeKnownToolName>(
