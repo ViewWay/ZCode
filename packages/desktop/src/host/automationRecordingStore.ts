@@ -53,6 +53,17 @@ export interface AutomationRecordingStore {
   get(recordingId: string): Promise<AutomationRecording>;
   /** 保存录制件；id/createdAt 由存储层生成。steps 必须已通过 schema 校验。 */
   save(params: AutomationRecordingSaveParams): Promise<AutomationRecording>;
+  /**
+   * 读-改-写更新录制件元数据（原子写 + schema 复解析）。
+   * schedule: null = 清除调度（删除该键）；对象 = 设置/更新。
+   */
+  update(
+    recordingId: string,
+    patch: {
+      schedule?: { cronExpr: string; enabled: boolean } | null;
+      lastReplayStartedAt?: number;
+    },
+  ): Promise<AutomationRecording>;
   /** 删除录制件与其全部回放报告；返回是否删除了录制件本体。 */
   delete(recordingId: string): Promise<boolean>;
   /** 保存回放报告，返回报告文件绝对路径。 */
@@ -179,6 +190,42 @@ export function createAutomationRecordingStore(deps: {
         );
       }
       return recording;
+    },
+
+    async update(
+      recordingId: string,
+      patch: {
+        schedule?: { cronExpr: string; enabled: boolean } | null;
+        lastReplayStartedAt?: number;
+      },
+    ): Promise<AutomationRecording> {
+      assertRecordingId(recordingId);
+      // 读-改-写同一原子写；schedule: null = 清除调度（删除该键），对象 = 设置/更新。
+      const current = await (async () => {
+        const text = await readFile(recordingPath(recordingId), "utf8");
+        return parseAutomationRecordingJson(text);
+      })();
+      const base = { ...current } as Record<string, unknown>;
+      if (patch.schedule === null) {
+        delete base.schedule;
+      } else if (patch.schedule !== undefined) {
+        base.schedule = patch.schedule;
+      }
+      if (patch.lastReplayStartedAt !== undefined) {
+        base.lastReplayStartedAt = patch.lastReplayStartedAt;
+      }
+      const next = automationRecordingSchema.parse(base);
+      try {
+        await atomicWriteFile(recordingPath(recordingId), JSON.stringify(next, null, 2));
+      } catch (error) {
+        throw new AutomationRecordingStoreError(
+          `failed to update automation recording ${recordingId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          "write_failed",
+        );
+      }
+      return next;
     },
 
     async delete(recordingId) {

@@ -51,6 +51,14 @@ export interface IAutomationRecordingService {
   stopCapture(): Promise<AutomationRecording>;
   /** 取消采集并丢弃（不落库）；无活动会话时抛错。 */
   cancelCapture(): Promise<boolean>;
+  /**
+   * 定时回放（v1.2）：设置/更新录制件的 cron 调度（enabled=false 暂停）；
+   * undefined = 清除调度。非法 cron 抛可读错误。
+   */
+  setSchedule(
+    recordingId: string,
+    schedule: { cronExpr: string; enabled: boolean } | undefined,
+  ): Promise<AutomationRecording>;
 }
 
 export const IAutomationRecordingService = createServiceDescriptor<IAutomationRecordingService>(

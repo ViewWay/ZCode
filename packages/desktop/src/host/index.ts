@@ -2922,6 +2922,8 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
           IAutomationRecordingService,
           createAutomationRecordingHostService({
             rootDir: join(getZCodeDataRootDir(), "automations"),
+            // 定时回放滴答：桌面本地 Host 显式启用（60s 检查一次到期录制件）。
+            scheduleTickMs: 60_000,
             acquireReplayBrowserSession: (runId) =>
               acquireAutomationReplayBrowserSession(
                 {

@@ -11,6 +11,12 @@ automation，与 Bots/Cron 调度复用。
 3. 回放产出报告：逐步骤截图 + 成功/跳过/失败状态。extract 步骤另有数据面（v1.2）：
    执行结果为页面快照的序列化 JSON（执行器侧截断到 16K 字符），以步骤 `label`
    （缺省 seq）为键写入报告条目的 `label`/`data` 字段，作为回放的数据产出。
+4. 定时回放（v1.3）：录制件可挂 5 段 cron 调度（本地时区，`schedule{cronExpr,enabled}`，
+   lastReplayStartedAt 为去重/错过判定基准）。执行采用宿主侧 60s 滴答环（装配显式启用，
+   缺省停用防测试悬挂句柄）：到期先落时间戳防重入，skip 策略适配无人值守，在途集合
+   防同件并发；到期计算复用 automation 的 computeNextRunAt（同一 cron 数学，不建第二套）。
+   进程级 scheduler 接入（scheduler 进程派发→main→host）为后续增量，v1.3 滴答环已达
+   成「定时自动回放」的功能目标。
 
 ## 现状与增量
 

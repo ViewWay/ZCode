@@ -245,6 +245,8 @@ export {
   type ClientScenesResponse,
 } from "./client-scenes/clientScenes.js";
 export { isValidCronExpr } from "./session/automationCronValidation.js";
+// 定时回放（specs/record-replay.md v1.2）：到期计算复用 automation 同一 cron 数学。
+export { computeNextRunAt } from "./session/automationCron.js";
 // 闲时任务管理服务（与 automation 服务面独立）；接口/描述符 browser-safe。
 export { IOffPeakTaskService } from "./session/offPeakTask.js";
 export { IAutomationRecordingService } from "./automation-recording/automationRecordingService.js";

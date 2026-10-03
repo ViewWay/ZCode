@@ -7,6 +7,7 @@ import type {
   AutomationReplayOnFailure,
   AutomationReplayReport,
 } from "@zcode/shared";
+import { computeNextRunAt, isValidCronExpr } from "@zcode/services";
 import type { IAutomationRecordingService } from "@zcode/services";
 import {
   createAutomationRecordingStore,
@@ -58,6 +59,13 @@ export interface AutomationRecordingHostServiceDeps {
   now?: () => number;
   newRunId?: () => string;
   delay?: (ms: number) => Promise<void>;
+  /**
+   * 定时回放（v1.2）：调度滴答间隔；**缺省 0=停用**（测试免悬挂句柄），
+   * 宿主装配显式传入 60_000 启用。0 时可直调 runScheduledReplayCheck 驱动。
+   */
+  scheduleTickMs?: number;
+  /** cron 下次触发时间计算注入（默认 @zcode/services 的 computeNextRunAt）。 */
+  computeNextRunAtFn?: (cronExpr: string, from?: number) => number | null;
 }
 
 /** rootDir 与 store 至少提供一个；直接收口为显式错误，避免装配期静默落错目录。 */
@@ -71,12 +79,18 @@ function resolveStore(deps: AutomationRecordingHostServiceDeps): AutomationRecor
 
 export function createAutomationRecordingHostService(
   deps: AutomationRecordingHostServiceDeps,
-): IAutomationRecordingService {
+): IAutomationRecordingService & {
+  runScheduledReplayCheck(): Promise<void>;
+  dispose(): void;
+} {
   const store = resolveStore(deps);
   const log = deps.logger;
   const runIdFactory = deps.newRunId ?? defaultAutomationReplayRunId;
+  const computeDueAt = deps.computeNextRunAtFn ?? computeNextRunAt;
   /** 活动采集会话（唯一所有者）；同一时刻至多一个。 */
   let activeCapture: { handle: AutomationCaptureHandle; title?: string } | undefined;
+  /** 定时回放在途集合（防同录制件重入）。 */
+  const inFlightReplays = new Set<string>();
   /** 每次回放新建引擎：runId 预生成（会话 sessionId 对账），executor 按会话获取结果决定。 */
   const buildEngine = (executor: BrowserActionExecutor, runId: string) =>
     createAutomationReplayEngine({
@@ -87,11 +101,11 @@ export function createAutomationRecordingHostService(
       ...(deps.delay ? { delay: deps.delay } : {}),
     });
 
-  return {
+  const service = {
     async list(): Promise<AutomationRecording[]> {
       const { recordings, failures } = await store.list();
       for (const failure of failures) {
-        // 单个损坏文件不阻塞列表；提示出来让用户可以定位/删除。
+        // 单个损坏文件不阻塞列表（定时 tick 与 UI 共用）；提示定位/删除。
         log?.warn(`[automation-recording] skip corrupt file ${failure.file}: ${failure.error}`);
       }
       return recordings;
@@ -245,5 +259,81 @@ export function createAutomationRecordingHostService(
       log?.info(`[automation-capture] cancelled capture=${current.handle.captureId}`);
       return true;
     },
+
+    async setSchedule(
+      recordingId: string,
+      schedule: { cronExpr: string; enabled: boolean } | undefined,
+    ): Promise<AutomationRecording> {
+      if (schedule && schedule.enabled && !isValidCronExpr(schedule.cronExpr)) {
+        throw new Error(`invalid cron expression: ${schedule.cronExpr}`);
+      }
+      // enabled 且表达式合法才写入；undefined=清除调度；enabled=false=保留表达式暂停。
+      const recording = await store.update(recordingId, {
+        ...(schedule === undefined ? { schedule: null } : { schedule }),
+      });
+      log?.info(
+        `[automation-recording] schedule recording=${recordingId} ` +
+          `cron=${schedule?.cronExpr ?? "<cleared>"} enabled=${schedule?.enabled ?? false}`,
+      );
+      return recording;
+    },
+
+    /** 定时回放检查（单次）；定时器与测试共用。到期即置 lastReplayStartedAt 并回放。 */
+    async runScheduledReplayCheck(): Promise<void> {
+      let recordings: AutomationRecording[];
+      try {
+        ({ recordings } = await store.list());
+      } catch {
+        return;
+      }
+      const nowMs = deps.now?.() ?? Date.now();
+      const fires: Promise<void>[] = [];
+      for (const recording of recordings) {
+        const schedule = recording.schedule;
+        if (!schedule?.enabled || !isValidCronExpr(schedule.cronExpr)) continue;
+        if (inFlightReplays.has(recording.id)) continue;
+        const from = recording.lastReplayStartedAt ?? Date.parse(recording.createdAt);
+        const dueAt = computeDueAt(schedule.cronExpr, Number.isFinite(from) ? from : undefined);
+        if (dueAt === null || dueAt > nowMs) continue;
+        inFlightReplays.add(recording.id);
+        // 收集在途回放：定时器走 void 不阻塞滴答；测试直调本方法可确定性等待完成。
+        fires.push(
+          (async () => {
+            try {
+              // 先落时间戳防重入；skip 策略适配无人值守（单步失败不中断整轮）。
+              await store.update(recording.id, { lastReplayStartedAt: nowMs });
+              log?.info(
+                `[automation-recording] scheduled replay due recording=${recording.id} cron=${schedule.cronExpr}`,
+              );
+              await service.replay(recording.id, { onFailure: "skip" });
+            } catch (error) {
+              log?.warn(
+                `[automation-recording] scheduled replay failed recording=${recording.id}: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+            } finally {
+              inFlightReplays.delete(recording.id);
+            }
+          })(),
+        );
+      }
+      await Promise.allSettled(fires);
+    },
+
+    /** 停止定时回放滴答（宿主资源收口时调用）。 */
+    dispose(): void {
+      if (scheduleTimer !== undefined) {
+        clearInterval(scheduleTimer);
+        scheduleTimer = undefined;
+      }
+    },
   };
+
+  const scheduleTickMs = deps.scheduleTickMs ?? 0;
+  let scheduleTimer: ReturnType<typeof setInterval> | undefined;
+  if (scheduleTickMs > 0) {
+    scheduleTimer = setInterval(() => void service.runScheduledReplayCheck(), scheduleTickMs);
+  }
+  return service;
 }

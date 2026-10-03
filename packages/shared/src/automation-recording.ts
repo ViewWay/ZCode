@@ -69,6 +69,13 @@ export const automationRecordingSchema = z
     title: z.string().trim().max(200).optional(),
     createdAt: z.string().datetime(),
     source: automationRecordingSourceSchema,
+    /** 定时回放（v1.2）：5 段 cron（本地时区）；enabled=false 暂停。缺省不调度。 */
+    schedule: z
+      .object({ cronExpr: z.string().min(1).max(200), enabled: z.boolean() })
+      .strict()
+      .optional(),
+    /** 上次回放触发时间（epoch ms）；定时回放的去重与错过判定基准。 */
+    lastReplayStartedAt: z.number().int().nonnegative().optional(),
     steps: z.array(automationRecordingStepSchema).min(1).max(500),
   })
   .strict()

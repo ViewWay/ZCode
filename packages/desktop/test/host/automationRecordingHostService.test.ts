@@ -35,6 +35,8 @@ async function makeService(executor?: BrowserActionExecutor) {
     executor: countingExecutor,
     newRunId: () => "run-fixed",
     delay: async () => {},
+    // 测试直调 runScheduledReplayCheck；禁用自动滴答防悬挂句柄。
+    scheduleTickMs: 0,
   });
   return { rootDir, service, executed };
 }
@@ -348,5 +350,72 @@ test("stopCapture 会话失败：错误透出且活动占用已摘除（可重�
   await assert.rejects(() => service.stopCapture(), /drain channel broken/u);
   assert.equal(await service.getCaptureState(), null);
   assert.equal(createdCount(), 1);
+  await rm(rootDir, { recursive: true, force: true });
+});
+
+test("setSchedule：非法 cron 拒绝；合法写入/暂停/清除", async () => {
+  const { rootDir, service } = await makeService();
+  const saved = await service.save({ title: "签到", steps: makeSteps() });
+  await assert.rejects(
+    () => service.setSchedule(saved.id, { cronExpr: "not-a-cron", enabled: true }),
+    /invalid cron/u,
+  );
+  const enabled = await service.setSchedule(saved.id, { cronExpr: "0 * * * *", enabled: true });
+  assert.deepEqual(enabled.schedule, { cronExpr: "0 * * * *", enabled: true });
+  const paused = await service.setSchedule(saved.id, { cronExpr: "0 * * * *", enabled: false });
+  assert.equal(paused.schedule?.enabled, false);
+  const cleared = await service.setSchedule(saved.id, undefined);
+  assert.equal(cleared.schedule, undefined);
+  await rm(rootDir, { recursive: true, force: true });
+});
+
+test("定时回放：到期触发、写 lastReplayStartedAt 并产出报告", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "zcode-automation-sched-"));
+  const executed: number[] = [];
+  const service = createAutomationRecordingHostService({
+    rootDir,
+    executor: {
+      surface: "counting",
+      async executeStep(step) {
+        executed.push(step.seq);
+        return { ok: true };
+      },
+      async captureScreenshot() {
+        return { ok: true, base64Png: "aGVsbG8=" };
+      },
+    },
+    scheduleTickMs: 0,
+    now: () => 1_000_000,
+    // next=900_000 < now=1_000_000 → 立即到期。
+    computeNextRunAtFn: () => 900_000,
+    newRunId: () => "run-sched",
+    delay: async () => {},
+  });
+  const saved = await service.save({ title: "巡检", steps: makeSteps() });
+  await service.setSchedule(saved.id, { cronExpr: "0 * * * *", enabled: true });
+  await service.runScheduledReplayCheck();
+  const after = await service.get(saved.id);
+  assert.equal(after?.lastReplayStartedAt, 1_000_000);
+  assert.equal((await service.listReports(saved.id)).length, 1);
+  // wait 不派发执行器：只统计 navigate。
+  assert.deepEqual(executed, [1]);
+  await rm(rootDir, { recursive: true, force: true });
+});
+
+test("定时回放：未到期不触发", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "zcode-automation-sched-not-due-"));
+  const service = createAutomationRecordingHostService({
+    rootDir,
+    scheduleTickMs: 0,
+    now: () => 1_000_000,
+    computeNextRunAtFn: () => 2_000_000,
+    delay: async () => {},
+  });
+  const saved = await service.save({ title: "巡检", steps: makeSteps() });
+  await service.setSchedule(saved.id, { cronExpr: "0 * * * *", enabled: true });
+  await service.runScheduledReplayCheck();
+  const after = await service.get(saved.id);
+  assert.equal(after?.lastReplayStartedAt, undefined);
+  assert.equal((await service.listReports(saved.id)).length, 0);
   await rm(rootDir, { recursive: true, force: true });
 });
