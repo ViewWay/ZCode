@@ -20,7 +20,7 @@ ZCode 内置技能包（随分发物携带；`bootstrap/src/app/bundled-skills.t
 
 来源仓库 [XiaomiMiMo/MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code)（GitHub API 核实 MIT）。按「比 ZCode 现有能力更优才收录」逐域裁定：
 
-**收录（7）**：
+**收录（10）**：
 - **deep-research**：并行子代理深调研（纯用 ZCode 原生 WebSearch/WebFetch + 免费 API，完美契合）。
 - **super-research**：长时自主调研（minutes-to-overnight，可审计证据）——与 deep-research 轻重互补。
 - **data-analytics**：定量业务分析全流程（数据质量/指标诊断/KPI/看板/语义层，含资产与工作流）。
@@ -28,9 +28,11 @@ ZCode 内置技能包（随分发物携带；`bootstrap/src/app/bundled-skills.t
 - **research-paper-writing**：ML/CV/NLP 学术论文写作与打磨。
 - **learn-everything**：PDF/论文/URL/主题 → 结构化互动学习课程。
 - **modern-python-toolchain**：uv/ruff/pyright 现代项目初始化。
+- **claude-code / codex / grok-build**（产品确认收录）：其它智能体 CLI 的操作手册
+  （tmux 会话/headless/CI 等）——ZCode 作为主编排者可代用户驱动这些 CLI，
+  多智能体协作面（用户指令：让 agent 更好地使用其他智能体）。
 
-**不收录（9）及理由**：
-- claude-code / codex / grok-build：其它 CLI 工具的使用手册，ZCode 产品面语义混淆。
+**不收录（6）及理由**：
 - loop：ZCode 原生 cron / 闲时任务 / 定时回放已覆盖同一需求。
 - mate：桌面宠物精灵图，窄域玩具级。
 - memory-search：查询的是 MiMo 的 trajectory SQLite 结构，对 ZCode 的存储不适用。
