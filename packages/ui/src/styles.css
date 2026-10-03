@@ -2074,3 +2074,13 @@ html.appearance-pointer-cursor a {
 .prompt-mention[data-mention-category="plugins"]::before {
   border-radius: var(--radius-sm);
 }
+
+/* PDF 预览联动（specs/pdf-preview-linkage.md）：pdf_locate 文本层高亮。
+   高亮只作用于预览层，不修改 PDF 文件本身；<mark> 原生底色在暗色主题下不可读，
+   统一用主题语义色。 */
+.pdf-locate-highlight {
+  background-color: var(--color-accent, rgb(250 204 21 / 0.45));
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}

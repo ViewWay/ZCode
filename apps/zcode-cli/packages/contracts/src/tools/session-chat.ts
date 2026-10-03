@@ -1,9 +1,10 @@
 // ============================================================
-// Session Chat (实验) - SessionList / SessionTalk / SessionCreate 工具契约
+// Session Chat - SessionList / SessionTalk / SessionCreate 工具契约
 // ============================================================
 // 会话互聊（MiMo 实验室同名功能的 ZCode 落地）：允许模型呼叫同 workspace 内的
-// 其它存活会话，并创建协作者会话。实验开关默认关闭；关闭时宿主不注入
-// SessionChatPort，core 不注册这三个工具（新建回合无此工具面）。
+// 其它存活会话，并创建协作者会话。desktop 形态默认注入 SessionChatPort
+// （AppSettings.sessionChatEnabled 缺省即开启）；CLI/TUI 关闭（宿主不注入），
+// core 不注册这三个工具（新建回合无此工具面）。spec：specs/session-chat.md。
 // 安全边界：SessionTalk 单条消息长度上限 8_000 字符；目标必须同 workspace；
 // 不触碰 agent-teams 状态（与 SendMessage/TeamCreate 是两套机制）。
 
@@ -36,8 +37,10 @@ export const SessionListOutputSchema = z
     sessions: z.array(
       z.object({
         sessionId: z.string(),
-        title: z.string(),
-        status: z.enum(["idle", "running"]),
+        /** 可选：宿主解析不到标题时省略；展示层回退 untitled。 */
+        title: z.string().optional(),
+        /** busy = 目标会话存在未完成 turn；唯一来源是 SessionChatPort（宿主注册表）。 */
+        status: z.enum(["busy", "idle"]),
         updatedAt: z.number(),
       }),
     ),

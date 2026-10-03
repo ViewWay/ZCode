@@ -14,6 +14,9 @@ import type {
   AutomationPort,
   OffPeakPort,
   SessionChatPort,
+  DesktopSettingsPort,
+  ImageGenerationPort,
+  VoicePipelinePort,
   FileSystemPort,
   HttpClientPort,
   ImageProcessorPort,
@@ -109,6 +112,12 @@ export interface ToolExecutorOptions {
   offPeakPort?: OffPeakPort;
   /** 会话互聊（实验）端口；存在即为该会话注册 SessionList/SessionTalk/SessionCreate。 */
   sessionChatPort?: SessionChatPort;
+  /** agent 可调桌面设置端口；存在时注册 Get/SetDesktopSetting（specs/agent-settings.md）。 */
+  desktopSettingsPort?: DesktopSettingsPort;
+  /** 图像生成/编辑端口；存在时注册 image_gen/image_edit（specs/image-tools.md）。 */
+  imageGenerationPort?: ImageGenerationPort;
+  /** 语音转写/合成端口；存在时注册 asr_transcribe/tts_speech（specs/voice-pipeline.md）。 */
+  voicePipelinePort?: VoicePipelinePort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;
   workflowPort?: WorkflowPort;
@@ -219,6 +228,12 @@ export interface ToolExecutorDeps {
   offPeakPort?: OffPeakPort;
   /** 会话互聊（实验）端口；存在即为该会话注册 SessionList/SessionTalk/SessionCreate。 */
   sessionChatPort?: SessionChatPort;
+  /** agent 可调桌面设置端口；存在时注册 Get/SetDesktopSetting（specs/agent-settings.md）。 */
+  desktopSettingsPort?: DesktopSettingsPort;
+  /** 图像生成/编辑端口；存在时注册 image_gen/image_edit（specs/image-tools.md）。 */
+  imageGenerationPort?: ImageGenerationPort;
+  /** 语音转写/合成端口；存在时注册 asr_transcribe/tts_speech（specs/voice-pipeline.md）。 */
+  voicePipelinePort?: VoicePipelinePort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;
   workflowPort?: WorkflowPort;

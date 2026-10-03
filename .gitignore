@@ -80,3 +80,6 @@ packages/desktop/.e2e-network-capture/
 # ZCode 自动生成的工作区搜索忽略配置（由设置页「从 .gitignore 同步」生成），
 # 各 workspace 各自一份，自定义规则属个人本地配置，不入库。
 .zcodeignore
+
+# OMC 插件会话状态（多目录散布；git add -A 易误扫）
+.omc/

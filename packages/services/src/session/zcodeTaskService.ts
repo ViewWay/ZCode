@@ -142,6 +142,47 @@ export interface ZCodeModelTrajectoryRecord {
   };
 }
 
+// ---- 跨会话轨迹聚合（对齐 memory-search 理念：结构化分析而非文本检索）----
+
+export interface TrajectoryUsageStatsParams {
+  /** 只统计 startedAt >= sinceMs 的记录（epoch ms）；缺省全量。 */
+  sinceMs?: number;
+  /** 最多扫描的会话文件数；缺省全部。 */
+  maxSessions?: number;
+}
+
+export interface TrajectoryModelUsageStat {
+  providerId: string;
+  modelId: string;
+  calls: number;
+  errored: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export interface TrajectoryToolCallStat {
+  tool: string;
+  calls: number;
+}
+
+export interface TrajectorySessionUsageStat {
+  sessionId: string;
+  calls: number;
+  errored: number;
+  lastStartedAt?: string;
+}
+
+export interface TrajectoryUsageStats {
+  scannedSessions: number;
+  scannedRecords: number;
+  erroredRecords: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  byModel: TrajectoryModelUsageStat[];
+  byTool: TrajectoryToolCallStat[];
+  bySession: TrajectorySessionUsageStat[];
+}
+
 /** 某个 task/session 的完整模型调用轨迹。 */
 export interface ZCodeModelTrajectory {
   taskId: string;
@@ -602,6 +643,17 @@ export interface IZCodeTaskService {
     /** 最多返回的调用条数（按时间倒序保留最近 N 条），默认 200。 */
     limit?: number;
   }): Promise<ZCodeModelTrajectory>;
+
+  /**
+   * 跨会话聚合（对齐 memory-search 理念）：扫描全部 model-io JSONL，按模型/工具/会话
+   * 聚合调用、错误与 token 用量。只读，不建索引不落库。
+   */
+  getTrajectoryUsageStats(params: {
+    /** 只统计 startedAt >= sinceMs 的记录（epoch ms）。 */
+    sinceMs?: number;
+    /** 最多扫描的会话文件数。 */
+    maxSessions?: number;
+  }): Promise<TrajectoryUsageStats>;
 
   /** 从 agent usage 数据库读取某个 task/session 的累计模型 token 用量。 */
   getTaskTokenUsage(params: {

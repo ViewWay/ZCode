@@ -90,6 +90,7 @@ import { ChatPromptEditor } from "@/prompt-editor/ChatPromptEditor.js";
 import { usePromptEditorDragState } from "@/prompt-editor/usePromptEditorDragState.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { advanceComposerDraftRevision } from "@/v4/composer/composerDraftRevision.js";
+import { VoiceRecorderControl } from "@/v4/composer/VoiceRecorderControl.js";
 import type { AppSlashCommand } from "@/slashCommandHelpers.js";
 import { useOptionalServices } from "@/hooks/useServices.js";
 import { logger } from "@/logger.js";
@@ -2061,6 +2062,13 @@ function ConversationComposerImpl({
             onSendCompressionCommand={onSendCompressionCommand}
           />
         </span>
+        {/* 语音输入入口（specs/voice-pipeline.md）：紧邻发送键左侧（产品定位）；
+            组件内按 getUserMedia/平台通道能力自隐藏（Web 降级），录音落盘后经
+            统一附件通道注入。 */}
+        <VoiceRecorderControl
+          disabled={disabled}
+          onRecordingSaved={(attachment) => attachmentsApi.attachPreparedAttachment([attachment])}
+        />
         {showStopControl ? (
           <ControlHintTooltip title={stopTooltipTitle} shortcut="Esc">
             <Button
@@ -2109,6 +2117,7 @@ function ConversationComposerImpl({
       handleStopClick,
       handleSendButtonClick,
       handleConfigPickerOpenChange,
+      attachmentsApi.attachPreparedAttachment,
       mode,
       handleSelectModelTrace,
       modelSelectionReload,
@@ -2167,6 +2176,7 @@ function ConversationComposerImpl({
     ),
     [
       activeConfigPicker,
+      attachmentsApi.attachPreparedAttachment,
       canStop,
       disabled,
       draftConfig,

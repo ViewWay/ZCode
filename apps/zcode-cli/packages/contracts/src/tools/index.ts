@@ -64,6 +64,18 @@ export * from "./team-plan.js";
 // 会话互聊（实验）：三个工具的名字常量与 schema 被 core 的工具注册与 handler 读走；
 // 漏掉这行注册门拿不到 SESSION_*_TOOL_NAME，工具面静默缺失。
 export * from "./session-chat.js";
+// 外部会话只读互操作（specs/external-sessions.md）：工具名常量与 schema 被 core 工具注册读走。
+export * from "./external-session.js";
+// agent 可调桌面设置（specs/agent-settings.md）：工具名常量与按 key value Schema。
+export * from "./desktop-setting.js";
+// 图像工具（specs/image-tools.md）：image_gen/image_edit 契约。
+export * from "./image-tool.js";
+// 语音工具（specs/voice-pipeline.md）：asr_transcribe/tts_speech 契约。
+export * from "./voice-tool.js";
+// PDF 预览联动（specs/pdf-preview-linkage.md）：pdf_locate 契约。
+export * from "./pdf-locate.js";
+// 交付物卡片（specs/deliverable-cards.md）：present_files 契约。
+export * from "./present-files.js";
 
 // Shared types (only once to avoid duplicates)
 export type { DiffHunk, GitDiff } from "./write.js";

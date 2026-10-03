@@ -82,6 +82,11 @@ interface ComposerAttachmentsApi {
   isDraggingOverComposer: boolean;
   attachmentInputRef: React.RefObject<HTMLInputElement | null>;
   openAttachmentPicker: () => void;
+  /**
+   * 注入已构造好的附件（录音、画板导出等非选择器来源）。
+   * 与选择器/粘贴共用 addPreparedAttachments 的上限、上传调度与清理边界。
+   */
+  attachPreparedAttachment: (attachments: readonly ChatComposerAttachment[]) => void;
   handleAttachmentInputChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   handlePaste: (event: ChatComposerPasteEvent) => void;
   handleDragOverComposer: (event: React.DragEvent<HTMLElement>) => void;
@@ -703,6 +708,13 @@ export function useComposerAttachments(
     [addPreparedAttachments],
   );
 
+  const attachPreparedAttachment = useCallback(
+    (attachments: readonly ChatComposerAttachment[]) => {
+      addPreparedAttachments([...attachments]);
+    },
+    [addPreparedAttachments],
+  );
+
   const openAttachmentPicker = useCallback(() => {
     if (readComposerAttachmentScope(scopeKey).length >= MAX_CHAT_ATTACHMENTS) {
       showAttachmentLimitWarning();
@@ -1071,6 +1083,7 @@ export function useComposerAttachments(
       isDraggingOverComposer,
       attachmentInputRef,
       openAttachmentPicker,
+      attachPreparedAttachment,
       handleAttachmentInputChange,
       handlePaste,
       handleDragOverComposer,
@@ -1089,6 +1102,7 @@ export function useComposerAttachments(
       attachmentError,
       adoptSentAttachments,
       attachments,
+      attachPreparedAttachment,
       composerDragKind,
       clearAttachments,
       restoreSessionOwnedAttachments,

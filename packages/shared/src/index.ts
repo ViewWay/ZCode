@@ -93,6 +93,12 @@ export * from "./official-mcp-tool-error.js";
 export * from "./conversation-message-projection-policy.js";
 export * from "./conversation-share.js";
 export * from "./conversation-preview-artifacts.js";
+// 交付物卡片与 zwidget（specs/deliverable-cards.md）：present_files 工具名与消息流
+// widget 块的纯函数层，contracts 工具契约与 UI 渲染两侧共用。
+export * from "./zwidget.js";
+// PDF 预览联动（specs/pdf-preview-linkage.md）：pdf_locate 工具名与回显文本解析，
+// renderer 工具卡消费（UI 包不能依赖 CLI contracts，事实在此单一来源）。
+export * from "./pdfLocate.js";
 export * from "./zcode-session-task-status.js";
 export * from "./zcode-tool-projection-memory.js";
 export * from "./zcode-slash-command-help.js";
@@ -192,6 +198,8 @@ export type {
   ConnectRemoteRequest,
   CreateTempTextAttachmentRequest,
   CreateTempTextAttachmentResult,
+  CreateTempVoiceAttachmentRequest,
+  CreateTempVoiceAttachmentResult,
   SaveFileRequest,
   SaveFileResult,
   PrintPageToPdfResult,
@@ -231,6 +239,7 @@ export type {
 export type { ZCodeTaskCreateResult } from "./zcode-task-types.js";
 export * from "./zcode-task-types.js";
 export * from "./automation-types.js";
+export * from "./automation-recording.js";
 export * from "./off-peak-types.js";
 export * from "./background-task-control-merge.js";
 export * from "./background-task-controls.js";
@@ -307,3 +316,18 @@ export * from "./clientConfig.js";
 export * from "./pluginStoreOrdering.js";
 export * from "./session-debug.js";
 export { redactFeedbackText } from "./feedbackPrivacy.js";
+
+// 自动沉淀（specs/auto-distill.md）：候选领域类型与常量（浏览器安全，renderer 审阅 UI 共用）；
+// 候选文件读写与项目记忆目录定位是 Node-only，经 "@zcode/shared/node" 暴露。
+export type {
+  DistillCandidate,
+  DistillCandidateKind,
+  DistillCandidateWorkspace,
+  DistillFragmentRole,
+  DistillSessionFragment,
+  DistillSessionInput,
+} from "./auto-distill/types.js";
+export {
+  DISTILL_CANDIDATES_FILE_NAME,
+  DISTILL_STORE_SCHEMA_VERSION,
+} from "./auto-distill/types.js";

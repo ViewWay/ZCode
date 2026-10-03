@@ -44,6 +44,8 @@ import type {
   EditorInfo,
   CreateTempTextAttachmentRequest,
   CreateTempTextAttachmentResult,
+  CreateTempVoiceAttachmentRequest,
+  CreateTempVoiceAttachmentResult,
   SaveFileRequest,
   SaveFileResult,
   PrintPageToPdfResult,
@@ -149,6 +151,10 @@ export const ServiceChannels = {
   PromptAttachmentTransfer: "prompt-attachment-transfer",
   /** 闲时任务管理服务（与 automation 服务面独立） */
   OffPeakTask: "off-peak-task",
+  /** 浏览器操作录制回放管理服务（specs/record-replay.md；Desktop 本地 Host 提供） */
+  AutomationRecording: "automation-recording",
+  /** 已沉淀知识审阅服务（specs/auto-distill.md；候选确认/删除/提升，Desktop 本地 Host 提供） */
+  DistillKnowledge: "distill-knowledge",
   /** Onboarding 完成记录服务（本地持久化，后续上传服务器） */
   OnboardingRecord: "onboarding-record",
 } as const;
@@ -169,6 +175,8 @@ export const PlatformChannels = {
   SelectFiles: "zcode:select-files",
   /** Renderer → Main：写入宿主 ~/.zcode 临时文本附件 */
   CreateTempTextAttachment: "zcode:create-temp-text-attachment",
+  /** Renderer → Main：写入宿主 ~/.zcode 临时语音附件（麦克风录音，specs/voice-pipeline.md） */
+  CreateTempVoiceAttachment: "zcode:create-temp-voice-attachment",
   /** Renderer → Main：通过原生另存为对话框保存文件 */
   SaveFile: "zcode:save-file",
   /** Renderer → Main：用 Chromium 打印引擎把当前页面 print 媒体版面导出为 PDF */
@@ -685,6 +693,10 @@ export interface PlatformChannelMap {
   [PlatformChannels.CreateTempTextAttachment]: {
     request: CreateTempTextAttachmentRequest;
     response: CreateTempTextAttachmentResult;
+  };
+  [PlatformChannels.CreateTempVoiceAttachment]: {
+    request: CreateTempVoiceAttachmentRequest;
+    response: CreateTempVoiceAttachmentResult;
   };
   [PlatformChannels.SaveFile]: {
     request: SaveFileRequest;

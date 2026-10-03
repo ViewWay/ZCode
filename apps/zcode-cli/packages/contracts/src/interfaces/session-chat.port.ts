@@ -1,16 +1,24 @@
 // ============================================================
-// Session Chat Port - 会话互聊（实验室）工具面的宿主能力边界
+// Session Chat Port - 会话互聊工具面的宿主能力边界
 // ============================================================
 // 与 AutomationPort/OffPeakPort 同族：core 的三个工具（SessionList/SessionTalk/
 // SessionCreate）经此端口访问同 workspace 内的其它会话。协议 server（bootstrap
-// zcode-protocol）提供实现；端口缺席即不注册工具（fail-closed，实验开关默认关闭）。
+// zcode-protocol）提供实现；端口缺席即不注册工具（fail-closed）。desktop 形态
+// 默认注入（AppSettings.sessionChatEnabled 缺省即开启）；CLI/TUI 无 Host 同步，
+// 进程级偏好默认关闭。spec：specs/session-chat.md。
 // v1 范围：仅同 CLI 进程内的 resident 会话；不跨机、不接外部非 ZCode agent。
 
 /** SessionList 返回的最小联系人快照；不含本会话。 */
 export interface SessionChatContact {
   sessionId: string;
-  title: string;
-  status: "idle" | "running";
+  /** 可选：宿主尽力从 session store 解析，解析不到可省略（展示层回退 untitled）。 */
+  title?: string;
+  /**
+   * busy/idle 的唯一来源：宿主注册表（协议 server context.sessions）。
+   * busy 语义：目标会话存在未完成 turn。core 不自行推导、不缓存，每次
+   * SessionList 都实时向端口拉取；未提供 status 的旧端口实现按 idle 兼容。
+   */
+  status?: "busy" | "idle";
   updatedAt: number;
 }
 

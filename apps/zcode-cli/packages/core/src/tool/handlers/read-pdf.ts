@@ -35,7 +35,9 @@ import type {
 
 const READ_PROVIDER_PDF_DESCRIPTION_LINE =
   '- Reads PDFs via the `pages` parameter (e.g. "1-5", max 20 pages/request; required for PDFs over 10 pages).';
-const READ_ERROR_CODE_BY_PDF_DOCUMENT_ERROR = {
+// pdf_locate（specs/pdf-preview-linkage.md）与本文件共用同一张端口错误→Read 错误码
+// 映射表，导出以避免两份会漂移的穷尽映射。
+export const READ_ERROR_CODE_BY_PDF_DOCUMENT_ERROR = {
   cancelled: undefined,
   corrupted: ReadErrorCode.PDF_INVALID,
   io_error: ReadErrorCode.PDF_IO_ERROR,
@@ -282,7 +284,8 @@ async function readPdfPages(
   }
 }
 
-function rethrowPdfCancellation(error: unknown, signal: AbortSignal): void {
+// 取消转换由 read-pdf 与 pdf_locate 共用：端口取消必须统一收口为 ToolCancelled。
+export function rethrowPdfCancellation(error: unknown, signal: AbortSignal): void {
   // 根因：ExecutionPort 在 runtime shutdown 时可以返回 cancelled，而不改变调用方的
   // AbortSignal。端口错误若直接冒泡，executor 又会把它归为普通内部失败；在 Core
   // 边界转换为统一 ToolCancelled，才能同时停止读取并正确收口工具生命周期。
@@ -368,7 +371,8 @@ function failure(errorCode: ReadErrorCode, message: string): ToolHandlerFailure 
   return { result: false, errorCode, message };
 }
 
-function createToolTrace(context: ToolExecutionContext): TraceContext {
+// trace 上下文的窄化构造由 read-pdf 与 pdf_locate 共用。
+export function createToolTrace(context: ToolExecutionContext): TraceContext {
   return {
     traceId: context.traceId,
     spanId: context.spanId,

@@ -681,6 +681,8 @@ export type ModelSelectionOrigin = "registryFallback";
 
 export interface ModelSelectedPayload {
   modelSelection: ModelSelection;
+  /** Smart 路由决策（specs/smart-routing-v3.md）：缺失表示非 Smart 轮或旧事件。 */
+  smartRouting?: { tier: "pro" | "flash"; note: string };
   /** Active Model 已解析出的 reasoning，仅供执行事实/展示投影，不属于稀疏 Selection。 */
   effectiveReasoningLevel?: string;
   /** 缺失表示只更新当前选型；null 表示显式 ∅→selection 模型边界。 */

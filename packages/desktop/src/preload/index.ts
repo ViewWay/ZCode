@@ -74,6 +74,7 @@ import type {
   WindowControlsOverlayMetrics,
   WindowControlsOverlayReadyPayload,
   CreateTempTextAttachmentRequest,
+  CreateTempVoiceAttachmentRequest,
   OpenCuaPermissionOnboardingOptions,
   ConfigureFinalArmsCustomEventE2ERequest,
   FinalArmsCustomEventE2EEntry,
@@ -308,6 +309,9 @@ contextBridge.exposeInMainWorld("zcode", {
   /** 长文本粘贴落盘为真正的本地附件，避免正文和 prompt payload 被撑大 */
   createTempTextAttachment: (payload: CreateTempTextAttachmentRequest) =>
     ipcRenderer.invoke(PlatformChannels.CreateTempTextAttachment, payload),
+  /** 麦克风录音落盘为本地音频附件，随后走 asr_transcribe 工具链路 */
+  createTempVoiceAttachment: (payload: CreateTempVoiceAttachmentRequest) =>
+    ipcRenderer.invoke(PlatformChannels.CreateTempVoiceAttachment, payload),
   /** 订阅当前窗口内远程连接过程日志，返回 disposer */
   onRemoteConnectionLog: (callback: (entry: RemoteConnectionRuntimeLog) => void) => {
     const handler = (_event: unknown, payload: unknown) =>

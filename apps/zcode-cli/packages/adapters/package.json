@@ -38,6 +38,10 @@
       "types": "./dist/pdf/index.d.ts",
       "import": "./dist/pdf/index.js"
     },
+    "./generation": {
+      "types": "./dist/generation/index.d.ts",
+      "import": "./dist/generation/index.js"
+    },
     "./provider": {
       "types": "./dist/provider/index.d.ts",
       "import": "./dist/provider/index.js"

@@ -68,6 +68,7 @@ import { createInputFacade } from "./input-facade.js";
 import { createPluginFacadeForApp } from "./plugin-facade.js";
 import { resolvePluginRuntimeFeatures } from "./plugin-runtime-features.js";
 import { createSessionFacade } from "./session-facade.js";
+import { runSessionCloseDistillTrigger } from "./distill-close-trigger.js";
 import { resolveAppRuntimeConfig, runtimeConfigLogContext } from "./runtime-config.js";
 import { resolveBundledSkillRoots } from "./bundled-skills.js";
 import { collectDynamicWorkflowDisabledSkillPaths } from "./dynamic-workflow-gate.js";
@@ -95,6 +96,10 @@ import { resolveZCodeCustomCommandPrompt } from "../custom-command-prompt.js";
 import { resolveZCodeBuiltinPromptCommand } from "../builtin-prompt-command.js";
 import { collectDisabledPaths } from "../skill-command-overrides.js";
 import { loadPluginAgentProfiles, loadZCodeAgentProfiles } from "../subagents.js";
+// 图像工具（specs/image-tools.md）：CLI 进程内本地端口装配。
+import { createLocalImageGenerationPort } from "../image-generation/image-generation-port.js";
+// 语音工具（specs/voice-pipeline.md）：CLI 进程内本地端口装配。
+import { createLocalVoicePipelinePort } from "../voice-pipeline/voice-pipeline-port.js";
 import { createRuntimeAiSdkModelExecutionConfig } from "../model-config.js";
 import { ApiProviderModelRuntime } from "./provider-registry-model-runtime.js";
 import {
@@ -775,6 +780,30 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       automationPort: options.automationPort,
       offPeakPort: options.offPeakPort,
       sessionChatPort: options.sessionChatPort,
+      desktopSettingsPort: options.desktopSettingsPort,
+      // 图像工具（specs/image-tools.md）：CLI 进程内本地装配。能力声明驱动——
+      // Registry 中首个声明 properties.capabilities.image 的模型条目作为
+      // OpenAI 兼容图像端点；未声明时工具返回可读指引错误，不触网。
+      imageGenerationPort: createLocalImageGenerationPort({
+        registry: options.providerRegistry,
+        network: {
+          env: options.env ?? process.env,
+          httpProxy: configResult.config.network.httpProxy,
+          noProxy: configResult.config.network.noProxy,
+          caCertFile: configResult.config.network.caCertFile,
+        },
+      }),
+      // 语音工具（specs/voice-pipeline.md）：与图像端点同一套能力声明机制，
+      // transcription / speech 独立扫描；未声明时返回可读指引错误，不触网。
+      voicePipelinePort: createLocalVoicePipelinePort({
+        registry: options.providerRegistry,
+        network: {
+          env: options.env ?? process.env,
+          httpProxy: configResult.config.network.httpProxy,
+          noProxy: configResult.config.network.noProxy,
+          caCertFile: configResult.config.network.caCertFile,
+        },
+      }),
       smartRoutingPort: options.smartRoutingPort,
       appVersion,
       traceContext,
@@ -875,6 +904,21 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       projectID,
       providerRegistry: options.providerRegistry,
       resolveUiLocale: (locale) => resolveEffectiveLocale(locale, options),
+      // 自动沉淀会话结束触发器（specs/auto-distill.md）：远程 workspace 不触发——
+      // 候选"确认"在 Desktop 本地 host 写项目记忆，远程工作区的记忆目录不在本地，
+      // 触发了也无法落地；远程链路留给后续增量（与 memory extraction 的 remote 跳过对齐）。
+      ...(isRemoteWorkspaceIdentity(runtimeConfig.memory?.workspaceIdentity ?? "")
+        ? {}
+        : {
+            runDistillExtractionOnClose: () =>
+              runSessionCloseDistillTrigger({
+                sessionId,
+                sessionStore,
+                workingDirectory,
+                workspaceIdentity: runtimeConfig.memory?.workspaceIdentity,
+                logger,
+              }),
+          }),
       runtime,
       sessionId,
       sessionStore,

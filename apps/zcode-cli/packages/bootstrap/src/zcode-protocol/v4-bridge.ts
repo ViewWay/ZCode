@@ -1107,6 +1107,7 @@ export function createConversationV4Gateway(
       mcpServers,
       offPeakToolEnabled,
       dynamicWorkflowEnabled,
+      pdfLocateToolEnabled,
     }) => {
       // workspaceId 双形态（Workspace Identity 约束）：
       // - 本地工作区 = workspacePath（identity 缺省时的 fallback）；
@@ -1130,6 +1131,9 @@ export function createConversationV4Gateway(
         // v4 createSession 必须与 legacy session/create 等价透传，否则无界面创建的会话
         // 会绕过 Host 的灰度判定，只剩进程级缺省。
         ...(dynamicWorkflowEnabled === true ? { dynamicWorkflowEnabled: true } : {}),
+        // PDF 预览联动（specs/pdf-preview-linkage.md）同为 runtime 创建期配置，同款等价
+        // 透传；缺省不写字段（fail-closed）。
+        ...(pdfLocateToolEnabled === true ? { pdfLocateToolEnabled: true } : {}),
       });
       return { sessionId: created.sessionId };
     },

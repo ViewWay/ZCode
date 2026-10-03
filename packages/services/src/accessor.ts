@@ -1,4 +1,6 @@
 import { IOffPeakTaskService } from "./session/offPeakTask.js";
+import { IAutomationRecordingService } from "./automation-recording/automationRecordingService.js";
+import { IDistillKnowledgeService } from "./auto-distill/distillKnowledgeService.js";
 import type { IFileService } from "./file/file.js";
 import type { IMediaPreviewService } from "./media-preview/mediaPreview.js";
 import type { IGitService } from "./git/git.js";
@@ -75,6 +77,10 @@ export interface IServiceAccessor {
   readonly clientScenesService: IClientScenesService;
   /** 闲时任务管理（独立服务面）。 */
   readonly offPeakTaskService: IOffPeakTaskService;
+  /** 浏览器操作录制回放管理（specs/record-replay.md）；仅 Desktop 本地 Host 提供，可选。 */
+  readonly automationRecordingService?: IAutomationRecordingService;
+  /** 已沉淀知识审阅（specs/auto-distill.md）；仅 Desktop 本地 Host 提供，可选。 */
+  readonly distillKnowledgeService?: IDistillKnowledgeService;
   readonly skillsService: ISkillsService;
   readonly skillSyncService: ISkillSyncService;
   readonly mcpSyncService: IMcpSyncService;

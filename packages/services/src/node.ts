@@ -2101,7 +2101,23 @@ export function createLocalServices(options: {
     ...(modelSelectionReadinessSource ? { modelSelectionReadinessSource } : {}),
     authorizeLocalMediaPreviewPath: options?.authorizeLocalMediaPreviewPath,
     ...offPeakToolWiring,
+    // PDF 预览联动（specs/pdf-preview-linkage.md）：桌面本地形态（desktop main 装配）才
+    // 向 session create/resume 下发 pdfLocateToolEnabled；Web server / 远程装配缺省关闭。
+    ...(options?.serviceAuthorityMode === "desktop-local" ? { pdfLocateToolEnabled: true } : {}),
     resolveUsageStatsService: () => usageStatsServiceForAgent,
+    // agent 可调桌面设置（specs/agent-settings.md）：与本地 Setting/Broadcast 共用同一
+    // Host 生命周期实例（AppSettings 唯一写入路径；theme 经跨窗口广播到 renderer 既有
+    // setTheme 接收端，applyingBroadcast 防回环）。
+    resolveSettingService: () => settingService,
+    resolveBroadcastService: () => broadcastService,
+    // default_model 唯一写路径：与模型选择初始化同源的 configured default 仓库
+    // （read/saveConfiguredDefault），不建第二状态源。
+    resolveModelSelectionDefaultSource: () => ({
+      read: () => modelSelectionConfiguredDefaultSource.read(),
+      saveConfiguredDefault: async (selection) => {
+        await modelSelectionConfiguredDefaultSource.saveConfiguredDefault(selection);
+      },
+    }),
     // 动态工作流灰度：与 Off-Peak 不同，
     // 这里不按 serviceAuthorityMode 裁剪——SSH/WSL/Docker 的 desktop-attached-remote Host
     // 是它自己那些 workspace 的唯一裁决者，灰度开启时远程 workspace 同样提供工作流。
