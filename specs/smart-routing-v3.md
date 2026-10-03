@@ -98,4 +98,34 @@ core turn（getRoutingDecision({ taskPreview })，契约不变）
    （契约入参 contextMessageCount，阈值 120 条；真实 token 估算留后续）。工具密度信号
    暂以输入规模启发覆盖。D1–D5 决策表已生效（含 D2 降级优先于升级、低额度不消耗重置
    卡）。防抖：档位切换只在选型变化时经 ModelSelected 事件出现（天然无重复刷屏）。
-5. UI 透传面（已定）：切换档位时 Smart 决策（tier+note）随 ModelSelected 会话事件载荷的可选 smartRouting 字段透出（选型变化才发，天然只在换档时出现）；UI 消费面挂 v4 投影为后续增量——调查结论：renderer 无按名消费 model_selected 的处理器（模型信息经 v4 快照/行投影到达），且 `modelTrajectoryStore` 实为轨迹侧栏的打开桥接 store（无数据面），不作为透传目标。
+5. UI 透传面（已定）：切换档位时 Smart 决策（tier+note）随 ModelSelected 会话事件载荷的可选 smartRouting 字段透出（选型变化才发，天然只在换档时出现）；UI 消费面契约见下节「Smart 决策 UI 消费面（B3，已落地）」。
+
+## Smart 决策 UI 消费面（B3 收官，已落地）
+
+ModelSelected 事件的 smartRouting 字段只在 Smart 换档的选型变化事件出现（wire 语义，cf5becf）。UI 消费分三面：
+
+- **wire 面（v4 快照 config）**：`sessionConfigStateSchema.smartRouting?: { tier: "pro" | "flash"; note: string }`（加性可选，冻结面演进）。投影规则：事件带 smartRouting → 设为当前档位决策；事件不带（非 Smart 换档，如显式切换）→ 清除；hydration 合成事件（HYDRATION_TRACE_ID）只重建历史选型，不触碰该面；只有值变化才进 config patch（键级整体替换语义）。
+- **数据面（renderer）**：`modelTrajectoryStore` 在打开桥之外新增数据面 `smartRoutingTrailBySession: Record<sessionId, SmartRoutingDecisionRecord[]>`，记录 `{ seq, tier, note, at }`；每 session 上限 100 条（淘汰最旧）。
+- **查询面（renderer）**：纯选择器 `selectSmartRoutingTrail(state, sessionId)` + hook `useSmartRoutingTrail(sessionId)`，供后续 UI 形态（待定项 2）消费；E2E 沿用 `__zcodeModelTrajectoryStoreE2E` 暴露的同一 store。
+
+### 状态所有者与事件顺序
+
+```text
+core turn 决策（SmartRoutingPort 宿主实现，唯一路由所有者）
+  → runtime.pendingSmartRoutingDecision（发射边界暂存，发后即清）
+  → ModelSelected{smartRouting}（仅 Smart 换档出现）
+  → v4 product-projection onModelSelected（唯一投影者：config.smartRouting 设值/清除）
+  → state.updated{config} 帧
+  → renderer conversationProjectionStore.applyFrame（唯一摄取者）
+      ├─ snapshot 帧：播种观察基线，不落记录
+      └─ deltas 帧：config.smartRouting 前后值比对，变化才 recordSmartRoutingDecision
+  → modelTrajectoryStore.smartRoutingTrailBySession（查询面消费）
+```
+
+幂等与边界：
+
+- seq 是帧右端点水位：重复帧由订阅层去重（`toSeq <= 当前 seq` 静默丢弃）；摄取侧再以 `seq <= 最后一条记录 seq` 拒绝迟到/乱序，写路径 exactly-once。
+- 快照（initial/recovery/overflow）只播种基线，不回填历史——trail 是 renderer 生命周期内的切换轨迹；订阅前发生的历史档位不回填。
+- hydration 合成事件与 seedConfig 均不触碰 smartRouting（runtime 不持久化"当前档位"；CLI 重启/resume 后 trail 自下一次换档重新累积）。
+- sessionId 为 trail 键（同 host 内唯一）；跨 host 的 sessionId 理论碰撞不影响状态正确性（trail 仅展示面，非权威事实；权威档位事实归 v4 config）。
+- UI 提示形态仍是待定项 2（会话头部 badge vs 消息内联标记，对齐 DESIGN.md 后定）：本次交付数据面 + 摄取 + 查询面，验收场景 1 的"会话 UI 显示切换原因"由查询面消费方落地后闭环。
