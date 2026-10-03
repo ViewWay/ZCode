@@ -15,6 +15,8 @@ function createFakeExecutor(options: {
   failSeqs?: number[];
   screenshot?: { ok: true; base64Png: string } | { ok: false; error: string };
   surface?: string;
+  /** extract 步骤按 seq 注入的快照数据（specs/record-replay.md v1.2 数据面）。 */
+  dataBySeq?: Record<number, string>;
 }): { executor: BrowserActionExecutor; calls: FakeExecutorCall[] } {
   const calls: FakeExecutorCall[] = [];
   const executor: BrowserActionExecutor = {
@@ -24,7 +26,12 @@ function createFakeExecutor(options: {
       if (options.failSeqs?.includes(step.seq)) {
         return { ok: false, error: "selector_not_found: #submit" };
       }
-      return { ok: true };
+      return {
+        ok: true,
+        ...(options.dataBySeq?.[step.seq] !== undefined
+          ? { data: options.dataBySeq[step.seq] }
+          : {}),
+      };
     },
     async captureScreenshot() {
       calls.push({ kind: "screenshot" });
@@ -190,4 +197,22 @@ test("unavailable 执行面：每步诚实失败，报告 failed 且 surface 说
   assert.equal(result.report.executorSurface, "unavailable: not wired");
   assert.equal(result.report.steps.length, 1);
   assert.match(result.report.steps[0]?.error ?? "", /selector_not_found/u);
+});
+
+test("extract 数据面：label 与快照数据写入报告条目", async () => {
+  const { executor } = createFakeExecutor({
+    dataBySeq: { 2: '{"title":"报价单"}' },
+  });
+  const { engine } = createHarness(executor);
+  const result = await engine.replay(
+    makeRecording([
+      { seq: 1, action: "navigate", value: "https://example.test/" },
+      { seq: 2, action: "extract", label: "报价" },
+    ]),
+    "abort",
+  );
+  const entry = result.report.steps.find((step) => step.seq === 2);
+  assert.equal(entry?.label, "报价");
+  assert.equal(entry?.data, '{"title":"报价单"}');
+  assert.equal(entry?.status, "succeeded");
 });

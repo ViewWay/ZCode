@@ -51,6 +51,8 @@ export const automationRecordingStepSchema = z
     deltaY: z.number().int().min(-100_000).max(100_000).optional(),
     /** 录制期该步截图的相对路径（录制采集方写入；回放只读，不校验存在性）。 */
     screenshot: z.string().max(2_000).optional(),
+    /** extract 专用：报告数据键（缺省用 seq）；其余动作忽略。 */
+    label: z.string().trim().max(200).optional(),
   })
   .strict();
 export type AutomationRecordingStep = z.infer<typeof automationRecordingStepSchema>;
@@ -209,6 +211,10 @@ export const automationReplayStepResultSchema = z
     error: z.string().max(2_000).optional(),
     /** 失败截图绝对路径（截图失败时省略并附 error 说明）。 */
     screenshotPath: z.string().max(2_000).optional(),
+    /** extract 专用：报告数据键（缺省用 seq）。 */
+    label: z.string().max(200).optional(),
+    /** extract 专用：页面快照序列化数据（执行器侧已截断到上限）。 */
+    data: z.string().max(32_000).optional(),
     /** 步骤执行耗时。 */
     elapsedMs: z.number().int().nonnegative(),
   })

@@ -12,6 +12,8 @@ export interface BrowserActionStepOutcome {
   ok: boolean;
   /** 失败错误码/信息（如 "selector_not_found"、"unavailable"）。 */
   error?: string;
+  /** extract 步骤：页面快照序列化数据（执行器侧截断到 EXTRACT_DATA_MAX_CHARS）。 */
+  data?: string;
 }
 
 export interface BrowserActionExecutor {
@@ -27,6 +29,15 @@ export interface BrowserActionExecutor {
 export type BrowserCommandDispatcher = (command: BrowserCommand) => Promise<BrowserCommandResult>;
 
 const LOCATOR_TIMEOUT_MS = 3_000;
+
+/** extract 步骤结果数据上限（超出截断，防止巨型页面快照撑爆报告 JSON）。 */
+export const EXTRACT_DATA_MAX_CHARS = 16_000;
+
+function truncateExtractData(text: string): string {
+  return text.length > EXTRACT_DATA_MAX_CHARS
+    ? `${text.slice(0, EXTRACT_DATA_MAX_CHARS)}…[truncated]`
+    : text;
+}
 
 function resultToOutcome(result: BrowserCommandResult): BrowserActionStepOutcome {
   if (result.ok) return { ok: true };
@@ -100,7 +111,16 @@ export function createBrowserCommandActionExecutor(deps: {
         return { ok: false, error: `step_invalid: action ${step.action} cannot be dispatched` };
       }
       try {
-        return resultToOutcome(await deps.dispatcher(command));
+        const result = await deps.dispatcher(command);
+        const outcome = resultToOutcome(result);
+        if (step.action === "extract" && outcome.ok) {
+          // extract 数据面：快照结果序列化进结果（报告以 label/seq 为键），超限截断。
+          return {
+            ok: true,
+            data: truncateExtractData(JSON.stringify(result.snapshot ?? null)),
+          };
+        }
+        return outcome;
       } catch (error) {
         return {
           ok: false,

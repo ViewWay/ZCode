@@ -113,7 +113,18 @@ export function createAutomationReplayEngine(deps: AutomationReplayEngineDeps): 
 
         const outcome = await deps.executor.executeStep(step);
         if (outcome.ok) {
-          results.push(finishStep({ status: "succeeded" }));
+          results.push(
+            finishStep({
+              status: "succeeded",
+              // extract 数据面：提取数据与标签写入报告条目（specs/record-replay.md v1.2）。
+              ...(step.action === "extract"
+                ? {
+                    label: step.label,
+                    data: outcome.data,
+                  }
+                : {}),
+            }),
+          );
           continue;
         }
 

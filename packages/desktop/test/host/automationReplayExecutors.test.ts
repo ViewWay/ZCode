@@ -6,6 +6,7 @@ import {
   automationRecordingStepToBrowserCommand,
   createBrowserCommandActionExecutor,
   createUnavailableBrowserActionExecutor,
+  EXTRACT_DATA_MAX_CHARS,
   type BrowserCommandDispatcher,
 } from "../../src/host/automationReplayExecutors.js";
 
@@ -132,4 +133,26 @@ test("unavailable 执行面：每步/截图都返回结构化 unavailable，绝�
   const shot = await executor.captureScreenshot();
   assert.equal(shot.ok, false);
   assert.match(shot.error ?? "", /unavailable/u);
+});
+
+test("extract 命中快照时序列化进 outcome.data", async () => {
+  const dispatcher: BrowserCommandDispatcher = async (command) =>
+    command.method === "snapshot"
+      ? ({ ok: true, snapshot: { title: "报价单", items: [1, 2] } } as BrowserCommandResult)
+      : { ok: true };
+  const executor = createBrowserCommandActionExecutor({ dispatcher });
+  const outcome = await executor.executeStep({ seq: 1, action: "extract" });
+  assert.equal(outcome.ok, true);
+  assert.equal(outcome.data, JSON.stringify({ title: "报价单", items: [1, 2] }));
+});
+
+test("extract 巨型快照按 EXTRACT_DATA_MAX_CHARS 截断", async () => {
+  const dispatcher: BrowserCommandDispatcher = async (command) =>
+    command.method === "snapshot"
+      ? { ok: true, snapshot: { title: "x".repeat(EXTRACT_DATA_MAX_CHARS) } }
+      : { ok: true };
+  const executor = createBrowserCommandActionExecutor({ dispatcher });
+  const outcome = await executor.executeStep({ seq: 1, action: "extract" });
+  assert.ok((outcome.data?.length ?? 0) <= EXTRACT_DATA_MAX_CHARS + "…[truncated]".length);
+  assert.ok(outcome.data?.endsWith("…[truncated]"));
 });
