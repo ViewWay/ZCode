@@ -17,6 +17,10 @@ automation，与 Bots/Cron 调度复用。
    防同件并发；到期计算复用 automation 的 computeNextRunAt（同一 cron 数学，不建第二套）。
    进程级 scheduler 接入（scheduler 进程派发→main→host）为后续增量，v1.3 滴答环已达
    成「定时自动回放」的功能目标。
+5. 步骤编辑器（v1.4，纯 UI）：每行「步骤」按钮打开编辑对话框——navigate/type 的
+   value 行内编辑、删除步骤（自动重排 seq）、保存整组替换（schema superRefine 校验
+   seq 唯一与字段约束；seq 断档合法，引擎按升序执行）。服务面 updateSteps 整组替换
+   走 store 同一原子写路径。
 
 ## 现状与增量
 
