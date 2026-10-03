@@ -8,7 +8,9 @@ automation，与 Bots/Cron 调度复用。
 1. 用户在受控浏览器（browser-use 插件）中的操作可录制成**步骤化 action 列表**。
 2. 录制结果保存为 automation，可在 Bots（`packages/ui/src/BotsDialog.tsx`）中手动
    触发回放。
-3. 回放产出报告：逐步骤截图 + 成功/跳过/失败状态。
+3. 回放产出报告：逐步骤截图 + 成功/跳过/失败状态。extract 步骤另有数据面（v1.2）：
+   执行结果为页面快照的序列化 JSON（执行器侧截断到 16K 字符），以步骤 `label`
+   （缺省 seq）为键写入报告条目的 `label`/`data` 字段，作为回放的数据产出。
 
 ## 现状与增量
 
