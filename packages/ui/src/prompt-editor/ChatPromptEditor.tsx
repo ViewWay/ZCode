@@ -344,14 +344,14 @@ export function ChatPromptEditor({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         className={cn(
-          "relative flex flex-col gap-3 overflow-hidden rounded-2xl border border-input-border bg-input p-3 transition-colors hover:border-input-border-hover focus-within:!border-input-border-focused focus-within:bg-input-focused",
+          "relative flex flex-col gap-3 overflow-hidden rounded-3xl border border-input-border bg-input p-3 shadow-sm transition-colors hover:border-input-border-hover focus-within:!border-input-border-focused focus-within:bg-input-focused",
           (isWorkspaceFileDropActive || isExternalFileDropActive) &&
             "border-brand bg-input-focused ring-1 ring-brand/30",
           shellClassName,
         )}
       >
         {draggingOverlayHint ? (
-          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-accent/55 backdrop-blur-sm">
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-3xl bg-accent/55 backdrop-blur-sm">
             <div className="flex items-center gap-2 rounded-full border border-border bg-accent px-4 py-2 text-ui-base text-foreground shadow-sm">
               <Hand className="size-4 text-foreground" />
               <span>{draggingOverlayHint}</span>

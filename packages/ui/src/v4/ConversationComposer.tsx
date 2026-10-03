@@ -379,7 +379,7 @@ interface ConversationComposerProps {
    * 仅草稿态由宿主下发；会话建立后为空。
    */
   contextHeader?: ReactNode;
-  /** 居中草稿布局（旧 shouldUseCenteredDraftChatLayout）：收窄 max-w-2xl、去 sticky。 */
+  /** 居中草稿布局（旧 shouldUseCenteredDraftChatLayout）：收窄 max-w-3xl、去 sticky。 */
   centered?: boolean;
   /**
    * v4 bottom dock 阻塞交互 id。存在时 composer 只隐藏不卸载，保留草稿、附件与编辑器实例。
@@ -2188,10 +2188,10 @@ function ConversationComposerImpl({
   // 只在视觉和可访问树中隐藏，避免权限/问答卡片出现时丢失草稿和编辑器内部状态。
   return (
     // 外层 bottom dock 负责 sticky 与横向主列宽度；composer 自身组织错误提示与输入壳。
-    // centered（居中草稿布局，m5）：收窄 max-w-2xl（旧
+    // centered（居中草稿布局，m5）：收窄 max-w-3xl（旧
     // getChatViewComposerWidthClassName 的 draft 档），由宿主的居中容器摆位。
     // 有 contextHeader（草稿态）时，内层输入 surface 套旧 ChatViewComposer 同款卡：
-    // rounded-2xl bg-surface shadow-xl/5；会话态回落不透明页面底色。
+    // rounded-3xl bg-surface shadow-xl/5；会话态回落不透明页面底色。
     // 错误横幅虽然排在 contextHeader 前面，但不能与输入区共用同一个圆角 surface，
     // 视觉上会被误认为输入卡标题栏；将 surface 边界收窄到工作区头和编辑器后，桌面与手机
     // Web 仍共享同一 DOM 顺序，同时恢复错误提示与输入卡之间的独立层级。
@@ -2202,7 +2202,7 @@ function ConversationComposerImpl({
       style={isBlockedByInteraction ? { display: "none" } : undefined}
       className={cn(
         "chat-composer-region z-20 w-full shrink-0 @container/composer",
-        centered && "max-w-2xl",
+        centered && "max-w-3xl",
       )}
     >
       {/* 旧 ChatViewComposer 同款隐藏 file input（web/无 native picker 平台回退）。 */}
@@ -2229,7 +2229,7 @@ function ConversationComposerImpl({
       <div
         className={cn(
           "chat-composer-input-surface w-full",
-          contextHeader && "rounded-2xl bg-surface shadow-xl/5",
+          contextHeader && "rounded-3xl bg-surface shadow-xl/5",
         )}
       >
         {contextHeader ? (

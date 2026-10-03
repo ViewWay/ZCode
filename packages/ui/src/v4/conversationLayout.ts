@@ -1,10 +1,12 @@
 import type { ChatViewSummaryPanelVariant } from "@/v4/legacyChatViewTypes.js";
 
-const CONVERSATION_DRAFT_CONTENT_WIDTH_CLASS_NAME = "max-w-2xl";
+// ChatGPT 风格化（specs/chatgpt-style-chat-surface.md）：草稿列与会话列统一 48rem
+// （max-w-3xl）居中窄列；会话态的让位 calc 与状态面板偏移语义保留，仅收敛宽度上限。
+const CONVERSATION_DRAFT_CONTENT_WIDTH_CLASS_NAME = "max-w-3xl";
 const CONVERSATION_CONTENT_WITH_STATUS_PANEL_WIDTH_CLASS_NAME =
-  "w-full @min-[864px]/conversation:w-[calc(100%_-_6rem)] @min-[864px]/conversation:max-w-4xl @min-[1280px]/conversation:w-[calc(100%_-_24rem)] @min-[1280px]/conversation:max-w-6xl";
+  "w-full @min-[864px]/conversation:w-[calc(100%_-_6rem)] @min-[864px]/conversation:max-w-3xl @min-[1280px]/conversation:w-[calc(100%_-_24rem)] @min-[1280px]/conversation:max-w-3xl";
 const CONVERSATION_CONTENT_WITHOUT_STATUS_PANEL_WIDTH_CLASS_NAME =
-  "w-full @min-[864px]/conversation:w-[calc(100%_-_6rem)] @min-[864px]/conversation:max-w-4xl @min-[1280px]/conversation:w-[calc(100%_-_24rem)] @min-[1280px]/conversation:max-w-6xl";
+  "w-full @min-[864px]/conversation:w-[calc(100%_-_6rem)] @min-[864px]/conversation:max-w-3xl @min-[1280px]/conversation:w-[calc(100%_-_24rem)] @min-[1280px]/conversation:max-w-3xl";
 const CONVERSATION_STATUS_PANEL_WIDE_OFFSET_CLASS_NAME =
   "@min-[1280px]/conversation:-translate-x-42";
 

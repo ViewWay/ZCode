@@ -170,7 +170,7 @@ export function ConversationDraftEmptyState({ className }: { className?: string 
   return (
     <div
       className={cn(
-        "relative mb-10 flex w-full max-w-2xl flex-col items-center justify-center gap-6 text-foreground sm:mb-8",
+        "relative mb-10 flex w-full max-w-3xl flex-col items-center justify-center gap-6 text-foreground sm:mb-8",
         className,
       )}
     >
