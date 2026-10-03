@@ -886,10 +886,16 @@ function createRuntimeUnavailableError(params: ZCodeAgentWorkspaceTarget): Error
 
 // agent 可调桌面设置（specs/agent-settings.md）：theme 的宿主侧回读缓存——host 无真源
 // （真源在 renderer localStorage），缓存最近一次 set 的值供 get 回读；WeakMap 按 options
-// 分实例，不跨 Host 生命周期泄漏。
-const desktopThemeHostCache = new WeakMap<object, string>();
+// 分实例，不跨 Host 生命周期泄漏。值域放宽到 string | boolean（notifications.enabled 共用）。
+const desktopThemeHostCache = new WeakMap<object, string | boolean>();
 /** theme 是白名单里唯一的 appearance scope 键（其余四键走 AppSettings）。 */
 const DESKTOP_THEME_PROTOCOL_KEY = "theme";
+/** notifications.enabled 为 renderer store 所有者（localStorage），host 只缓存回读值。 */
+const DESKTOP_NOTIFICATIONS_PROTOCOL_KEY = "notifications.enabled";
+/** default_model 为 per-workspace configured default（模型选择仓库唯一写路径）。 */
+const DESKTOP_MODEL_PROTOCOL_KEY = "default_model";
+/** notifications.enabled 的宿主侧回读缓存（真源在 renderer，WeakMap 按 options 分实例）。 */
+const desktopNotificationsHostCache = new WeakMap<object, string | boolean>();
 
 interface CreateZCodeAgentServiceOptions extends Omit<
   ZCodeAgentProcessManagerOptions,
@@ -938,6 +944,16 @@ interface CreateZCodeAgentServiceOptions extends Omit<
   resolveSettingService?: () => ISettingService | undefined;
   /** theme 跨窗口广播出口；Web host（无 parentPort）缺席时 theme set 返回结构化不可用。 */
   resolveBroadcastService?: () => IBroadcastService | undefined;
+  /**
+   * default_model 的唯一写路径：NodeModelSelectionConfigRepository 同族（read +
+   * saveConfiguredDefault）。node.ts 装配层接入既有实例，不建第二状态源。
+   */
+  resolveModelSelectionDefaultSource?: () =>
+    | {
+        read(): Promise<{ providerId: string; modelId: string } | undefined>;
+        saveConfiguredDefault(selection: { providerId: string; modelId: string }): Promise<void>;
+      }
+    | undefined;
   /**
    * Smart v2 套餐路由的宿主数据面：协议 server（CLI 进程）经 smartRouting/* 反向请求
    * 查询套餐剩余额度/重置卡并核销。服务集合装配时注入（晚于本 service 构造，用惰性
@@ -2794,9 +2810,7 @@ export function createZCodeAgentService(
                 preferredProviderId: parsed.data.providerId,
                 requirePreferredProvider: true,
                 allowEnvApiKey: false,
-                ...(parsed.data.accountAccess
-                  ? { accountAccess: parsed.data.accountAccess }
-                  : {}),
+                ...(parsed.data.accountAccess ? { accountAccess: parsed.data.accountAccess } : {}),
               });
               await client.respond(request.id, {
                 state:
@@ -2841,14 +2855,41 @@ export function createZCodeAgentService(
           }
           void (async () => {
             try {
-              const { key, value } = parsed.data as { key: string; value?: string | boolean };
+              const { key, value } = parsed.data as {
+                key: string;
+                value?: string | boolean | { providerId: string; modelId: string };
+              };
               if (request.method === zcodeProtocolMethods.desktopSettingsGet) {
-                if (key === DESKTOP_THEME_PROTOCOL_KEY) {
-                  const cached = desktopThemeHostCache.get(options ?? {});
+                if (
+                  key === DESKTOP_THEME_PROTOCOL_KEY ||
+                  key === DESKTOP_NOTIFICATIONS_PROTOCOL_KEY
+                ) {
+                  const cacheMap =
+                    key === DESKTOP_THEME_PROTOCOL_KEY
+                      ? desktopThemeHostCache
+                      : desktopNotificationsHostCache;
+                  const cached = cacheMap.get(options ?? {});
                   await client.respond(request.id, {
                     key,
                     ...(cached !== undefined ? { value: cached } : {}),
                     scope: "appearance",
+                  });
+                  return;
+                }
+                if (key === DESKTOP_MODEL_PROTOCOL_KEY) {
+                  const source = options?.resolveModelSelectionDefaultSource?.();
+                  if (!source) {
+                    await client.respondError(request.id, {
+                      code: -32601,
+                      message: "Model default source is unavailable on this host",
+                    });
+                    return;
+                  }
+                  const current = await source.read();
+                  await client.respond(request.id, {
+                    key,
+                    ...(current ? { value: current } : {}),
+                    scope: "model",
                   });
                   return;
                 }
@@ -2868,18 +2909,41 @@ export function createZCodeAgentService(
                 });
                 return;
               }
-              if (key === DESKTOP_THEME_PROTOCOL_KEY) {
+              if (
+                key === DESKTOP_THEME_PROTOCOL_KEY ||
+                key === DESKTOP_NOTIFICATIONS_PROTOCOL_KEY
+              ) {
                 const broadcastService = options?.resolveBroadcastService?.();
                 if (!broadcastService) {
                   await client.respondError(request.id, {
                     code: -32601,
-                    message: "Theme sync is unavailable on this host",
+                    message: "Appearance sync is unavailable on this host",
                   });
                   return;
                 }
-                desktopThemeHostCache.set(options ?? {}, String(value));
-                broadcastService.send({ channel: "state:theme", payload: value });
+                const channel =
+                  key === DESKTOP_THEME_PROTOCOL_KEY ? "state:theme" : "state:notificationEnabled";
+                const cacheMap =
+                  key === DESKTOP_THEME_PROTOCOL_KEY
+                    ? desktopThemeHostCache
+                    : desktopNotificationsHostCache;
+                cacheMap.set(options ?? {}, Boolean(value));
+                broadcastService.send({ channel, payload: value });
                 await client.respond(request.id, { key, value, applied: true });
+                return;
+              }
+              if (key === DESKTOP_MODEL_PROTOCOL_KEY) {
+                const source = options?.resolveModelSelectionDefaultSource?.();
+                if (!source) {
+                  await client.respondError(request.id, {
+                    code: -32601,
+                    message: "Model default source is unavailable on this host",
+                  });
+                  return;
+                }
+                const selection = value as { providerId: string; modelId: string };
+                await source.saveConfiguredDefault(selection);
+                await client.respond(request.id, { key, value: selection, applied: true });
                 return;
               }
               const settingService = options?.resolveSettingService?.();

@@ -76,13 +76,13 @@ test("get_desktop_setting rejects keys outside the whitelist without touching th
 test("set_desktop_setting passes the validated assignment to the port", async () => {
   const { port, writes } = inMemoryPort({});
   const output = await setDesktopSettingToolEntry.handler(
-    { key: "messageStreamShowReasoning", value: true },
+    { key: "notifications.enabled", value: false },
     settingsContext(port),
   );
-  assert.deepEqual(writes, [{ key: "messageStreamShowReasoning", value: true }]);
+  assert.deepEqual(writes, [{ key: "notifications.enabled", value: false }]);
   assert.deepEqual(output, {
-    key: "messageStreamShowReasoning",
-    value: true,
+    key: "notifications.enabled",
+    value: false,
     applied: true,
   });
 });
@@ -106,7 +106,7 @@ test("set_desktop_setting rejects values not matching the per-key schema", async
   await assert.rejects(setDesktopSettingToolEntry.handler({ key: "locale", value: "fr-FR" }, context));
   await assert.rejects(setDesktopSettingToolEntry.handler({ key: "theme", value: "blue" }, context));
   await assert.rejects(
-    setDesktopSettingToolEntry.handler({ key: "messageStreamShowTodos", value: "yes" }, context),
+    setDesktopSettingToolEntry.handler({ key: "notifications.enabled", value: "yes" }, context),
   );
   assert.deepEqual(writes, []);
 });

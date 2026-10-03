@@ -37,24 +37,20 @@ const SENSITIVE_EXCLUDED_KEYS = [
 ] as const;
 
 test("whitelist covers exactly the spec keys with correct scope split", () => {
-  assert.deepEqual(APP_DESKTOP_SETTING_KEYS, [
-    "locale",
-    "messageStreamShowReasoning",
-    "messageStreamShowTodos",
-    "taskAutoArchiveEnabled",
-  ]);
-  assert.deepEqual(APPEARANCE_DESKTOP_SETTING_KEYS, ["theme"]);
+  assert.deepEqual(APP_DESKTOP_SETTING_KEYS, ["locale"]);
+  assert.deepEqual(APPEARANCE_DESKTOP_SETTING_KEYS, ["theme", "notifications.enabled"]);
   assert.deepEqual([...DESKTOP_SETTING_KEYS].sort(), [
+    "default_model",
     "locale",
-    "messageStreamShowReasoning",
-    "messageStreamShowTodos",
-    "taskAutoArchiveEnabled",
+    "notifications.enabled",
     "theme",
   ]);
   for (const key of APP_DESKTOP_SETTING_KEYS) {
     assert.equal(DESKTOP_SETTING_SCOPE[key], "app");
   }
   assert.equal(DESKTOP_SETTING_SCOPE.theme, "appearance");
+  assert.equal(DESKTOP_SETTING_SCOPE["notifications.enabled"], "appearance");
+  assert.equal(DESKTOP_SETTING_SCOPE.default_model, "model");
 });
 
 test("contracts whitelist keys stay in sync with the shared protocol whitelist", () => {
@@ -69,12 +65,12 @@ test("valid keys and values parse for get and set inputs", () => {
   const validAssignments = [
     { key: "locale", value: "zh-CN" },
     { key: "locale", value: "en-US" },
-    { key: "messageStreamShowReasoning", value: false },
-    { key: "messageStreamShowTodos", value: true },
-    { key: "taskAutoArchiveEnabled", value: true },
     { key: "theme", value: "light" },
     { key: "theme", value: "dark" },
     { key: "theme", value: "system" },
+    { key: "notifications.enabled", value: false },
+    { key: "notifications.enabled", value: true },
+    { key: "default_model", value: { providerId: "p-1", modelId: "glm-5.3" } },
   ];
   for (const assignment of validAssignments) {
     assert.equal(SetDesktopSettingInputSchema.safeParse(assignment).success, true);
@@ -96,9 +92,9 @@ test("values not matching the per-key schema are rejected", () => {
     { key: "locale", value: true },
     { key: "theme", value: "blue" },
     { key: "theme", value: 1 },
-    { key: "messageStreamShowReasoning", value: "yes" },
-    { key: "messageStreamShowTodos", value: 0 },
-    { key: "taskAutoArchiveEnabled", value: null },
+    { key: "notifications.enabled", value: "yes" },
+    { key: "default_model", value: { providerId: "", modelId: "glm-5.3" } },
+    { key: "default_model", value: "glm-5.3" },
     { key: "locale", value: "en-US", extra: 1 },
   ];
   for (const assignment of invalidAssignments) {
@@ -116,23 +112,17 @@ test("values not matching the per-key schema are rejected", () => {
 });
 
 test("app-scope assignments stay consistent with settingService's appSettingsPatchSchema", () => {
-  // handler → 端口 → settingService.update 的值域一致性：scope=app 的四个 key 是
-  // AppSettings 字段且值域一致（settingService 的 patch schema 非 strict，宿主侧
-  // 还须先过白名单，不能只依赖 patch schema 拦敏感 key——见 specs/agent-settings.md）。
-  const consistentAssignments = [
-    { locale: "en-US" },
-    { messageStreamShowReasoning: false },
-    { messageStreamShowTodos: true },
-    { taskAutoArchiveEnabled: true },
-  ];
+  // handler → 端口 → settingService.update 的值域一致性：scope=app 现仅 locale。
+  const consistentAssignments = [{ locale: "en-US" }];
   for (const patch of consistentAssignments) {
     assert.equal(appSettingsPatchSchema.safeParse(patch).success, true);
     assert.deepEqual(appSettingsPatchSchema.parse(patch), patch);
   }
   // 契约尺拒绝的非法值在 settingService 尺下同样被拒（如 locale 越界枚举）。
   assert.equal(appSettingsPatchSchema.safeParse({ locale: "fr-FR" }).success, false);
-  // theme 不是 AppSettings 字段：patch schema 会静默剥掉它（非 strict），
-  // 证明 appearance scope 绝不能走 settingService，只能走 renderer 主题 setter 链路。
+  // theme/notifications.enabled/default_model 都不是 AppSettings 字段：patch schema 会
+  // 静默剥掉它们（非 strict），证明这些 scope 绝不能走 settingService，只能走
+  // renderer setter 链路 / 模型选择仓库等各自唯一写路径。
   assert.deepEqual(appSettingsPatchSchema.parse({ theme: "dark" } as never), {});
 });
 

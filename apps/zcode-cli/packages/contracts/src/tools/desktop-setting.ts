@@ -57,25 +57,19 @@ export const SetDesktopSettingInputSchema = z.discriminatedUnion("key", [
     .object({ key: z.literal("locale"), value: DESKTOP_SETTING_VALUE_SCHEMAS.locale })
     .strict(),
   z
-    .object({
-      key: z.literal("messageStreamShowReasoning"),
-      value: DESKTOP_SETTING_VALUE_SCHEMAS.messageStreamShowReasoning,
-    })
-    .strict(),
-  z
-    .object({
-      key: z.literal("messageStreamShowTodos"),
-      value: DESKTOP_SETTING_VALUE_SCHEMAS.messageStreamShowTodos,
-    })
-    .strict(),
-  z
-    .object({
-      key: z.literal("taskAutoArchiveEnabled"),
-      value: DESKTOP_SETTING_VALUE_SCHEMAS.taskAutoArchiveEnabled,
-    })
-    .strict(),
-  z
     .object({ key: z.literal("theme"), value: DESKTOP_SETTING_VALUE_SCHEMAS.theme })
+    .strict(),
+  z
+    .object({
+      key: z.literal("notifications.enabled"),
+      value: DESKTOP_SETTING_VALUE_SCHEMAS["notifications.enabled"],
+    })
+    .strict(),
+  z
+    .object({
+      key: z.literal("default_model"),
+      value: DESKTOP_SETTING_VALUE_SCHEMAS.default_model,
+    })
     .strict(),
 ]);
 export type SetDesktopSettingInput = z.infer<typeof SetDesktopSettingInputSchema>;

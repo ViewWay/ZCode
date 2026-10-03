@@ -36,10 +36,9 @@ const SET_DESKTOP_SETTING_DESCRIPTION = [
   "",
   "Allowed assignments:",
   "- `locale`: `\"zh-CN\"` | `\"en-US\"`",
-  "- `messageStreamShowReasoning`: boolean",
-  "- `messageStreamShowTodos`: boolean",
-  "- `taskAutoArchiveEnabled`: boolean",
   "- `theme`: `\"light\"` | `\"dark\"` | `\"system\"`",
+  "- `notifications.enabled`: boolean",
+  '- `default_model`: `{ "providerId": "...", "modelId": "..." }`',
   "",
   "Anything else (proxy, certificates, shortcuts, deep appearance customization, ...) is outside the whitelist and always rejected.",
 ].join("\n");

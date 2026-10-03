@@ -31,7 +31,8 @@ const GET_DESKTOP_SETTING_DESCRIPTION = [
   '{ "key": "locale" }',
   "```",
   "",
-  "Allowed keys: `locale`, `messageStreamShowReasoning`, `messageStreamShowTodos`, `taskAutoArchiveEnabled`, `theme`.",
+  "Allowed keys: `locale`, `theme`, `notifications.enabled`, `default_model`.",
+  '`default_model` value shape: `{ "providerId": "...", "modelId": "..." }`.',
   "Anything else (proxy, certificates, shortcuts, ...) is outside the whitelist and always rejected.",
 ].join("\n");
 

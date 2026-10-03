@@ -17,18 +17,24 @@
 | 现有代码  | `AppSettings`（`packages/shared/src/protocol.ts:237`）由 `packages/services/src/setting/settingService.ts` 唯一持有（`~/.zcode/v2/setting.json`，appSettingsSchema 校验 + 写队列）；主题/外观为 renderer 侧独立 store（`packages/ui/src/store/appearancePreferencesState.ts`） | 经宿主端口桥接，复用各自既有 setter，不改所有者          |
 | 端口      | SessionChatPort / SmartRoutingPort 同族模式（宿主提供实现、缺席 fail-closed）                                                                                                                                                                                                  | 新增 DesktopSettingsPort（宿主提供实现，缺席不注册工具） |
 
-## 白名单（v1 草案）
+## 白名单（v1 最小集，产品确认）
 
 ```text
 scope = app（AppSettings 直映，写经 settingService 唯一路径）:
-  locale                      # 界面语言
-  messageStreamShowReasoning  # 消息流是否展示思考过程
-  messageStreamShowTodos      # 消息流是否展示 todo 渲染
-  taskAutoArchiveEnabled      # 自动归档总开关
+  locale                      # 界面语言（提示词中的 "language" 语义）
 
-scope = appearance（renderer 主题 store，写经既有主题 setter 链路）:
+scope = appearance（renderer store，写经既有 setter 链路，广播防回环）:
   theme                       # light / dark / system
+  notifications.enabled       # 任务通知开关（renderer store 唯一所有者，host 只缓存回读）
+
+scope = model（per-workspace 默认模型）:
+  default_model               # { providerId, modelId }，写经模型选择仓库唯一路径
 ```
+
+说明：早期草案的 messageStreamShowReasoning / messageStreamShowTodos /
+taskAutoArchiveEnabled 已按产品确认移出白名单（仍是设置页可改项，只是不进 agent
+工具面）；default_model 从待定项转为纳入，值形 {providerId, modelId}，写经
+NodeModelSelectionConfigRepository.saveConfiguredDefault（与设置页同一唯一写路径）。
 
 明确排除（写入时结构化拒绝）：`httpProxy` / `httpProxyNoProxy` / `httpProxyCaCertPath`（网络出口）、`embeddedBrowserAllowInsecureCertificates`（证书校验）、快捷键绑定、`*MigrationInitialized` 迁移标记类字段、外观深层自定义（appearance-settings.md 的颜色/字体/对比度——工具面只暴露 theme 整体切换）。
 
@@ -85,5 +91,6 @@ core handler（get/set-desktop-setting.ts）
 
 ## 待定项
 
-1. v1 白名单最终清单（上表为推荐集）。
-2. "默认模型"是否入白名单：模型选择状态所有者是 per-workspace 的 modelSelectionService，与全局设置不同层；若纳入需先定义映射语义，v1 倾向不纳入。
+1. v1 白名单最终清单已按产品确认收敛为最小集（locale/theme/notifications.enabled/default_model）；后续增项走「契约枚举 + shared 协议枚举 + scope 路由」三处同步。
+2. 原「默认模型是否入白名单」待定项已解决：纳入，值形 {providerId, modelId}，写经模型选择仓库唯一路径。
+3. notifications.enabled 与 theme 同款 v1 取舍：宿主回读值来自 set 后缓存，跨进程真源仍在 renderer localStorage。
