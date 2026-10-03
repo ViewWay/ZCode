@@ -13,13 +13,13 @@
 
 ## 现状与增量
 
-| 项 | 现状 | 增量 |
-| --- | --- | --- |
-| 预览 | 附件预览为对话框式（`ChatMediaAttachmentPreviewDialog.tsx`） | v1 务实范围：定位消费面复用常驻 `PreviewPane`（present_files 自动打开同一条 `onOpenCodeViewer` 链路）；对话框渲染切换到定位可用查看器 |
-| 解析 | `read-pdf.ts` handler 已解析 PDF 内容 | 复用其文本提取做片段匹配，新增「页码↔内容」映射（已交付：core 匹配器 + `pdf_locate` 工具面） |
-| UI | 无定位消费 | `pdf_locate` 工具卡按名认领（present_files 同款），完成后一次性发布定位请求到 UI 内 `pdfLocateStore` |
-| 查看器 | `components/ui/pdf-viewer.tsx`（三方目录，无定位 API，不可修改） | `packages/ui/src/pdf/` 新增 react-pdf 直接封装组件：命令式翻页/滚动到页 + 文本层高亮；预览面板与对话框切换到该组件 |
-| 注册门 | 工具面已实现但休眠（`includePdfLocate` 缺省 false） | Host 桌面形态（services `serviceAuthorityMode === "desktop-local"`）经 v4 createSession / legacy session/create 下发 `pdfLocateToolEnabled`，runtime-tools 以 `Boolean(flag) && taskType !== "subagent_child"` 接门 |
+| 项     | 现状                                                             | 增量                                                                                                                                                                                                                |
+| ------ | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 预览   | 附件预览为对话框式（`ChatMediaAttachmentPreviewDialog.tsx`）     | v1 务实范围：定位消费面复用常驻 `PreviewPane`（present_files 自动打开同一条 `onOpenCodeViewer` 链路）；对话框渲染切换到定位可用查看器                                                                               |
+| 解析   | `read-pdf.ts` handler 已解析 PDF 内容                            | 复用其文本提取做片段匹配，新增「页码↔内容」映射（已交付：core 匹配器 + `pdf_locate` 工具面）                                                                                                                        |
+| UI     | 无定位消费                                                       | `pdf_locate` 工具卡按名认领（present_files 同款），完成后一次性发布定位请求到 UI 内 `pdfLocateStore`                                                                                                                |
+| 查看器 | `components/ui/pdf-viewer.tsx`（三方目录，无定位 API，不可修改） | `packages/ui/src/pdf/` 新增 react-pdf 直接封装组件：命令式翻页/滚动到页 + 文本层高亮；预览面板与对话框切换到该组件                                                                                                  |
+| 注册门 | 工具面已实现但休眠（`includePdfLocate` 缺省 false）              | Host 桌面形态（services `serviceAuthorityMode === "desktop-local"`）经 v4 createSession / legacy session/create 下发 `pdfLocateToolEnabled`，runtime-tools 以 `Boolean(flag) && taskType !== "subagent_child"` 接门 |
 
 ## 定位事件链（UI 链路增量）
 
@@ -36,6 +36,9 @@ core handler（工具执行后返回 {status,page}，formatModelContent 产出�
   → PreviewPane：打开的 PDF 路径与请求匹配时消费 pending
   → 定位可用查看器：滚动到 page 顶部（必须）→ 文本层逐项匹配 snippet 高亮（尽力而为）
       → 文本层无匹配（提取误差/跨文本块）：保持仅翻页，UI 提示已翻到第 N 页
+      → 文本层高亮（v1.1 已升级）：项内命中只包裹局部区间（归一化偏移映射回原文偏移，
+        不吞原空白）；跨文本项=项为命中片段前缀/后缀且达长度门槛（≥4 字符）→ 整项
+        标记；snippet 恒经 HTML 转义（模型输入不可信）。
 ```
 
 - 状态所有者：pending 定位请求归 `pdfLocateStore`（renderer，瞬态，不持久化）；
