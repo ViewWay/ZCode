@@ -35,6 +35,8 @@ export const SMART_ROUTING_LOW_QUOTA_THRESHOLD = 0.05;
 
 /** s2 深会话阈值：轮次达到该值按复杂任务处理（specs/smart-routing-v3.md）。 */
 export const SMART_TIER_COMPLEX_TURN_INDEX = 6;
+/** s3 深上下文阈值：既往上下文消息数达到该值按复杂任务处理（specs/smart-routing-v3.md）。 */
+export const SMART_TIER_COMPLEX_CONTEXT_MESSAGES = 120;
 
 /** 宿主侧额度/重置卡查询的单次超时；超时按该候选查询失败处理（跳过，不重试）。 */
 const SMART_ROUTING_REQUEST_TIMEOUT_MS = 10_000;
@@ -165,8 +167,12 @@ export function createSmartRoutingPort(input: {
     async getRoutingDecision(taskInput?: {
       taskPreview?: string;
       turnIndex?: number;
+      contextMessageCount?: number;
     }): Promise<SmartRoutingDecision> {
-      const tier = classifyTaskTier(taskInput?.taskPreview, taskInput?.turnIndex);
+      const tier = classifyTaskTier(taskInput?.taskPreview, {
+        turnIndex: taskInput?.turnIndex,
+        contextMessageCount: taskInput?.contextMessageCount,
+      });
       const skipped: string[] = [];
       let catalog: readonly SmartRoutingCatalogEntry[] = [];
       try {
@@ -357,10 +363,22 @@ function flashModelOf(candidate: SmartRoutingCatalogEntry): {
 }
 
 /** 任务档位启发式：复杂→pro（主力模型），简单→flash（免费轨/Flash 优先消耗）。 */
-function classifyTaskTier(taskPreview?: string, turnIndex?: number): "pro" | "flash" {
+function classifyTaskTier(
+  taskPreview?: string,
+  signals?: { turnIndex?: number; contextMessageCount?: number },
+): "pro" | "flash" {
   const text = (taskPreview ?? "").trim();
   // s2 深会话（specs/smart-routing-v3.md）：轮次达到阈值按复杂任务处理。
-  if (turnIndex !== undefined && turnIndex >= SMART_TIER_COMPLEX_TURN_INDEX) return "pro";
+  if (signals?.turnIndex !== undefined && signals.turnIndex >= SMART_TIER_COMPLEX_TURN_INDEX) {
+    return "pro";
+  }
+  // s3 深上下文（specs/smart-routing-v3.md）：既往上下文消息数达到阈值按复杂处理。
+  if (
+    signals?.contextMessageCount !== undefined &&
+    signals.contextMessageCount >= SMART_TIER_COMPLEX_CONTEXT_MESSAGES
+  ) {
+    return "pro";
+  }
   if (text.length === 0) return "pro";
   if (text.length > 2000) return "pro";
   if ((text.match(/```/g) ?? []).length >= 2) return "pro";

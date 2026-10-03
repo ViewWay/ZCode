@@ -7,6 +7,7 @@ import { test } from "node:test";
 import type { ProviderRegistryView } from "@zcode/provider";
 import {
   SMART_ROUTING_LOW_QUOTA_THRESHOLD,
+  SMART_TIER_COMPLEX_CONTEXT_MESSAGES,
   SMART_TIER_COMPLEX_TURN_INDEX,
   createSmartRoutingPort,
   type SmartRoutingCatalogEntry,
@@ -432,6 +433,24 @@ test("s2 深会话：轮次达阈值按复杂任务走 pro 档", async () => {
   const decision = await port.getRoutingDecision({
     taskPreview: "继续",
     turnIndex: SMART_TIER_COMPLEX_TURN_INDEX,
+  });
+  assert.equal(decision.kind, "plan");
+  if (decision.kind === "plan") assert.equal(decision.tier, "pro");
+});
+
+test("s3 深上下文：既往上下文消息数达阈值按复杂任务走 pro 档", async () => {
+  const usageStats = fakeUsageStats({
+    snapshots: { bigmodel: { state: "authenticated", remainingPercentage: 0.4 } },
+  });
+  const port = createSmartRoutingPort({
+    usageStats,
+    getCatalog: () => [planEntry("bigmodel", [["glm-5.3", 200_000]])],
+    getRegistryView: () => registryViewWithOrdinary("openai", "gpt-x", 100_000),
+    now: fixedClock,
+  });
+  const decision = await port.getRoutingDecision({
+    taskPreview: "继续",
+    contextMessageCount: SMART_TIER_COMPLEX_CONTEXT_MESSAGES,
   });
   assert.equal(decision.kind, "plan");
   if (decision.kind === "plan") assert.equal(decision.tier, "pro");

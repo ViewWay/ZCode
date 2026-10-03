@@ -148,6 +148,7 @@ export async function executeTurnCommand(
         const decision = await smartRoutingPort.getRoutingDecision({
           taskPreview: (options?.displayInput ?? input).slice(0, 4000),
           turnIndex: this.turnNumber,
+          contextMessageCount: this.messageHistory.getMessageCount(),
         });
         // Smart 决策暂存到发射边界：turn-model 在 ModelSelected 事件中透出档位与原因
         // （specs/smart-routing-v3.md 的切换原因透传）；非 plan 决策（catalog/unavailable）不带。

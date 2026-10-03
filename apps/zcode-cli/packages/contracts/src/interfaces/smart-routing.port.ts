@@ -56,5 +56,7 @@ export interface SmartRoutingPort {
     taskPreview?: string;
     /** 会话内轮次（0 基）；深会话按任务复杂处理（specs/smart-routing-v3.md s2）。 */
     turnIndex?: number;
+    /** 决策时点的既往上下文消息数；深上下文按任务复杂处理（specs/smart-routing-v3.md s3）。 */
+    contextMessageCount?: number;
   }): Promise<SmartRoutingDecision>;
 }
