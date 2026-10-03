@@ -122,6 +122,8 @@ import {
 import type { ConversationDropTargetController } from "@/v4/composer/conversationDropTarget.js";
 import { shouldIgnoreEscapeForStopGeneration } from "@/v4/composer/escapeStop.js";
 import { ConversationDraftEmptyState } from "@/v4/ConversationDraftEmptyState.js";
+import { ConversationDraftModeTabs } from "@/v4/ConversationDraftModeTabs.js";
+import type { ChatHomeMode } from "@/lib/chatPlaceholder.js";
 import { ConversationDraftSuggestedPromptsContainer } from "@/v4/ConversationDraftSuggestedPromptsContainer.js";
 import { ConversationHeader, type PaneWorkspaceBadge } from "@/v4/ConversationHeader.js";
 import { ConversationQueuePanel } from "@/v4/ConversationQueuePanel.js";
@@ -4363,6 +4365,8 @@ export function SessionPane({
 
   // subagent 右侧 child tab 是观察视图；复用普通 SessionPane 时
   // 若仍创建 composer，会让用户误以为可以直接向 child session 继续输入。
+  // 草稿首页模式（对话|任务）；见 specs/chatgpt-mode-tabs.md。内存态，不持久化。
+  const [draftHomeMode, setDraftHomeMode] = useState<ChatHomeMode>("chat");
   const composerNode = readOnly ? null : (
     <ConversationComposer
       key="conversation-composer"
@@ -4373,6 +4377,7 @@ export function SessionPane({
       // 只给 Skill catalog 下发 effective id，避免 UI 扫到 prewarm runtime 尚未加载的新 Skill。
       skillCatalogSessionId={effectiveSessionId}
       draftMode={isDraft}
+      homeMode={draftHomeMode}
       draftConfig={draftConfig}
       composerDraft={composerDraft}
       replaceComposerDraft={replaceComposerDraft}
@@ -4786,7 +4791,15 @@ export function SessionPane({
               emptyState={
                 isDraft ? (
                   <div data-testid={TID_CHAT_EMPTY} className="w-full">
-                    <ConversationDraftEmptyState />
+                    <ConversationDraftModeTabs
+                      mode={draftHomeMode}
+                      onModeChange={setDraftHomeMode}
+                    />
+                    <ConversationDraftEmptyState
+                      titleMessageId={
+                        draftHomeMode === "tasks" ? "chat.tasks.greeting" : undefined
+                      }
+                    />
                   </div>
                 ) : null
               }

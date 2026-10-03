@@ -77,7 +77,14 @@ function resolveGreetingFontSizePx({
   );
 }
 
-export function ConversationDraftEmptyState({ className }: { className?: string }) {
+export function ConversationDraftEmptyState({
+  className,
+  titleMessageId,
+}: {
+  className?: string;
+  /** 任务模式首页固定问候，覆盖时段问候（见 specs/chatgpt-mode-tabs.md）。 */
+  titleMessageId?: string;
+}) {
   const { intl } = useZCodeIntl();
   const isOfficeMode = useIsOfficeMode();
   const [greetingDate, setGreetingDate] = useState(() => new Date());
@@ -85,7 +92,11 @@ export function ConversationDraftEmptyState({ className }: { className?: string 
   const greetingContainerRef = useRef<HTMLParagraphElement | null>(null);
   const greetingMeasurementRef = useRef<HTMLSpanElement | null>(null);
   const greeting = intl.formatMessage({
-    id: isOfficeMode ? "chat.empty.greeting.office" : getChatEmptyGreetingMessageId(greetingDate),
+    id:
+      titleMessageId ??
+      (isOfficeMode
+        ? "chat.empty.greeting.office"
+        : getChatEmptyGreetingMessageId(greetingDate)),
   });
 
   useEffect(() => {

@@ -104,7 +104,7 @@ import {
   isVideoChatComposerAttachment,
   type ChatComposerAttachment,
 } from "@/lib/chatAttachments.js";
-import { resolveChatPlaceholderKey } from "@/lib/chatPlaceholder.js";
+import { resolveChatPlaceholderKey, type ChatHomeMode } from "@/lib/chatPlaceholder.js";
 import { resolveChatEnterShortcut } from "@/lib/mobileTextInput.js";
 import { appendPromptHistoryEntry } from "@/lib/promptHistory.js";
 import {
@@ -360,6 +360,8 @@ interface ConversationComposerProps {
   skillCatalogSessionId?: string | null;
   /** draft 态无 snapshot，但仍可 createSession 首发。 */
   draftMode?: boolean;
+  /** 草稿首页模式（对话|任务），只影响占位文案（见 specs/chatgpt-mode-tabs.md）。 */
+  homeMode?: ChatHomeMode;
   /** renderer 当前草稿配置意图；只在 draftMode 下覆盖迟到的 prewarm projection。 */
   draftConfig?: Partial<SessionConfigState>;
   /** SessionPane 注入的完整 Draft owner；生产路径不再由编辑器直接覆盖持久记录。 */
@@ -486,6 +488,7 @@ function ConversationComposerImpl({
   sessionId = null,
   skillCatalogSessionId = sessionId,
   draftMode = false,
+  homeMode = "chat",
   draftConfig,
   composerDraft,
   updateComposerContent,
@@ -1602,6 +1605,7 @@ function ConversationComposerImpl({
       hasHistoryMessages: (snapshot?.rows.totalCount ?? 0) > 0,
       isTaskProcessing: canStop,
       compactNewTask: false,
+      tasksHomeMode: homeMode === "tasks" && !sessionId,
     }),
   });
   const sendTooltipTitle = intl.formatMessage({
