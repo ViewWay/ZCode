@@ -23,6 +23,7 @@ import { AutomationRunNowIcon } from "@/settings/AutomationIcons.js";
 import { AutomationTrashIcon } from "@/settings/AutomationDesignPrimitives.js";
 import { BrowserRecordingCaptureBar } from "@/settings/BrowserRecordingCaptureBar.js";
 import { BrowserRecordingScheduleEditor } from "@/settings/BrowserRecordingScheduleEditor.js";
+import { BrowserRecordingStepsEditor } from "@/settings/BrowserRecordingStepsEditor.js";
 import { formatDateTime } from "@/settings/automationFormat.js";
 
 function toMessage(error: unknown): string {
@@ -370,6 +371,11 @@ export function BrowserRecordingsCard({
                   <AutomationTrashIcon />
                 </Button>
                 <BrowserRecordingScheduleEditor
+                  recording={recording}
+                  automationRecordingService={automationRecordingService}
+                  onSaved={() => void refresh()}
+                />
+                <BrowserRecordingStepsEditor
                   recording={recording}
                   automationRecordingService={automationRecordingService}
                   onSaved={() => void refresh()}

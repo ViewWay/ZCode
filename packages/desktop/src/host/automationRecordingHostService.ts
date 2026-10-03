@@ -278,6 +278,18 @@ export function createAutomationRecordingHostService(
       return recording;
     },
 
+    async updateSteps(
+      recordingId: string,
+      steps: AutomationRecordingStep[],
+    ): Promise<AutomationRecording> {
+      // 整组替换：schema superRefine 校验 seq 升序/字段约束，非法步骤可读拒绝。
+      const recording = await store.update(recordingId, { steps });
+      log?.info(
+        `[automation-recording] steps updated recording=${recordingId} steps=${recording.steps.length}`,
+      );
+      return recording;
+    },
+
     /** 定时回放检查（单次）；定时器与测试共用。到期即置 lastReplayStartedAt 并回放。 */
     async runScheduledReplayCheck(): Promise<void> {
       let recordings: AutomationRecording[];

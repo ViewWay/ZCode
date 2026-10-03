@@ -6290,6 +6290,12 @@ const zhCN: Record<string, string> = {
   "browserRecordings.scheduleClear": "清除",
   "browserRecordings.scheduleSave": "保存",
   "browserRecordings.scheduleSaveFailed": "定时回放保存失败：{message}",
+  "browserRecordings.stepsEdit": "步骤",
+  "browserRecordings.stepsTitle": "编辑步骤",
+  "browserRecordings.stepsDescription":
+    "可编辑跳转/输入值、删除步骤；保存后整组替换（seq 自动重排）。",
+  "browserRecordings.stepsSave": "保存步骤",
+  "browserRecordings.stepsSaveFailed": "步骤保存失败：{message}",
   "browserRecordings.replayDone": "回放完成：{total} 步（跳过 {skipped} 步）",
   "browserRecordings.replayFailedTitle": "回放失败：{message}",
   "browserRecordings.replayFailedAt": "第 {seq} 步（{action}）失败：{error}",

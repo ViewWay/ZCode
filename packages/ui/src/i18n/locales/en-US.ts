@@ -6593,6 +6593,12 @@ const enUS: Record<string, string> = {
   "browserRecordings.scheduleClear": "Clear",
   "browserRecordings.scheduleSave": "Save",
   "browserRecordings.scheduleSaveFailed": "Failed to save schedule: {message}",
+  "browserRecordings.stepsEdit": "Steps",
+  "browserRecordings.stepsTitle": "Edit steps",
+  "browserRecordings.stepsDescription":
+    "Edit navigate/type values, delete steps; saving replaces the whole array (seq auto-renumbered).",
+  "browserRecordings.stepsSave": "Save steps",
+  "browserRecordings.stepsSaveFailed": "Failed to save steps: {message}",
   "browserRecordings.replayDone": "Replay finished: {total} steps ({skipped} skipped)",
   "browserRecordings.replayFailedTitle": "Replay failed: {message}",
   "browserRecordings.replayFailedAt": "Step {seq} ({action}) failed: {error}",

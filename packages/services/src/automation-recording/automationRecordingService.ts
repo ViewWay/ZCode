@@ -1,6 +1,7 @@
 import {
   ServiceChannels,
   type AutomationRecording,
+  type AutomationRecordingStep,
   type AutomationRecordingCaptureStartParams,
   type AutomationRecordingCaptureState,
   type AutomationRecordingSaveParams,
@@ -59,6 +60,11 @@ export interface IAutomationRecordingService {
     recordingId: string,
     schedule: { cronExpr: string; enabled: boolean } | undefined,
   ): Promise<AutomationRecording>;
+  /**
+   * 步骤编辑器保存：整组替换步骤数组（seq 重排由 schema superRefine 校验，
+   * 非法步骤抛可读错误）。回放按新数组执行。
+   */
+  updateSteps(recordingId: string, steps: AutomationRecordingStep[]): Promise<AutomationRecording>;
 }
 
 export const IAutomationRecordingService = createServiceDescriptor<IAutomationRecordingService>(

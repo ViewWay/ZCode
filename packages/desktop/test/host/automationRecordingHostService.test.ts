@@ -419,3 +419,25 @@ test("定时回放：未到期不触发", async () => {
   assert.equal((await service.listReports(saved.id)).length, 0);
   await rm(rootDir, { recursive: true, force: true });
 });
+
+test("updateSteps：整组替换并重排 seq；断档可读拒绝", async () => {
+  const { rootDir, service } = await makeService();
+  const saved = await service.save({ title: "巡检", steps: makeSteps() });
+  // 编辑器删除首步 → 剩余步骤重排为 1。
+  const updated = await service.updateSteps(saved.id, [
+    { seq: 1, action: "wait", durationMs: 250 },
+  ]);
+  assert.equal(updated.steps.length, 1);
+  assert.equal(updated.steps[0]?.seq, 1);
+  // seq 重复 → schema superRefine 可读拒绝（编辑器删除时已自动重排，重复只可能来自
+  // 非法直调；断档是合法设计——引擎按 seq 升序执行、不要求 1..N 连续）。
+  await assert.rejects(
+    () =>
+      service.updateSteps(saved.id, [
+        { seq: 1, action: "wait", durationMs: 100 },
+        { seq: 1, action: "navigate", value: "https://example.test/" },
+      ]),
+    /seq/u,
+  );
+  await rm(rootDir, { recursive: true, force: true });
+});

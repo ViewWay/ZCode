@@ -6,6 +6,7 @@ import {
   parseAutomationRecordingJson,
   parseAutomationReplayReportJson,
   type AutomationRecording,
+  type AutomationRecordingStep,
   type AutomationRecordingSaveParams,
   type AutomationRecordingSource,
   type AutomationReplayReport,
@@ -62,6 +63,8 @@ export interface AutomationRecordingStore {
     patch: {
       schedule?: { cronExpr: string; enabled: boolean } | null;
       lastReplayStartedAt?: number;
+      /** 整组替换步骤数组（步骤编辑器保存）；须通过 recording schema 校验。 */
+      steps?: AutomationRecordingStep[];
     },
   ): Promise<AutomationRecording>;
   /** 删除录制件与其全部回放报告；返回是否删除了录制件本体。 */
@@ -197,6 +200,7 @@ export function createAutomationRecordingStore(deps: {
       patch: {
         schedule?: { cronExpr: string; enabled: boolean } | null;
         lastReplayStartedAt?: number;
+        steps?: AutomationRecordingStep[];
       },
     ): Promise<AutomationRecording> {
       assertRecordingId(recordingId);
@@ -213,6 +217,10 @@ export function createAutomationRecordingStore(deps: {
       }
       if (patch.lastReplayStartedAt !== undefined) {
         base.lastReplayStartedAt = patch.lastReplayStartedAt;
+      }
+      if (patch.steps !== undefined) {
+        // 步骤整组替换（编辑器保存）；重排 seq 交由 schema superRefine 校验。
+        base.steps = patch.steps;
       }
       const next = automationRecordingSchema.parse(base);
       try {
