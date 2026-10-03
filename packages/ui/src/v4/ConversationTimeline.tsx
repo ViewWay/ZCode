@@ -523,7 +523,6 @@ function ConversationTimelineImpl({
     getConversationStatusPanelOffsetClassName(summaryPanelLayout);
   const contentWidthClassName = getConversationContentWidthClassName({
     centeredEmptyLayout,
-    statusPanelLayout: summaryPanelLayout,
   });
 
   const syncShareSelectionPanelLayout = useCallback(() => {
@@ -1814,8 +1813,8 @@ function ConversationTimelineImpl({
                 data-v4-timeline-virtual-history="true"
                 data-v4-timeline-content-column="true"
                 className={cn(
-                  // 默认（< 1280px）过渡 width/max-width/transform，让 w-full ↔ max-w-4xl
-                  // 的中等宽度切换平滑；≥1280px 触发的面板让位（max-w-6xl + 168px 左移）
+                  // 默认（< 1280px）过渡 width/max-width/transform，让 w-full ↔ max-w-3xl
+                  // 的居中列宽切换平滑；≥1280px 触发的面板让位（168px 左移）
                   // 用 @min-[1280px] 降级为只过渡 transform，避免大范围跳变叠加位移抖动。
                   "relative mx-auto w-full shrink-0 transition-[width,max-width,transform] duration-150 ease-out @min-[1280px]/conversation:transition-[transform]",
                   contentWidthClassName,

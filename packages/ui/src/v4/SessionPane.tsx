@@ -122,7 +122,7 @@ import {
 import type { ConversationDropTargetController } from "@/v4/composer/conversationDropTarget.js";
 import { shouldIgnoreEscapeForStopGeneration } from "@/v4/composer/escapeStop.js";
 import { ConversationDraftEmptyState } from "@/v4/ConversationDraftEmptyState.js";
-import { ConversationDraftModeTabs } from "@/v4/ConversationDraftModeTabs.js";
+import { ConversationDraftModeTabs, DRAFT_HOME_TABPANEL_ID } from "@/v4/ConversationDraftModeTabs.js";
 import type { ChatHomeMode } from "@/lib/chatPlaceholder.js";
 import { ConversationDraftSuggestedPromptsContainer } from "@/v4/ConversationDraftSuggestedPromptsContainer.js";
 import { ConversationHeader, type PaneWorkspaceBadge } from "@/v4/ConversationHeader.js";
@@ -4790,7 +4790,13 @@ export function SessionPane({
               }
               emptyState={
                 isDraft ? (
-                  <div data-testid={TID_CHAT_EMPTY} className="w-full">
+                  <div
+                    data-testid={TID_CHAT_EMPTY}
+                    id={DRAFT_HOME_TABPANEL_ID}
+                    role="tabpanel"
+                    aria-labelledby={`v4-draft-mode-tab-${draftHomeMode}`}
+                    className="w-full"
+                  >
                     <ConversationDraftModeTabs
                       mode={draftHomeMode}
                       onModeChange={setDraftHomeMode}

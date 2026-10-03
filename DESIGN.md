@@ -297,7 +297,7 @@ Radius follows the nesting of visible rounded containers, not component importan
 The following explicit exceptions may retain `rounded-2xl`, or `rounded-3xl` where noted as part of the ChatGPT-style conversation surface; do not extend them to other components based only on size or importance:
 
 - **Main chat input shell**: the actual `ChatPromptEditor` input shell may use `rounded-3xl` with a soft `shadow-sm` (ChatGPT-style conversation surface; see `specs/chatgpt-style-chat-surface.md`). Its drag overlay matches the shell because it covers the same surface, rather than introducing a nested container.
-- **User message bubble**: the conversation user bubble (main timeline and share read-only timeline) may use `rounded-3xl` as a deliberate ChatGPT-style pill fill (borderless `bg-secondary`). Assistant messages stay full-width plain text without a bubble.
+- **User message bubble**: the conversation user bubble rendered through the shared row renderer (`ConversationRowView`; main timeline, subagent side pane, replay surfaces, plus the share read-only timeline) may use `rounded-3xl` as a deliberate ChatGPT-style pill fill (borderless `bg-secondary`). Assistant messages stay full-width plain text without a bubble.
 - **Conversation status floating panel**: the shared shell may retain `rounded-2xl` across collapsed and expanded presentations.
 - **Toast**: the independent notification shell may retain `rounded-2xl`.
 - **Brand icon backplates**: welcome-screen brand art and plugin-detail icons may retain `rounded-2xl` as part of their icon shape. This is not a general exception for icon buttons or content cards.
@@ -454,7 +454,7 @@ Overlay rules:
 
 ### Chat, Tooling, and Developer UI
 
-- The main conversation surface follows the ChatGPT-style presentation (see `specs/chatgpt-style-chat-surface.md`): a uniform centered `max-w-3xl` content column shared by the message timeline and the composer dock; user messages render as right-aligned borderless `bg-secondary` `rounded-3xl` bubbles capped at `max-w-xl` on wide containers; assistant messages stay full-width plain text. Chat bubbles elsewhere (side panes, library surfaces) follow the container hierarchy, starting at `rounded-xl`. Main chat input shells retain `rounded-3xl` under the approved exception.
+- The main conversation surface follows the ChatGPT-style presentation (see `specs/chatgpt-style-chat-surface.md`): a uniform centered `max-w-3xl` content column shared by the message timeline and the composer dock; user messages render as right-aligned borderless `bg-secondary` `rounded-3xl` bubbles capped at `max-w-xl` on wide containers; assistant messages stay full-width plain text. Chat bubbles on surfaces outside the shared conversation row renderer (e.g. library and settings surfaces) follow the container hierarchy, starting at `rounded-xl`. Main chat input shells retain `rounded-3xl` under the approved exception.
 - Tool output, terminal-like blocks, paths, hashes, and commands should bias toward monospace
 - Diff UI must use diff-specific semantic colors, not generic success/destructive colors
 - Dense operational panels are preferred over marketing-card styling
