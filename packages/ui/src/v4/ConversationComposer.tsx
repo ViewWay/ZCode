@@ -2062,6 +2062,13 @@ function ConversationComposerImpl({
             onSendCompressionCommand={onSendCompressionCommand}
           />
         </span>
+        {/* 语音输入入口（specs/voice-pipeline.md）：紧邻发送键左侧（产品定位）；
+            组件内按 getUserMedia/平台通道能力自隐藏（Web 降级），录音落盘后经
+            统一附件通道注入。 */}
+        <VoiceRecorderControl
+          disabled={disabled}
+          onRecordingSaved={(attachment) => attachmentsApi.attachPreparedAttachment([attachment])}
+        />
         {showStopControl ? (
           <ControlHintTooltip title={stopTooltipTitle} shortcut="Esc">
             <Button
@@ -2110,6 +2117,7 @@ function ConversationComposerImpl({
       handleStopClick,
       handleSendButtonClick,
       handleConfigPickerOpenChange,
+      attachmentsApi.attachPreparedAttachment,
       mode,
       handleSelectModelTrace,
       modelSelectionReload,
@@ -2157,12 +2165,6 @@ function ConversationComposerImpl({
           workspaceIdentity={workspaceIdentity}
           remoteSessionId={remoteSessionId}
           currentSessionBusy={canStop}
-        />
-        {/* 语音输入入口（specs/voice-pipeline.md）：组件内按 getUserMedia/平台通道能力
-            自隐藏（Web 降级），录音落盘后经统一附件通道注入。 */}
-        <VoiceRecorderControl
-          disabled={disabled}
-          onRecordingSaved={(attachment) => attachmentsApi.attachPreparedAttachment([attachment])}
         />
         <ConversationBackgroundWorkTrigger
           backgroundWorks={snapshot?.backgroundWorks ?? []}
