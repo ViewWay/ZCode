@@ -20,7 +20,9 @@ ZCode 内置技能包（随分发物携带；`bootstrap/src/app/bundled-skills.t
 
 来源仓库 [XiaomiMiMo/MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code)（GitHub API 核实 MIT）。按「比 ZCode 现有能力更优才收录」逐域裁定：
 
-**收录（11）**：
+**收录（12）**：
+- **memory-search**（ZCode 重写版，非原样收录）：model-io 轨迹结构化分析——按模型/
+  工具/会话聚合调用、错误与 token（jq 配方 + 宿主聚合服务 getTrajectoryUsageStats）。
 - **deep-research**：并行子代理深调研（纯用 ZCode 原生 WebSearch/WebFetch + 免费 API，完美契合）。
 - **super-research**：长时自主调研（minutes-to-overnight，可审计证据）——与 deep-research 轻重互补。
 - **data-analytics**：定量业务分析全流程（数据质量/指标诊断/KPI/看板/语义层，含资产与工作流）。

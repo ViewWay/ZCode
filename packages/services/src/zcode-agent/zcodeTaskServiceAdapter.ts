@@ -140,7 +140,7 @@ import type {
   ZCodeTaskIndexSyncer,
   ZCodeTaskIndexTerminalEvent,
 } from "./zcodeTaskIndexSyncer.js";
-import { readModelTrajectory } from "./modelTrajectory.js";
+import { readModelTrajectory, aggregateModelUsageStats } from "./modelTrajectory.js";
 import { errorAttributionSchema, type CommandPayloadMap } from "@zcode/shared/zcode-protocol-v4";
 import {
   assertV4CommandAckOk,
@@ -2829,6 +2829,14 @@ export function createZCodeTaskServiceAdapter(
         `[ZCodeTaskService] getModelTrajectory taskId=${params.taskId} records=${trajectory.records.length} files=${trajectory.sourceFiles.length} truncated=${trajectory.truncated}`,
       );
       return trajectory;
+    },
+
+    async getTrajectoryUsageStats(params) {
+      // 跨会话聚合（memory-search 理念）：直接扫描 model-io 目录，只读不落库。
+      return aggregateModelUsageStats({
+        ...(params.sinceMs !== undefined ? { sinceMs: params.sinceMs } : {}),
+        ...(params.maxSessions !== undefined ? { maxSessions: params.maxSessions } : {}),
+      });
     },
 
     async getTaskTokenUsage(params): Promise<ZCodeTaskTokenUsageResult> {
