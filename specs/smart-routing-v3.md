@@ -94,3 +94,4 @@ core turn（getRoutingDecision({ taskPreview })，契约不变）
 2. UI 提示形态：会话头部 badge 还是消息内联标记（对齐 DESIGN.md 后定）。
 3. 模型判别增强是否复用 taskPreview 通道传入更多上下文。
 4. s2/s3 信号（会话轮次/工具密度/上下文规模）：s2 轮次信号已接入（契约入参 turnIndex，阈值 6 轮，深会话走 pro）；s3 上下文规模需 turn 决策点的上下文长度信号，v3.1 接入；工具密度信号暂以输入规模启发覆盖。D1–D5 决策表已生效（含 D2 降级优先于升级、低额度不消耗重置卡）。
+5. UI 透传面（已定）：切换档位时 Smart 决策（tier+note）随 ModelSelected 会话事件载荷的可选 smartRouting 字段透出（选型变化才发，天然只在换档时出现）；UI 消费面挂 v4 投影为后续增量——调查结论：renderer 无按名消费 model_selected 的处理器（模型信息经 v4 快照/行投影到达），且 `modelTrajectoryStore` 实为轨迹侧栏的打开桥接 store（无数据面），不作为透传目标。

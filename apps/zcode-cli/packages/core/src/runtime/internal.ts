@@ -65,6 +65,11 @@ export interface AgentRuntimeInternal
   extends AgentRuntimeCoreMethods, AgentRuntimeTurnMethods, AgentRuntimeHookMethods {
   sessionId: SessionId;
   turnNumber: number;
+  /**
+   * Smart 决策暂存：turn 决策点写入、ModelSelected 发射点读取并清除
+   * （specs/smart-routing-v3.md 的切换原因透传边界）。
+   */
+  pendingSmartRoutingDecision?: { tier: "pro" | "flash"; note: string };
   config: AgentRuntimeConfig;
   permissionService: PermissionService;
   permissionBroker: PermissionBrokerPort;

@@ -149,6 +149,12 @@ export async function executeTurnCommand(
           taskPreview: (options?.displayInput ?? input).slice(0, 4000),
           turnIndex: this.turnNumber,
         });
+        // Smart 决策暂存到发射边界：turn-model 在 ModelSelected 事件中透出档位与原因
+        // （specs/smart-routing-v3.md 的切换原因透传）；非 plan 决策（catalog/unavailable）不带。
+        this.pendingSmartRoutingDecision =
+          decision.kind === "plan"
+            ? { tier: decision.tier, note: decision.note }
+            : undefined;
         this.logger?.info("Smart routing decision", {
           event: "turn.smart_routing.decision",
           kind: decision.kind,

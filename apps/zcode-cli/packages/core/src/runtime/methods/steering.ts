@@ -1078,6 +1078,8 @@ export async function emitModelSelected(
     previousModelSelection?: ModelSelection | null;
     origin?: ModelSelectionOrigin;
     supportedThoughtLevels?: readonly string[];
+    /** Smart 路由决策（specs/smart-routing-v3.md）：plan 决策的档位与原因，缺省非 Smart 轮。 */
+    smartRouting?: { tier: "pro" | "flash"; note: string };
     traceContext: TraceContext;
   },
 ): Promise<void> {
@@ -1104,6 +1106,7 @@ export async function emitModelSelected(
       ...(options.supportedThoughtLevels
         ? { supportedThoughtLevels: [...options.supportedThoughtLevels] }
         : {}),
+      ...(options.smartRouting ? { smartRouting: options.smartRouting } : {}),
     },
     { traceId: options.traceContext.traceId },
   );
