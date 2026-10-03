@@ -3649,15 +3649,18 @@ export type ZCodeSmartRoutingUseResetProtocolResult = z.infer<
 // scope 映射）；这里在协议边界再拦一次敏感 key（代理/证书/快捷键等不在枚举内）。
 export const zcodeDesktopSettingKeySchema = z.enum([
   "locale",
-  "messageStreamShowReasoning",
-  "messageStreamShowTodos",
-  "taskAutoArchiveEnabled",
   "theme",
+  "notifications.enabled",
+  "default_model",
 ]);
 export type ZCodeDesktopSettingProtocolKey = z.infer<typeof zcodeDesktopSettingKeySchema>;
 
-const zcodeDesktopSettingValueSchema = z.union([z.string(), z.boolean()]);
-const zcodeDesktopSettingScopeSchema = z.enum(["app", "appearance"]);
+const zcodeDesktopSettingValueSchema = z.union([
+  z.string(),
+  z.boolean(),
+  z.object({ providerId: z.string().min(1), modelId: z.string().min(1) }).strict(),
+]);
+const zcodeDesktopSettingScopeSchema = z.enum(["app", "appearance", "model"]);
 
 export const zcodeDesktopSettingsGetParamsSchema = z
   .object({ key: zcodeDesktopSettingKeySchema })
