@@ -10,16 +10,19 @@ import {
   isDeterministicContentFault,
   parseConversationTopic,
   PROTOCOL_V4_LIMITS,
+  sameSmartRoutingDecision,
   SUBSCRIPTION_CONTENT_REJECTED,
   type ConversationRow,
   type ConversationSnapshot,
   type ConversationOpenTiming,
   type ConversationTopicFrame,
   type SessionModelTransition,
+  type SmartRoutingDecision,
   type ToolCallRow,
   type TopicFrameDeliveryKind,
 } from "@zcode/shared/zcode-protocol-v4";
 import { logger } from "@/logger.js";
+import { useModelTrajectoryStore } from "@/store/modelTrajectoryStore.js";
 import type { ConversationTurnNavigatorHydrationResult } from "@/v4/conversationTurnNavigatorHelpers.js";
 import type { ConversationTransport } from "@/v4/transport.js";
 import { uiMemoryDiagnosticsRegistry } from "@/lib/memoryDiagnostics.js";
@@ -284,6 +287,8 @@ export class ConversationProjectionStore {
     (transition: SessionModelTransition) => void
   >();
   private observedModelTransitionEventId: string | null = null;
+  /** B3 数据面摄取基线：最近观察到的 config.smartRouting（快照播种、增量比对）。 */
+  private observedSmartRouting: SmartRoutingDecision | null = null;
   // 订阅代际：并发 connect 只认最新一代，过期结果立即退订防服务端悬挂。
   private generation = 0;
   // 首次订阅尚未拿到 ACK 时，runtime available 只是当前启动流程的正常完成信号；
@@ -676,6 +681,8 @@ export class ConversationProjectionStore {
       // applied base；其中的持久 transition 可能早于本次订阅，不能冒充实时新事件。
       // 首帧只播种观察基线，后续 online 跃迁才通知 pane。
       this.observeModelTransition(frame.payload.snapshot, context.online && hadAppliedBase);
+      // B3 数据面：快照整体替换只播种基线，不回填订阅前历史（specs/smart-routing-v3.md）。
+      this.observedSmartRouting = frame.payload.snapshot.config.smartRouting ?? null;
       if (context.subscribeMode !== null && context.frameReceivedAt !== undefined) {
         const snapshotAppliedAt = monotonicNow();
         this.sessionOpenRendererTiming = {
@@ -753,6 +760,8 @@ export class ConversationProjectionStore {
     this.subscriptionHasAppliedBase = true;
     this.reconcileOptimistic(next);
     this.reconcileAcceptedInputProjection(next);
+    // B3 数据面：增量帧前后值比对，变化才落记录（specs/smart-routing-v3.md）。
+    this.observeSmartRouting(next, frame.toSeq);
     this.observeModelTransition(next, context.online);
     if (context.recovery) this.markRecoveryFrameSeen();
   }
@@ -767,6 +776,26 @@ export class ConversationProjectionStore {
     this.observedModelTransitionEventId = eventId;
     if (!online || !transition) return;
     for (const listener of this.modelTransitionListeners) listener(transition);
+  }
+
+  /**
+   * B3 数据面摄取（specs/smart-routing-v3.md）：config.smartRouting 变化 → 落 trail 记录。
+   * 快照分支只播种基线（见 applyFrame snapshot 分支注释）；只有增量帧且值变化才写
+   * modelTrajectoryStore——renderer 摄取链是 trail 的唯一写入方，seq 单调 exactly-once。
+   */
+  private observeSmartRouting(snapshot: ConversationSnapshot, seq: number): void {
+    const value = snapshot.config.smartRouting ?? null;
+    const previous = this.observedSmartRouting;
+    this.observedSmartRouting = value;
+    if (!value || sameSmartRoutingDecision(previous, value)) return;
+    const sessionId = parseConversationTopic(this.topic);
+    if (!sessionId) return;
+    useModelTrajectoryStore.getState().recordSmartRoutingDecision(sessionId, {
+      seq,
+      tier: value.tier,
+      note: value.note,
+      at: Date.now(),
+    });
   }
 
   /** physical assembly fault：旧 projection 保持可见，active sub 上 single-flight 恢复。 */
