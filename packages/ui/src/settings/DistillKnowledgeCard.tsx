@@ -255,16 +255,23 @@ export function DistillKnowledgeCard({
           <ul className="flex flex-col gap-2">
             {confirmed.map((memory) => {
               const delta = memory.delta;
-              const improving = delta ? delta.toolErrorsDelta <= 0 : true;
+              const worsening = (delta?.toolErrorsDelta ?? 0) > 0;
               return (
                 <li
                   key={memory.file}
                   className="flex min-w-0 items-center gap-3 rounded-xl border border-card-border bg-background p-3"
                 >
                   <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <span className="truncate text-ui-base font-medium leading-5 text-foreground">
-                      {memory.summary}
-                    </span>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="truncate text-ui-base font-medium leading-5 text-foreground">
+                        {memory.summary}
+                      </span>
+                      {worsening ? (
+                        <span className="inline-flex h-5 shrink-0 items-center rounded-full border border-border px-2 text-ui-xs font-medium leading-none text-foreground-subtle">
+                          {intl.formatMessage({ id: "distillKnowledge.retireBadge" })}
+                        </span>
+                      ) : null}
+                    </div>
                     <span className="truncate text-ui-xs leading-4 text-foreground-subtlest">
                       {delta
                         ? intl.formatMessage(
@@ -277,6 +284,22 @@ export function DistillKnowledgeCard({
                         : intl.formatMessage({ id: "distillKnowledge.effectPending" })}
                     </span>
                   </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() =>
+                      void distillKnowledgeService
+                        .archiveConfirmed(memory.file)
+                        .then(() => refresh())
+                        .catch((archiveError) => {
+                          logger.error("[distillKnowledge] 归档失败", toMessage(archiveError));
+                        })
+                    }
+                  >
+                    {intl.formatMessage({ id: "distillKnowledge.archive" })}
+                  </Button>
                 </li>
               );
             })}

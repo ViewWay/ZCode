@@ -6628,6 +6628,8 @@ const enUS: Record<string, string> = {
   "distillKnowledge.confirmedTitle": "Confirmed effects",
   "distillKnowledge.effectLine": "Since confirm: {errors} tool errors across {sessions} sessions",
   "distillKnowledge.effectPending": "Effect pending (no new session data yet)",
+  "distillKnowledge.retireBadge": "Suggest retiring",
+  "distillKnowledge.archive": "Archive",
   "distillKnowledge.empty": "No distilled candidates to review",
   "distillKnowledge.loadFailed": "Failed to load distilled candidates: {error}",
   "distillKnowledge.kindRepeated": "Repeated command",

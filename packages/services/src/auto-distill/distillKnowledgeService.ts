@@ -7,7 +7,7 @@ import {
 } from "@zcode/shared/node";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { readFile, readdir } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename } from "node:fs/promises";
 
 import { getZCodeDataRootDir } from "../paths.js";
 import { createServiceDescriptor } from "../descriptors.js";
@@ -120,6 +120,8 @@ export interface IDistillKnowledgeService {
   promote(candidateId: string): Promise<{ skillFilePath: string } | undefined>;
   /** 已确认记忆的效果视图（delta 惰性计算）：按改善幅度排序供审阅列表展示。 */
   listConfirmedWithEffect(): Promise<ConfirmedMemoryEffect[]>;
+  /** 归档已确认记忆（低效果淘汰）：从各工作区 memoryRoot 移入 archive/ 子目录。 */
+  archiveConfirmed(file: string): Promise<boolean>;
 }
 
 export const IDistillKnowledgeService = createServiceDescriptor<IDistillKnowledgeService>(
@@ -256,6 +258,37 @@ export function createDistillKnowledgeService(
         const db = b.delta?.toolErrorsDelta ?? Number.MAX_SAFE_INTEGER;
         return da - db;
       });
+    },
+
+    /**
+     * 归档已确认记忆（MemOS 分层理念：低效果条目退入 archive 子目录，退出召回但
+     * 保留档案）。file 为 basename；扫描各工作区 memoryRoot 定位后移动。
+     */
+    async archiveConfirmed(file: string): Promise<boolean> {
+      const projectsRoot = join(cliStorageRoot, "memories", "projects");
+      let workspaces: string[] = [];
+      try {
+        workspaces = (await readdir(projectsRoot, { withFileTypes: true }))
+          .filter((entry) => entry.isDirectory())
+          .map((entry) => entry.name);
+      } catch {
+        return false;
+      }
+      for (const workspace of workspaces) {
+        const source = join(projectsRoot, workspace, file);
+        let text: string;
+        try {
+          text = await readFile(source, "utf8");
+        } catch {
+          continue;
+        }
+        const archiveDir = join(projectsRoot, workspace, "archive");
+        await mkdir(archiveDir, { recursive: true });
+        await rename(source, join(archiveDir, file));
+        log?.info(`[distill-knowledge] archived memory=${file} workspace=${workspace}`);
+        return true;
+      }
+      return false;
     },
   };
 }

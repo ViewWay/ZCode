@@ -6323,6 +6323,8 @@ const zhCN: Record<string, string> = {
   "distillKnowledge.confirmedTitle": "已确认效果",
   "distillKnowledge.effectLine": "确认以来：工具错误 {errors}，覆盖 {sessions} 个会话",
   "distillKnowledge.effectPending": "效果观察中（尚无新会话数据）",
+  "distillKnowledge.retireBadge": "建议淘汰",
+  "distillKnowledge.archive": "归档",
   "distillKnowledge.empty": "暂无待审阅的沉淀候选",
   "distillKnowledge.loadFailed": "加载沉淀候选失败：{error}",
   "distillKnowledge.kindRepeated": "高频命令",
