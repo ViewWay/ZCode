@@ -258,6 +258,9 @@ export {
 export type {
   DistillConfirmOutcome,
   DistillKnowledgeServiceDeps,
+  ConfirmedMemoryEffect,
+  MemoryEffectBaseline,
+  MemoryEffectDelta,
 } from "./auto-distill/distillKnowledgeService.js";
 export type { OffPeakUpdateTaskParams } from "./session/offPeakTask.js";
 

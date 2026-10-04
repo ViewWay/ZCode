@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import type { DistillCandidate } from "@zcode/shared";
+import type { ConfirmedMemoryEffect } from "@zcode/services";
 import type { IDistillKnowledgeService } from "@zcode/services";
 import { Button } from "@/components/ui/button.js";
 import { toast } from "@/components/ui/toast.js";
@@ -44,6 +45,7 @@ export function DistillKnowledgeCard({
   const { intl } = useZCodeIntl();
   const confirmDialog = useConfirmDialog();
   const [candidates, setCandidates] = useState<DistillCandidate[]>([]);
+  const [confirmed, setConfirmed] = useState<ConfirmedMemoryEffect[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -53,6 +55,8 @@ export function DistillKnowledgeCard({
     setLoading(true);
     try {
       setCandidates(await distillKnowledgeService.list());
+      // 已确认记忆的效果视图（delta 惰性计算）；失败不阻塞候选列表。
+      setConfirmed(await distillKnowledgeService.listConfirmedWithEffect().catch(() => []));
       setError(null);
     } catch (listError) {
       // candidates.json 损坏等失败态：store 的错误信息已含可读原因，原样透出。
@@ -243,6 +247,42 @@ export function DistillKnowledgeCard({
           })}
         </ul>
       )}
+      {confirmed.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          <h3 className="text-ui-sm font-medium leading-5 text-foreground-subtle">
+            {intl.formatMessage({ id: "distillKnowledge.confirmedTitle" })}
+          </h3>
+          <ul className="flex flex-col gap-2">
+            {confirmed.map((memory) => {
+              const delta = memory.delta;
+              const improving = delta ? delta.toolErrorsDelta <= 0 : true;
+              return (
+                <li
+                  key={memory.file}
+                  className="flex min-w-0 items-center gap-3 rounded-xl border border-card-border bg-background p-3"
+                >
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <span className="truncate text-ui-base font-medium leading-5 text-foreground">
+                      {memory.summary}
+                    </span>
+                    <span className="truncate text-ui-xs leading-4 text-foreground-subtlest">
+                      {delta
+                        ? intl.formatMessage(
+                            { id: "distillKnowledge.effectLine" },
+                            {
+                              errors: String(delta.toolErrorsDelta),
+                              sessions: String(delta.sessions),
+                            },
+                          )
+                        : intl.formatMessage({ id: "distillKnowledge.effectPending" })}
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
     </section>
   );
 }

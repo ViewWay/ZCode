@@ -7,9 +7,11 @@ import {
 } from "@zcode/shared/node";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { readFile, readdir } from "node:fs/promises";
 
 import { getZCodeDataRootDir } from "../paths.js";
 import { createServiceDescriptor } from "../descriptors.js";
+import { aggregateModelUsageStats } from "../zcode-agent/modelTrajectory.js";
 
 // 已沉淀知识审阅服务（specs/auto-distill.md）。
 // renderer 经 ProxyChannel 直连（automationRecording 同款范式）；候选存储与项目记忆
@@ -32,6 +34,76 @@ export interface DistillConfirmOutcome {
   memoryFilePath?: string;
 }
 
+/** 效果基线（dgm archive 理念）：确认时刻的轨迹统计快照，供后续 delta 对比。 */
+export interface MemoryEffectBaseline {
+  sampledAt: string;
+  toolErrors: number;
+  calls: number;
+  sessions: number;
+  tokens: number;
+}
+
+export interface MemoryEffectDelta {
+  sessions: number;
+  toolErrorsDelta: number;
+  tokensDelta: number;
+  measuredAt: string;
+}
+
+export interface ConfirmedMemoryEffect {
+  file: string;
+  summary: string;
+  originSessionId?: string;
+  baseline: MemoryEffectBaseline;
+  delta: MemoryEffectDelta | null;
+}
+
+/** 效果基线采样：确认时刻的轨迹统计（同数据源，公平对比）。 */
+async function sampleEffectBaseline(): Promise<MemoryEffectBaseline> {
+  const stats = await aggregateModelUsageStats({ maxSessions: 500 });
+  return {
+    sampledAt: new Date().toISOString(),
+    toolErrors: stats.erroredRecords,
+    calls: stats.scannedRecords,
+    sessions: stats.scannedSessions,
+    tokens: stats.totalInputTokens + stats.totalOutputTokens,
+  };
+}
+
+/** 从记忆 Markdown 解析 frontmatter 的最小解析（description + metadata JSON 行）。 */
+function parseFrontmatterField(text: string, key: string): string | undefined {
+  const match = text.match(new RegExp(`^  ${key}: (.+)$`, "m"));
+  return match?.[1];
+}
+
+/**
+ * 从已确认记忆文件解析效果基线（frontmatter metadata.effect.baseline JSON 行）。
+ * 无基线（旧条目/非 autodistill 文件）返回 undefined。
+ */
+function parseEffectBaseline(text: string): MemoryEffectBaseline | undefined {
+  const line = text.match(/^  effect:\s*$/m);
+  if (!line) return undefined;
+  const baselineLine = text.match(/^    baseline: (.+)$/m);
+  if (!baselineLine) return undefined;
+  try {
+    const raw = JSON.parse(baselineLine[1] ?? "null") as unknown;
+    if (typeof raw !== "object" || raw === null) return undefined;
+    const record = raw as Record<string, unknown>;
+    if (
+      typeof record.sampledAt !== "string" ||
+      typeof record.toolErrors !== "number" ||
+      typeof record.calls !== "number" ||
+      typeof record.sessions !== "number" ||
+      typeof record.tokens !== "number"
+    ) {
+      return undefined;
+    }
+    return record as unknown as MemoryEffectBaseline;
+  } catch {
+    return undefined;
+  }
+}
+
 export interface IDistillKnowledgeService {
   /** 审阅列表：按置信度降序、同分按创建时间升序（store.list 语义）。 */
   list(): Promise<DistillCandidate[]>;
@@ -46,6 +118,8 @@ export interface IDistillKnowledgeService {
    * 提升为技能草稿：在用户技能根目录生成 SKILL.md（不启用）；候选不存在返回 undefined。
    */
   promote(candidateId: string): Promise<{ skillFilePath: string } | undefined>;
+  /** 已确认记忆的效果视图（delta 惰性计算）：按改善幅度排序供审阅列表展示。 */
+  listConfirmedWithEffect(): Promise<ConfirmedMemoryEffect[]>;
 }
 
 export const IDistillKnowledgeService = createServiceDescriptor<IDistillKnowledgeService>(
@@ -101,8 +175,13 @@ export function createDistillKnowledgeService(
       });
       const memoryFilePath = join(memoryRoot, `${candidate.id}.md`);
       try {
-        // 确定性文件名 + 确定性内容：写失败重试确认会重写同一文件，仍恰好一条记忆。
-        await atomicWritePrivateTextFile(memoryFilePath, buildDistillMemoryFile(candidate));
+        // 确认时刻采样效果基线（dgm archive 理念：确认→度量→留优），写入记忆 frontmatter；
+        // 采样失败不阻塞确认（基线缺失只影响效果展示，不影响记忆本体）。
+        const baseline = await sampleEffectBaseline().catch(() => undefined);
+        await atomicWritePrivateTextFile(
+          memoryFilePath,
+          buildDistillMemoryFile(candidate, baseline),
+        );
       } catch (error) {
         // 写失败则候选回到待审列表（数据所有权尚未移交），下次确认重走同一幂等路径。
         await store.add([candidate]);
@@ -124,6 +203,60 @@ export function createDistillKnowledgeService(
       );
       return { skillFilePath: promoted.skillFilePath };
     },
+
+    /**
+     * 已确认记忆的效果视图（delta 惰性计算）：扫描各工作区 memoryRoot 中带
+     * autodistill 标记的条目，对有 baseline 的取当前轨迹统计对比。
+     * 无 baseline 的旧条目跳过（效果排序不适用）。
+     */
+    async listConfirmedWithEffect(): Promise<ConfirmedMemoryEffect[]> {
+      const projectsRoot = join(cliStorageRoot, "memories", "projects");
+      const current = await sampleEffectBaseline();
+      const out: ConfirmedMemoryEffect[] = [];
+      let workspaces: string[] = [];
+      try {
+        workspaces = (await readdir(projectsRoot, { withFileTypes: true }))
+          .filter((entry) => entry.isDirectory())
+          .map((entry) => entry.name);
+      } catch {
+        return out;
+      }
+      for (const workspace of workspaces) {
+        const dir = join(projectsRoot, workspace);
+        let files: string[] = [];
+        try {
+          files = (await readdir(dir)).filter((name) => name.endsWith(".md"));
+        } catch {
+          continue;
+        }
+        for (const file of files) {
+          const text = await readFile(join(dir, file), "utf8").catch(() => "");
+          const baseline = parseEffectBaseline(text);
+          if (!baseline) continue;
+          const delta: MemoryEffectDelta = {
+            sessions: current.sessions - baseline.sessions,
+            toolErrorsDelta: current.toolErrors - baseline.toolErrors,
+            tokensDelta: current.tokens - baseline.tokens,
+            measuredAt: new Date().toISOString(),
+          };
+          const summary = parseFrontmatterField(text, "description") ?? file;
+          const originSessionId = parseFrontmatterField(text, "originSessionId");
+          out.push({
+            file,
+            summary: summary.replace(/^["']|["']$/g, ""),
+            ...(originSessionId ? { originSessionId } : {}),
+            baseline,
+            delta,
+          });
+        }
+      }
+      // 改善最大（toolErrorsDelta 最小/最负）在前。
+      return out.sort((a, b) => {
+        const da = a.delta?.toolErrorsDelta ?? Number.MAX_SAFE_INTEGER;
+        const db = b.delta?.toolErrorsDelta ?? Number.MAX_SAFE_INTEGER;
+        return da - db;
+      });
+    },
   };
 }
 
@@ -132,13 +265,18 @@ export function createDistillKnowledgeService(
  * description 供 recall manifest 预览；metadata.node_type/originSessionId 与
  * stampMemoryOriginSessionId 的写入口径相同；type=project 归入项目知识召回类别。
  */
-function buildDistillMemoryFile(candidate: DistillCandidate): string {
+function buildDistillMemoryFile(
+  candidate: DistillCandidate,
+  baseline?: MemoryEffectBaseline,
+): string {
   const frontmatter = [
     "description: " + yamlDoubleQuoted(candidate.summary),
     "metadata:",
     "  node_type: memory",
     "  type: project",
     `  originSessionId: ${candidate.sourceSessionId}`,
+    "  autodistill: true",
+    ...(baseline ? ["  effect:", `    baseline: ${JSON.stringify(baseline)}`] : []),
   ].join("\n");
   const body = [
     `# ${candidate.summary}`,

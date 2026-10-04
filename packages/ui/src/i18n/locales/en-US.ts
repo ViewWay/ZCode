@@ -6625,6 +6625,9 @@ const enUS: Record<string, string> = {
 
   // Distilled knowledge review (specs/auto-distill.md): confirm / promote / delete candidates.
   "distillKnowledge.sectionTitle": "Distilled knowledge",
+  "distillKnowledge.confirmedTitle": "Confirmed effects",
+  "distillKnowledge.effectLine": "Since confirm: {errors} tool errors across {sessions} sessions",
+  "distillKnowledge.effectPending": "Effect pending (no new session data yet)",
   "distillKnowledge.empty": "No distilled candidates to review",
   "distillKnowledge.loadFailed": "Failed to load distilled candidates: {error}",
   "distillKnowledge.kindRepeated": "Repeated command",
