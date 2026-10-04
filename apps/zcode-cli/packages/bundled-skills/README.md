@@ -20,7 +20,11 @@ ZCode 内置技能包（随分发物携带；`bootstrap/src/app/bundled-skills.t
 
 来源仓库 [XiaomiMiMo/MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code)（GitHub API 核实 MIT）。按「比 ZCode 现有能力更优才收录」逐域裁定：
 
-**收录（12）**：
+**收录（13）**：
+- **evolve**（ZCode 层映射版）：自进化常驻指令——触发信号表（重复序列/重复纠错/项目知识/
+  工具冲突/流水线复用/约定缺失）→ 五层落地要领（skill / workspace hooks 七事件 /
+  saved workflows / project memory / AGENTS.md）。源自 MiMo evolve 技能，映射到
+  ZCode 真实扩展层（不引入 .mimocode/ 格式）。
 - **memory-search**（ZCode 重写版，非原样收录）：model-io 轨迹结构化分析——按模型/
   工具/会话聚合调用、错误与 token（jq 配方 + 宿主聚合服务 getTrajectoryUsageStats）。
 - **deep-research**：并行子代理深调研（纯用 ZCode 原生 WebSearch/WebFetch + 免费 API，完美契合）。
