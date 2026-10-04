@@ -41,6 +41,7 @@ import type { BundledTheme } from "shiki";
 import { defaultRehypePlugins, defaultRemarkPlugins, Streamdown } from "streamdown";
 import type { Pluggable, PluggableList } from "unified";
 import { CodeBlock, CodeBlockHeader } from "@/components/ai-elements/code-block.js";
+import { ZWidgetBlock } from "@/components/ai-elements/zwidget-block.js";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -101,7 +102,7 @@ import type { Theme } from "@/useTheme.js";
 import { createZCodeFileCitationRemarkPlugin } from "@/lib/zcodeFileCitationRemarkPlugin.js";
 import { windowsFileLinkEscapeRemarkPlugin } from "@/lib/windowsFileLinkEscapeRemarkPlugin.js";
 import { projectZCodeFileCitations } from "@/lib/zcodeFileCitation.js";
-import { rewriteMarkdownArtifactImageSources } from "@zcode/shared";
+import { rewriteMarkdownArtifactImageSources, ZWIDGET_FENCE_LANGUAGE } from "@zcode/shared";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -1557,6 +1558,27 @@ export const MessageResponse = memo(
 
           const codeText = trimCodeFenceTrailingNewlines(extractCodeText(children));
           const language = getCodeLanguage(codeClassName);
+
+          // ```zwidget 围栏（specs/deliverable-cards.md）：分流到沙箱交互组件容器，
+          // 流式期间退回普通代码块（与 mermaid 的"完成后渲染"节奏一致）。
+          if (language === ZWIDGET_FENCE_LANGUAGE) {
+            if (renderStreaming) {
+              return (
+                <CodeBlock
+                  className="my-4 border border-border bg-card"
+                  code={codeText}
+                  enableSyntaxHighlighting={false}
+                  fontSizePx={codePreviewSettings.fontSizePx}
+                  language={language}
+                  theme={codeBlockTheme}
+                  wrapLongLines={wrapLongLines}
+                >
+                  <CodeBlockHeader className="pl-3 pr-2 pt-2" language={language} />
+                </CodeBlock>
+              );
+            }
+            return <ZWidgetBlock code={codeText} />;
+          }
 
           return (
             <CodeBlock

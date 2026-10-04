@@ -5,6 +5,9 @@
 import type {
   ExecutionShellSelection,
   AutomationPort,
+  DesktopSettingsPort,
+  ImageGenerationPort,
+  VoicePipelinePort,
   OffPeakPort,
   SessionChatPort,
   EmbeddedSearchBackend,
@@ -170,6 +173,12 @@ export interface ToolExecutionContext {
   offPeakPort?: OffPeakPort;
   /** 会话互聊（实验）端口；端口缺席时 SessionList/SessionTalk/SessionCreate 不注册。 */
   sessionChatPort?: SessionChatPort;
+  /** agent 可调桌面设置端口；端口缺席时 get/set_desktop_setting 不注册（fail-closed）。 */
+  desktopSettingsPort?: DesktopSettingsPort;
+  /** 图像生成/编辑端口；存在时注册 image_gen/image_edit（specs/image-tools.md）。 */
+  imageGenerationPort?: ImageGenerationPort;
+  /** 语音转写/合成端口；存在时注册 asr_transcribe/tts_speech（specs/voice-pipeline.md）。 */
+  voicePipelinePort?: VoicePipelinePort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;
   workflowPort?: WorkflowPort;

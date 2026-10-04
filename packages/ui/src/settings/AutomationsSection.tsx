@@ -73,6 +73,8 @@ import {
   reportOffPeakCreateResult,
 } from "@/lib/offPeakTelemetry.js";
 import { OffPeakTaskList } from "@/settings/OffPeakTaskList.js";
+import { BrowserRecordingsCard } from "@/settings/BrowserRecordingsCard.js";
+import { DistillKnowledgeCard } from "@/settings/DistillKnowledgeCard.js";
 import { OffPeakTemplateIcon } from "@/settings/OffPeakTemplateIcon.js";
 import { OffPeakEditView, type OffPeakEditSubmit } from "@/settings/OffPeakEditView.js";
 import {
@@ -527,7 +529,13 @@ export function AutomationsSection({
 }: AutomationsSectionProps) {
   const { intl, locale } = useZCodeIntl();
   const platform = usePlatform();
-  const { clientScenesService, offPeakTaskService, zcodeAgentService } = useServices();
+  const {
+    clientScenesService,
+    offPeakTaskService,
+    zcodeAgentService,
+    automationRecordingService,
+    distillKnowledgeService,
+  } = useServices();
   const confirmDialog = useConfirmDialog();
   const { openCodingPlanUpgrade } = useCodingPlanUpgradeDialog();
   const providerSettingsRead = useProviderSettingsView();
@@ -1849,6 +1857,18 @@ export function AutomationsSection({
                   </div>
                 </div>
               )}
+
+              {/* 浏览器操作录制件（specs/record-replay.md）：recording 来源分组，
+                  手动回放入口；服务仅在 Desktop 本地 Host 提供，缺失时不渲染。 */}
+              {tab === "scheduled" ? (
+                <BrowserRecordingsCard automationRecordingService={automationRecordingService} />
+              ) : null}
+
+              {/* 已沉淀知识审阅（specs/auto-distill.md）：会话结束提取的候选在此
+                  确认/提升/删除；服务仅在 Desktop 本地 Host 提供，缺失时不渲染。 */}
+              {tab === "scheduled" ? (
+                <DistillKnowledgeCard distillKnowledgeService={distillKnowledgeService} />
+              ) : null}
             </div>
 
             {/* 空态保持唤醒提示条位于大空卡之后。 */}

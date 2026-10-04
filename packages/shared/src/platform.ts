@@ -248,6 +248,25 @@ export interface CreateTempTextAttachmentResult {
   sizeBytes: number;
 }
 
+/**
+ * 麦克风录音落盘请求（specs/voice-pipeline.md）：renderer 采集的音频 Blob
+ * 以 base64 正文进入，main 进程解码后写入宿主临时语音附件目录。
+ * sizeBytes 由宿主按解码后字节数回填，请求侧不自带，避免不一致。
+ */
+export interface CreateTempVoiceAttachmentRequest {
+  dataBase64: string;
+  mimeType: string;
+  filename?: string;
+}
+
+export interface CreateTempVoiceAttachmentResult {
+  filename: string;
+  /** 宿主本地绝对路径；作为 localPath 附件进入会话后由 agent 按路径读取。 */
+  localPath: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
 export type SaveFileRequest =
   | {
       data: ArrayBuffer;
@@ -564,6 +583,14 @@ export interface IPlatformService {
   createTempTextAttachment?(
     payload: CreateTempTextAttachmentRequest,
   ): Promise<CreateTempTextAttachmentResult>;
+
+  /**
+   * 在宿主 ~/.zcode 临时语音目录落盘一段麦克风录音（specs/voice-pipeline.md）。
+   * 仅 Desktop 实现；Web/无宿主环境不实现，UI 侧按能力检测隐藏录音入口。
+   */
+  createTempVoiceAttachment?(
+    payload: CreateTempVoiceAttachmentRequest,
+  ): Promise<CreateTempVoiceAttachmentResult>;
 
   /** 订阅当前窗口内远程连接过程日志，返回 disposer */
   onRemoteConnectionLog(handler: (entry: RemoteConnectionRuntimeLog) => void): () => void;

@@ -245,8 +245,20 @@ export {
   type ClientScenesResponse,
 } from "./client-scenes/clientScenes.js";
 export { isValidCronExpr } from "./session/automationCronValidation.js";
+// 定时回放（specs/record-replay.md v1.2）：到期计算复用 automation 同一 cron 数学。
+export { computeNextRunAt } from "./session/automationCron.js";
 // 闲时任务管理服务（与 automation 服务面独立）；接口/描述符 browser-safe。
 export { IOffPeakTaskService } from "./session/offPeakTask.js";
+export { IAutomationRecordingService } from "./automation-recording/automationRecordingService.js";
+// 已沉淀知识审阅服务（specs/auto-distill.md）；实现（含 memory 落盘）由 Desktop 本地 Host 提供。
+export {
+  IDistillKnowledgeService,
+  createDistillKnowledgeService,
+} from "./auto-distill/distillKnowledgeService.js";
+export type {
+  DistillConfirmOutcome,
+  DistillKnowledgeServiceDeps,
+} from "./auto-distill/distillKnowledgeService.js";
 export type { OffPeakUpdateTaskParams } from "./session/offPeakTask.js";
 
 // Skills service — ISkillsService is both a type (interface) and value (descriptor)

@@ -26,6 +26,9 @@ import {
   IClientConfigService,
   IClientScenesService,
   IOffPeakTaskService,
+  IAutomationRecordingService,
+  IDistillKnowledgeService,
+  ITeamsService,
   ISkillsService,
   ISkillSyncService,
   IMcpSyncService,
@@ -33,7 +36,6 @@ import {
   IPluginsService,
   IPluginManagementService,
   ISubagentsService,
-  ITeamsService,
   ICommandsService,
   IHooksService,
   IMemoryService,
@@ -80,6 +82,10 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly clientConfigService: IClientConfigService;
   readonly clientScenesService: IClientScenesService;
   readonly offPeakTaskService: IOffPeakTaskService;
+  readonly automationRecordingService?: IAutomationRecordingService;
+  /** 已沉淀知识审阅（specs/auto-distill.md）；仅 Desktop 本地 Host 注册，UI 按可选服务处理。 */
+  readonly distillKnowledgeService?: IDistillKnowledgeService;
+  readonly teamsService: ITeamsService;
   readonly skillsService: ISkillsService;
   readonly skillSyncService: ISkillSyncService;
   readonly mcpSyncService: IMcpSyncService;
@@ -87,7 +93,6 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly pluginsService: IPluginsService;
   readonly pluginManagementService: IPluginManagementService;
   readonly subagentsService: ISubagentsService;
-  readonly teamsService: ITeamsService;
   readonly commandsService: ICommandsService;
   readonly hooksService: IHooksService;
   readonly memoryService: IMemoryService;
@@ -181,6 +186,15 @@ export class RemoteServiceAccess implements IServiceAccessor {
     );
     this.offPeakTaskService = ProxyChannel.toService<IOffPeakTaskService>(
       channelClient.getChannel(IOffPeakTaskService.channelName),
+    );
+    // 浏览器录制回放仅 Desktop 本地 Host 注册该 channel；代理仍统一创建，
+    // 远端 Host 上调用会得到 Unknown channel 错误，UI 侧按可选服务处理。
+    this.automationRecordingService = ProxyChannel.toService<IAutomationRecordingService>(
+      channelClient.getChannel(IAutomationRecordingService.channelName),
+    );
+    // 已沉淀知识审阅同款范式：仅 Desktop 本地 Host 注册，UI 侧按可选服务处理。
+    this.distillKnowledgeService = ProxyChannel.toService<IDistillKnowledgeService>(
+      channelClient.getChannel(IDistillKnowledgeService.channelName),
     );
     this.skillsService = ProxyChannel.toService<ISkillsService>(
       channelClient.getChannel(ISkillsService.channelName),

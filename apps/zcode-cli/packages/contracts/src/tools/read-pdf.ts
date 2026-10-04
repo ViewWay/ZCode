@@ -9,6 +9,8 @@ export const READ_PDF_MAX_PAGES_PER_REQUEST = 20;
 export const READ_PDF_INFO_TIMEOUT_MS = 10_000;
 export const READ_PDF_AVAILABILITY_TIMEOUT_MS = 5_000;
 export const READ_PDF_RENDER_TIMEOUT_MS = 120_000;
+/** pdftotext 全文提取的子进程预算（pdf_locate 的片段匹配用，见 specs/pdf-preview-linkage.md）。 */
+export const READ_PDF_TEXT_TIMEOUT_MS = 30_000;
 export const READ_PDF_PAGES_DESCRIPTION =
   'Page range for PDF files (e.g., "1-5", "3", "10-20"). Only applicable to PDF files. Maximum 20 pages per request.';
 

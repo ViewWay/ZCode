@@ -17,6 +17,7 @@ import { PptxPreviewContent } from "@/previewPanePptxContent.js";
 import { PatchFallbackContent } from "@/previewPanePatchFallbackContent.js";
 import { DiffViewer } from "@/components/ui/diff-viewer.js";
 import type { PdfViewerLabels, PdfViewerSource } from "@/components/ui/pdf-viewer.js";
+import type { PdfLocateViewerLocate } from "@/pdf/PdfLocateViewer.js";
 import type { PptxPreviewViewerLabels } from "@/components/ui/pptx-preview-viewer.js";
 import type { CodeCommentPreview, CodeCommentRange } from "@/lib/codeCommentContext.js";
 import type { Theme } from "@/useTheme.js";
@@ -41,6 +42,8 @@ interface PreviewPaneContentProps {
   loadingPdfPreview: boolean;
   pdfViewerSource: PdfViewerSource | null;
   pdfViewerLabels: PdfViewerLabels;
+  /** pdf_locate 定位请求（specs/pdf-preview-linkage.md）；由 PreviewPane 消费 store 后传入。 */
+  pdfLocate?: PdfLocateViewerLocate | null;
   loadingOfficePreview: boolean;
   officePreview: FileBinaryPreview | null;
   officePreviewKind: OfficeFilePreviewKind | null;
@@ -100,6 +103,7 @@ export function PreviewPaneContent({
   onMediaError,
   onMediaLoadedMetadata,
   loadingPdfPreview,
+  pdfLocate,
   pdfViewerSource,
   pdfViewerLabels,
   loadingOfficePreview,
@@ -305,7 +309,9 @@ export function PreviewPaneContent({
       );
     }
 
-    return <PdfPreviewContent source={pdfViewerSource} labels={pdfViewerLabels} />;
+    return (
+      <PdfPreviewContent source={pdfViewerSource} labels={pdfViewerLabels} locate={pdfLocate} />
+    );
   }
 
   if (source.type === "file" && officePreviewKind) {

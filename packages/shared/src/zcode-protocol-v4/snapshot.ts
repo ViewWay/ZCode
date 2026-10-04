@@ -21,6 +21,8 @@ import { sessionConfigStateSchema, sessionModelTransitionSchema } from "./sessio
 export {
   sessionConfigStateSchema,
   sessionModelTransitionSchema,
+  sameSmartRoutingDecision,
+  type SmartRoutingDecision,
   type SessionConfigState,
   type SessionModelTransition,
 } from "./session-config.js";

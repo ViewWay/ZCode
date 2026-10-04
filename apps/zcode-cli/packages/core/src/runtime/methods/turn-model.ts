@@ -65,7 +65,13 @@ export async function applySubmissionExecutionState(
           previousModelSelection: previousSelection,
           supportedThoughtLevels: model.optionSpecs.reasoningLevel.values,
           traceContext,
+          // Smart 决策档位与原因随选型变化事件透出（specs/smart-routing-v3.md）；
+          // 发射后即清，避免跨 turn 泄漏。
+          ...(runtime.pendingSmartRoutingDecision
+            ? { smartRouting: runtime.pendingSmartRoutingDecision }
+            : {}),
         });
+        runtime.pendingSmartRoutingDecision = undefined;
       }
     }
   }

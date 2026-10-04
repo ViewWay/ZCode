@@ -318,7 +318,8 @@ function RootInner({
         askUserQuestionAutoResolutionEnabled:
           appSettings.askUserQuestionAutoResolutionEnabled !== false,
         modelIoFullRetentionEnabled: appSettings.modelIoFullRetentionEnabled === true,
-        sessionChatEnabled: appSettings.sessionChatEnabled === true,
+        // undefined 即默认开启（specs/session-chat.md desktop 形态）；显式 false 才关闭。
+        sessionChatEnabled: appSettings.sessionChatEnabled ?? true,
       })
       .catch((error) => {
         logger.warn("[settings] 初始化运行时偏好失败", error);
@@ -328,7 +329,7 @@ function RootInner({
         askUserQuestionAutoResolutionEnabled:
           appSettings.askUserQuestionAutoResolutionEnabled !== false,
         modelIoFullRetentionEnabled: appSettings.modelIoFullRetentionEnabled === true,
-        sessionChatEnabled: appSettings.sessionChatEnabled === true,
+        sessionChatEnabled: appSettings.sessionChatEnabled ?? true,
       })
       .catch((error) => {
         logger.warn("[settings] 初始化 Bot 运行时偏好失败", error);

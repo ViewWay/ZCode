@@ -179,6 +179,8 @@ export class ModelPropertiesConfig extends ConfigOverlay<ModelPropertiesConfig> 
   readonly contextWindow?: ModelPropertiesConfigInput["contextWindow"];
   readonly inputFormat?: ModelInputFormatConfig | null;
   readonly outputFormat?: ModelOutputFormatConfig | null;
+  /** 生成端点能力声明（specs/image-tools.md、specs/voice-pipeline.md）；普通对象按整体替换叠加。 */
+  readonly capabilities?: ModelPropertiesConfigInput["capabilities"];
   readonly supportsToolCall?: ModelPropertiesConfigInput["supportsToolCall"];
   readonly supportsJsonSchemaOutput?: ModelPropertiesConfigInput["supportsJsonSchemaOutput"];
   readonly supportsNativeWebSearch?: ModelPropertiesConfigInput["supportsNativeWebSearch"];
@@ -209,6 +211,7 @@ export class ModelPropertiesConfig extends ConfigOverlay<ModelPropertiesConfig> 
       contextWindow: this.overlayValue(this.contextWindow, next.contextWindow),
       inputFormat: this.overlayConfig(this.inputFormat, next.inputFormat),
       outputFormat: this.overlayConfig(this.outputFormat, next.outputFormat),
+      capabilities: this.overlayValue(this.capabilities, next.capabilities),
       supportsToolCall: this.overlayValue(this.supportsToolCall, next.supportsToolCall),
       supportsJsonSchemaOutput: this.overlayValue(
         this.supportsJsonSchemaOutput,
@@ -235,6 +238,7 @@ export class ModelPropertiesConfig extends ConfigOverlay<ModelPropertiesConfig> 
       contextWindow: this.contextWindow,
       inputFormat: this.inputFormat?.toJSON() ?? this.inputFormat,
       outputFormat: this.outputFormat?.toJSON() ?? this.outputFormat,
+      capabilities: this.capabilities,
       supportsToolCall: this.supportsToolCall,
       supportsJsonSchemaOutput: this.supportsJsonSchemaOutput,
       supportsNativeWebSearch: this.supportsNativeWebSearch,

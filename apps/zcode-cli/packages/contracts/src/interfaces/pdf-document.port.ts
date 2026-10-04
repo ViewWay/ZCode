@@ -47,4 +47,13 @@ export interface PdfDocumentPort {
     request: PdfDocumentRenderPagesRequest,
     options?: { signal?: AbortSignal },
   ): Promise<PdfDocumentRenderedPage[]>;
+  /**
+   * 提取整份 PDF 的逐页文本（specs/pdf-preview-linkage.md）：返回数组的下标 i
+   * 对应第 i+1 页，页与页连续且从 1 开始；空页保留为空字符串。
+   * pdf_locate 用它做「snippet ↔ 页码」匹配，不渲染图片。
+   */
+  extractPageTexts(
+    request: PdfDocumentPageCountRequest,
+    options?: { signal?: AbortSignal },
+  ): Promise<string[]>;
 }

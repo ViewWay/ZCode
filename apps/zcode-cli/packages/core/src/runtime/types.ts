@@ -74,6 +74,9 @@ import type {
   OffPeakPort,
   SessionChatPort,
   SmartRoutingPort,
+  DesktopSettingsPort,
+  ImageGenerationPort,
+  VoicePipelinePort,
   FileSystemPort,
   HttpClientPort,
   ImageProcessorPort,
@@ -213,6 +216,14 @@ export interface AgentRuntimeConfig {
    * false 会关闭十个工作流工具，不改变其他工具的注册策略。
    */
   dynamicWorkflowEnabled?: boolean;
+
+  /**
+   * PDF 预览联动（specs/pdf-preview-linkage.md）：pdf_locate 工具的注册门。
+   * Host 仅在桌面本地形态（services serviceAuthorityMode === "desktop-local"）经
+   * session create/resume 下发；**缺席即不注册**（fail-closed，TUI/headless/Web/远程
+   * 形态无预览消费面）。subagent_child 在 runtime-tools 侧另行禁用（无嵌套定位）。
+   */
+  pdfLocateToolEnabled?: boolean;
 
   // Context Builder config
   systemPrompt?: string;
@@ -382,6 +393,12 @@ export interface AgentRuntimeDeps {
   sessionChatPort?: SessionChatPort;
   /** Smart v2 套餐路由端口；存在时 Smart 虚拟选择先问端口再定本轮执行模型，缺席保持 v1。 */
   smartRoutingPort?: SmartRoutingPort;
+  /** agent 可调桌面设置端口；存在时注册 Get/SetDesktopSetting（specs/agent-settings.md）。 */
+  desktopSettingsPort?: DesktopSettingsPort;
+  /** 图像生成/编辑端口；存在时注册 image_gen/image_edit（specs/image-tools.md）。 */
+  imageGenerationPort?: ImageGenerationPort;
+  /** 语音转写/合成端口；存在时注册 asr_transcribe/tts_speech（specs/voice-pipeline.md）。 */
+  voicePipelinePort?: VoicePipelinePort;
   contextSourcePort?: ContextSourcePort;
   eventSink?: SessionEventSink;
   logger?: Logger;

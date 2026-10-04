@@ -71,3 +71,12 @@
 - 探测逻辑按平台条件测试（探测函数可注入假路径）。
 - 缓存文件读写与过期重测测试（合成日期值）。
 - `pnpm typecheck`；`pnpm architecture:check --changed`。
+
+## 承载落定（待定项① 已解决，v1.2）
+
+四个文档技能（docx/pdf/pptx/xlsx-official，Apache-2.0，源自 mimocode 内置包，各目录
+自带 LICENSE 与第三方声明）已内置到 `apps/zcode-cli/packages/bundled-skills/skills/`
+——待定项① 的「bundled-skills 承载」就此落定：技能目录自带 soffice 使用指引，本
+spec 的 doc-env 探测/缓存/指引模块（`packages/core/src/doc-env/`）是其缺省状态的前置
+兜底（首次调用时探测 + 带确认安装指引）。技能文本中的 `MIMO_PYTHON`/`MIMO_SOFFICE`
+为上游 bundle 可选覆盖约定，ZCode 运行时不设置（走公开路径）。

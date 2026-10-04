@@ -64,6 +64,8 @@ import {
   zcodeOffPeakCreateParamsSchema,
   zcodeOffPeakListParamsSchema,
   zcodeSmartRoutingScopeParamsSchema,
+  zcodeDesktopSettingsGetParamsSchema,
+  zcodeDesktopSettingsSetParamsSchema,
   zcodeSmartRoutingUseResetParamsSchema,
   OFF_PEAK_PROVIDER_IDS,
   zcodeComputerUseOperationEventSchema,
@@ -302,6 +304,9 @@ import { ZCodeAgentMcpStatusModeUnsupportedError } from "#src/zcode-agent/zcodeA
 import { ZCodeAgentProcessManager } from "./zcodeAgentProcessManager.js";
 import type { ZCodeAgentProcessManagerOptions } from "./zcodeAgentProcessManager.js";
 import type { IOffPeakTaskService } from "#src/session/offPeakTask.js";
+// agent 可调桌面设置（specs/agent-settings.md）：Setting/Broadcast 走同包公开路径。
+import type { ISettingService } from "#src/setting/setting.js";
+import type { IBroadcastService } from "#src/broadcast/broadcast.js";
 import type { IUsageStatsService } from "#src/usage-stats/usageStats.js";
 import {
   ZCodeProtocolRequestTimeoutError,
@@ -356,14 +361,16 @@ type SessionCreateCompatField =
   | "toolAllowlist"
   | "toolDenylist"
   | "offPeakToolEnabled"
-  | "dynamicWorkflowEnabled";
+  | "dynamicWorkflowEnabled"
+  | "pdfLocateToolEnabled";
 type SessionResumeCompatField =
   | "thoughtLevel"
   | "mcpServers"
   | "toolAllowlist"
   | "toolDenylist"
   | "offPeakToolEnabled"
-  | "dynamicWorkflowEnabled";
+  | "dynamicWorkflowEnabled"
+  | "pdfLocateToolEnabled";
 type SessionSendCompatField =
   | "browserAmbientContext"
   | "automationId"
@@ -385,6 +392,9 @@ const SESSION_CREATE_OPTIONAL_COMPAT_FIELDS = new Set<SessionCreateCompatField>(
   // 动态工作流灰度 flag 同理：旧 CLI 不认时
   // 省略重试，工作流工具簇随之不注册，绝不让整个 create 硬失败。
   "dynamicWorkflowEnabled",
+  // PDF 预览联动（specs/pdf-preview-linkage.md）同理：旧 CLI 不认时省略重试
+  // （pdf_locate 随之不注册，fail-closed）。
+  "pdfLocateToolEnabled",
 ]);
 const SESSION_RESUME_OPTIONAL_COMPAT_FIELDS = new Set<SessionResumeCompatField>([
   "thoughtLevel",
@@ -394,6 +404,7 @@ const SESSION_RESUME_OPTIONAL_COMPAT_FIELDS = new Set<SessionResumeCompatField>(
   "toolDenylist",
   "offPeakToolEnabled",
   "dynamicWorkflowEnabled",
+  "pdfLocateToolEnabled",
 ]);
 const SESSION_SEND_OPTIONAL_COMPAT_FIELDS = new Set<SessionSendCompatField>([
   "browserAmbientContext",
@@ -617,6 +628,7 @@ function buildSessionCreateParams(
   params: ZCodeAgentCreateSessionParams & {
     offPeakToolEnabled?: boolean;
     dynamicWorkflowEnabled?: boolean;
+    pdfLocateToolEnabled?: boolean;
   },
   omittedFields: ReadonlySet<SessionCreateCompatField> = new Set(),
 ) {
@@ -661,6 +673,11 @@ function buildSessionCreateParams(
     ...(params.dynamicWorkflowEnabled === true && !omittedFields.has("dynamicWorkflowEnabled")
       ? { dynamicWorkflowEnabled: true }
       : {}),
+    // PDF 预览联动（specs/pdf-preview-linkage.md）：同款下发形状，关闭/旧 CLI 不认时
+    // 不写字段——CLI 缺省即不注册 pdf_locate（fail-closed）。
+    ...(params.pdfLocateToolEnabled === true && !omittedFields.has("pdfLocateToolEnabled")
+      ? { pdfLocateToolEnabled: true }
+      : {}),
   };
 }
 
@@ -668,6 +685,7 @@ function buildSessionResumeParams(
   params: ZCodeAgentResumeSessionParams & {
     offPeakToolEnabled?: boolean;
     dynamicWorkflowEnabled?: boolean;
+    pdfLocateToolEnabled?: boolean;
   },
   omittedFields: ReadonlySet<SessionResumeCompatField> = new Set(),
 ) {
@@ -696,6 +714,10 @@ function buildSessionResumeParams(
     // 同因：resume 不带该 flag 会让冷恢复丢掉工作流工具簇。
     ...(params.dynamicWorkflowEnabled === true && !omittedFields.has("dynamicWorkflowEnabled")
       ? { dynamicWorkflowEnabled: true }
+      : {}),
+    // 同因（specs/pdf-preview-linkage.md）：resume 不带该 flag 会让冷恢复丢掉 pdf_locate。
+    ...(params.pdfLocateToolEnabled === true && !omittedFields.has("pdfLocateToolEnabled")
+      ? { pdfLocateToolEnabled: true }
       : {}),
   };
 }
@@ -862,6 +884,19 @@ function createRuntimeUnavailableError(params: ZCodeAgentWorkspaceTarget): Error
   return error;
 }
 
+// agent 可调桌面设置（specs/agent-settings.md）：theme 的宿主侧回读缓存——host 无真源
+// （真源在 renderer localStorage），缓存最近一次 set 的值供 get 回读；WeakMap 按 options
+// 分实例，不跨 Host 生命周期泄漏。值域放宽到 string | boolean（notifications.enabled 共用）。
+const desktopThemeHostCache = new WeakMap<object, string | boolean>();
+/** theme 是白名单里唯一的 appearance scope 键（其余四键走 AppSettings）。 */
+const DESKTOP_THEME_PROTOCOL_KEY = "theme";
+/** notifications.enabled 为 renderer store 所有者（localStorage），host 只缓存回读值。 */
+const DESKTOP_NOTIFICATIONS_PROTOCOL_KEY = "notifications.enabled";
+/** default_model 为 per-workspace configured default（模型选择仓库唯一写路径）。 */
+const DESKTOP_MODEL_PROTOCOL_KEY = "default_model";
+/** notifications.enabled 的宿主侧回读缓存（真源在 renderer，WeakMap 按 options 分实例）。 */
+const desktopNotificationsHostCache = new WeakMap<object, string | boolean>();
+
 interface CreateZCodeAgentServiceOptions extends Omit<
   ZCodeAgentProcessManagerOptions,
   "idleTimeoutMs"
@@ -895,8 +930,29 @@ interface CreateZCodeAgentServiceOptions extends Omit<
    * dynamicWorkflowEnabled。缺省不传（纯 CLI 装配）= 永远关闭，与 CLI 缺省一致。
    */
   resolveDynamicWorkflowClientConfig?: () => Promise<DynamicWorkflowClientConfig | undefined>;
+  /**
+   * PDF 预览联动（specs/pdf-preview-linkage.md）：Host 桌面本地形态判定
+   * （serviceAuthorityMode === "desktop-local"）由服务集合装配时传入；缺省（纯 CLI /
+   * Web server / desktop-attached-remote）= 永不向 session create/resume 下发
+   * pdfLocateToolEnabled，CLI 侧 fail-closed 不注册 pdf_locate。
+   */
+  pdfLocateToolEnabled?: boolean;
   resolveOffPeakTaskService?: () =>
     | Pick<IOffPeakTaskService, "createTask" | "list" | "getCodingPlanSupport">
+    | undefined;
+  /** agent 可调桌面设置（specs/agent-settings.md）：AppSettings 唯一事实源的宿主读取入口。 */
+  resolveSettingService?: () => ISettingService | undefined;
+  /** theme 跨窗口广播出口；Web host（无 parentPort）缺席时 theme set 返回结构化不可用。 */
+  resolveBroadcastService?: () => IBroadcastService | undefined;
+  /**
+   * default_model 的唯一写路径：NodeModelSelectionConfigRepository 同族（read +
+   * saveConfiguredDefault）。node.ts 装配层接入既有实例，不建第二状态源。
+   */
+  resolveModelSelectionDefaultSource?: () =>
+    | {
+        read(): Promise<{ providerId: string; modelId: string } | undefined>;
+        saveConfiguredDefault(selection: { providerId: string; modelId: string }): Promise<void>;
+      }
     | undefined;
   /**
    * Smart v2 套餐路由的宿主数据面：协议 server（CLI 进程）经 smartRouting/* 反向请求
@@ -2754,9 +2810,7 @@ export function createZCodeAgentService(
                 preferredProviderId: parsed.data.providerId,
                 requirePreferredProvider: true,
                 allowEnvApiKey: false,
-                ...(parsed.data.accountAccess
-                  ? { accountAccess: parsed.data.accountAccess }
-                  : {}),
+                ...(parsed.data.accountAccess ? { accountAccess: parsed.data.accountAccess } : {}),
               });
               await client.respond(request.id, {
                 state:
@@ -2767,6 +2821,145 @@ export function createZCodeAgentService(
                       : ("unavailable" as const),
                 remainingPercentage: snapshot.remaining?.percentage ?? null,
               });
+            } catch (error) {
+              await client.respondError(request.id, {
+                code: -32603,
+                message: error instanceof Error ? error.message : String(error),
+              });
+            }
+          })();
+          return;
+        }
+
+        // agent 可调桌面设置（specs/agent-settings.md）：白名单内读写桌面设置。
+        // app scope 走 settingService（AppSettings 唯一写入路径）；theme 为 appearance
+        // scope：写经跨窗口广播（renderer setTheme 接收端 applyingBroadcast 防回环），
+        // 读回无真源，v1 回读 WeakMap 缓存。白名单已由协议边界 enum 与 bootstrap 端口
+        // 契约尺两道把关，这里按解析后的联合类型分支，不把原始 params 透传 update()。
+        if (
+          request.method === zcodeProtocolMethods.desktopSettingsGet ||
+          request.method === zcodeProtocolMethods.desktopSettingsSet
+        ) {
+          const parsed = (
+            request.method === zcodeProtocolMethods.desktopSettingsGet
+              ? zcodeDesktopSettingsGetParamsSchema
+              : zcodeDesktopSettingsSetParamsSchema
+          ).safeParse(request.params ?? {});
+          if (!parsed.success) {
+            void client.respondError(request.id, {
+              code: -32602,
+              message: "Invalid desktop settings params",
+              data: parsed.error.flatten(),
+            });
+            return;
+          }
+          void (async () => {
+            try {
+              const { key, value } = parsed.data as {
+                key: string;
+                value?: string | boolean | { providerId: string; modelId: string };
+              };
+              if (request.method === zcodeProtocolMethods.desktopSettingsGet) {
+                if (
+                  key === DESKTOP_THEME_PROTOCOL_KEY ||
+                  key === DESKTOP_NOTIFICATIONS_PROTOCOL_KEY
+                ) {
+                  const cacheMap =
+                    key === DESKTOP_THEME_PROTOCOL_KEY
+                      ? desktopThemeHostCache
+                      : desktopNotificationsHostCache;
+                  const cached = cacheMap.get(options ?? {});
+                  await client.respond(request.id, {
+                    key,
+                    ...(cached !== undefined ? { value: cached } : {}),
+                    scope: "appearance",
+                  });
+                  return;
+                }
+                if (key === DESKTOP_MODEL_PROTOCOL_KEY) {
+                  const source = options?.resolveModelSelectionDefaultSource?.();
+                  if (!source) {
+                    await client.respondError(request.id, {
+                      code: -32601,
+                      message: "Model default source is unavailable on this host",
+                    });
+                    return;
+                  }
+                  const current = await source.read();
+                  await client.respond(request.id, {
+                    key,
+                    ...(current ? { value: current } : {}),
+                    scope: "model",
+                  });
+                  return;
+                }
+                const settingService = options?.resolveSettingService?.();
+                if (!settingService) {
+                  await client.respondError(request.id, {
+                    code: -32601,
+                    message: "Settings service is unavailable on this host",
+                  });
+                  return;
+                }
+                const settings = await settingService.get();
+                await client.respond(request.id, {
+                  key,
+                  value: settings[key as keyof typeof settings],
+                  scope: "app",
+                });
+                return;
+              }
+              if (
+                key === DESKTOP_THEME_PROTOCOL_KEY ||
+                key === DESKTOP_NOTIFICATIONS_PROTOCOL_KEY
+              ) {
+                const broadcastService = options?.resolveBroadcastService?.();
+                if (!broadcastService) {
+                  await client.respondError(request.id, {
+                    code: -32601,
+                    message: "Appearance sync is unavailable on this host",
+                  });
+                  return;
+                }
+                const channel =
+                  key === DESKTOP_THEME_PROTOCOL_KEY ? "state:theme" : "state:notificationEnabled";
+                const cacheMap =
+                  key === DESKTOP_THEME_PROTOCOL_KEY
+                    ? desktopThemeHostCache
+                    : desktopNotificationsHostCache;
+                cacheMap.set(options ?? {}, Boolean(value));
+                broadcastService.send({ channel, payload: value });
+                await client.respond(request.id, { key, value, applied: true });
+                return;
+              }
+              if (key === DESKTOP_MODEL_PROTOCOL_KEY) {
+                const source = options?.resolveModelSelectionDefaultSource?.();
+                if (!source) {
+                  await client.respondError(request.id, {
+                    code: -32601,
+                    message: "Model default source is unavailable on this host",
+                  });
+                  return;
+                }
+                const selection = value as { providerId: string; modelId: string };
+                await source.saveConfiguredDefault(selection);
+                await client.respond(request.id, { key, value: selection, applied: true });
+                return;
+              }
+              const settingService = options?.resolveSettingService?.();
+              if (!settingService) {
+                await client.respondError(request.id, {
+                  code: -32601,
+                  message: "Settings service is unavailable on this host",
+                });
+                return;
+              }
+              // 仅白名单键进入写入路径；计算键名收窄为 Partial 更新，由
+              // settingService 的 appSettingsPatchSchema 校验值本身。
+              await settingService.update({ [key]: value } as Parameters<
+                ISettingService["update"]
+              >[0]);
+              await client.respond(request.id, { key, value, applied: true });
             } catch (error) {
               await client.respondError(request.id, {
                 code: -32603,
@@ -3417,6 +3610,21 @@ export function createZCodeAgentService(
   }
 
   /**
+   * PDF 预览联动（specs/pdf-preview-linkage.md）的桌面本地形态门：
+   * 装配期由 Host 传入 pdfLocateToolEnabled（serviceAuthorityMode === "desktop-local"）；
+   * 远程 workspace（remoteSessionId / 远程 workspaceIdentity）即使桌面窗口也不下发——
+   * pdf_locate 的 file 路径语义在 CLI 所在机器上解析，跨机定位链路留给后续形态。
+   */
+  function isPdfLocateSupported(params: {
+    workspaceIdentity?: string;
+    remoteSessionId?: string;
+  }): boolean {
+    if (options?.pdfLocateToolEnabled !== true) return false;
+    if (params.remoteSessionId) return false;
+    return !params.workspaceIdentity || !isRemoteWorkspaceIdentity(params.workspaceIdentity);
+  }
+
+  /**
    * 动态工作流灰度门：Host 判定一次并在本
    * 进程内固定。三点理由：
    *   1. 同一次判定同时喂给 workspace/updateDynamicWorkflowPolicy 和 session flag，两者不会
@@ -3451,7 +3659,10 @@ export function createZCodeAgentService(
       // 信封处同源注入；门禁 false 时不写字段（缺省即 fail-closed，与 legacy 一致）。
       const dynamicWorkflowEnabled = await resolveDynamicWorkflowGate();
       const offPeakToolEnabled = isOffPeakToolSupported(params);
-      if (!offPeakToolEnabled && !dynamicWorkflowEnabled) return envelope;
+      const pdfLocateToolEnabled = isPdfLocateSupported(params);
+      if (!offPeakToolEnabled && !dynamicWorkflowEnabled && !pdfLocateToolEnabled) {
+        return envelope;
+      }
       const payload = commandPayloadSchemas.createSession.parse(envelope.payload);
       return {
         ...envelope,
@@ -3461,6 +3672,9 @@ export function createZCodeAgentService(
           // 动态工作流灰度：V4 createSession 是桌面新会话的实际创建路径，不透传则九个工具
           // 永不注册。
           ...(dynamicWorkflowEnabled ? { dynamicWorkflowEnabled: true } : {}),
+          // PDF 预览联动（specs/pdf-preview-linkage.md）：V4 是桌面主链路，不透传则
+          // pdf_locate 永不注册。
+          ...(pdfLocateToolEnabled ? { pdfLocateToolEnabled: true } : {}),
         },
       };
     }
@@ -3606,10 +3820,17 @@ export function createZCodeAgentService(
       const offPeakToolEnabled = isOffPeakToolSupported(params);
       // 灰度在 client 就绪时已判定，这里是进程内已解析 promise 的再次 await（不打远端）。
       const dynamicWorkflowEnabled = await resolveDynamicWorkflowGate();
+      // PDF 预览联动：桌面本地形态门（同一次请求内与上面两个 flag 同源）。
+      const pdfLocateToolEnabled = isPdfLocateSupported(params);
       try {
         const snapshot = await client.request(
           zcodeProtocolMethods.sessionCreate,
-          buildSessionCreateParams({ ...params, offPeakToolEnabled, dynamicWorkflowEnabled }),
+          buildSessionCreateParams({
+            ...params,
+            offPeakToolEnabled,
+            dynamicWorkflowEnabled,
+            pdfLocateToolEnabled,
+          }),
           zcodeSessionStateSnapshotSchema,
           sessionTraceId ? { trace: { traceId: sessionTraceId } } : undefined,
         );
@@ -3650,7 +3871,12 @@ export function createZCodeAgentService(
         const snapshot = await client.request(
           zcodeProtocolMethods.sessionCreate,
           buildSessionCreateParams(
-            { ...params, offPeakToolEnabled, dynamicWorkflowEnabled },
+            {
+              ...params,
+              offPeakToolEnabled,
+              dynamicWorkflowEnabled,
+              pdfLocateToolEnabled,
+            },
             new Set(compatFields),
           ),
           zcodeSessionStateSnapshotSchema,
@@ -3710,6 +3936,8 @@ export function createZCodeAgentService(
       const offPeakToolEnabled = isOffPeakToolSupported(params);
       // 冷恢复同样按 Host 的灰度判定下发，否则恢复出来的会话会丢掉工作流工具簇。
       const dynamicWorkflowEnabled = await resolveDynamicWorkflowGate();
+      // 冷恢复同样按桌面形态门下发，否则恢复的会话丢掉 pdf_locate（specs/pdf-preview-linkage.md）。
+      const pdfLocateToolEnabled = isPdfLocateSupported(params);
       logger.info(cachedTraceId, "开始请求 ZCode Protocol session/resume", {
         mcpServerCount: getMcpServerCount(params),
         mcpServerNames: getMcpServerNames(params),
@@ -3721,7 +3949,12 @@ export function createZCodeAgentService(
       try {
         const snapshot = await client.request(
           zcodeProtocolMethods.sessionResume,
-          buildSessionResumeParams({ ...params, offPeakToolEnabled, dynamicWorkflowEnabled }),
+          buildSessionResumeParams({
+            ...params,
+            offPeakToolEnabled,
+            dynamicWorkflowEnabled,
+            pdfLocateToolEnabled,
+          }),
           zcodeSessionStateSnapshotSchema,
         );
         const sessionTraceId = rememberSessionTrace(params, snapshot) ?? cachedTraceId;
@@ -3758,7 +3991,12 @@ export function createZCodeAgentService(
         const snapshot = await client.request(
           zcodeProtocolMethods.sessionResume,
           buildSessionResumeParams(
-            { ...params, offPeakToolEnabled, dynamicWorkflowEnabled },
+            {
+              ...params,
+              offPeakToolEnabled,
+              dynamicWorkflowEnabled,
+              pdfLocateToolEnabled,
+            },
             new Set(compatFields),
           ),
           zcodeSessionStateSnapshotSchema,

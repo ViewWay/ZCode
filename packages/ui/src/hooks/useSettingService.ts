@@ -155,7 +155,8 @@ export function useSettings() {
             patch.modelIoFullRetentionEnabled ??
             settingsStore.snapshot.settings?.modelIoFullRetentionEnabled === true,
           sessionChatEnabled:
-            patch.sessionChatEnabled ?? settingsStore.snapshot.settings?.sessionChatEnabled === true,
+            // undefined 即默认开启（specs/session-chat.md）；显式 false 才关闭。
+            patch.sessionChatEnabled ?? settingsStore.snapshot.settings?.sessionChatEnabled ?? true,
         };
         const syncResults = await Promise.allSettled([
           zcodeAgentService.syncAppRuntimePreferences(preferences),

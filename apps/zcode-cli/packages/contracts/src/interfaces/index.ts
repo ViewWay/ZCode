@@ -22,6 +22,8 @@ export * from "./model-catalog.port.js";
 export * from "./automation.port.js";
 export * from "./mcp.port.js";
 export * from "./browser-control.port.js";
+// agent 可调桌面设置（specs/agent-settings.md）：宿主端口，缺席 fail-closed。
+export * from "./desktop-settings.port.js";
 export * from "./shared.js";
 
 export * from "./permission-full-access.js";

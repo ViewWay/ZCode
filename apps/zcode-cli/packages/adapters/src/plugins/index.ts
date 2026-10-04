@@ -543,7 +543,7 @@ function parsePluginHookEvents(input: {
         input.diagnostics.push({
           code: "plugin_hook_invalid",
           message: `Invalid plugin hook matcher for ${eventName}: ${validation.error.issues
-            .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+            .map((issue: { path: (string | number | symbol)[]; message: string }) => `${issue.path.join(".")}: ${issue.message}`)
             .join("; ")}`,
           path: input.sourcePath,
           pluginId: input.loaded.id,
@@ -553,7 +553,7 @@ function parsePluginHookEvents(input: {
       }
       const withPlugin: HookMatcherConfig = {
         ...validation.data,
-        hooks: validation.data.hooks.map((hook) => attachPluginToHook(hook, plugin)),
+        hooks: validation.data.hooks.map((hook: HookConfig) => attachPluginToHook(hook, plugin)),
       };
       (inspection.events[event] ??= []).push(withPlugin);
       for (const hook of validation.data.hooks) {

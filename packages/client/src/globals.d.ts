@@ -99,6 +99,8 @@ declare global {
       printPageToPdf?(): Promise<import("@zcode/shared").PrintPageToPdfResult>;
       /** 从系统拖拽/文件输入得到的 Web File 解析真实本地路径 */
       getPathForFile?(file: File): string | null;
+      /** 麦克风录音落盘为宿主本地音频附件（specs/voice-pipeline.md）；仅 Desktop 提供 */
+      createTempVoiceAttachment?(payload: import("@zcode/shared").CreateTempVoiceAttachmentRequest): Promise<import("@zcode/shared").CreateTempVoiceAttachmentResult>;
       /** 订阅当前窗口内远程连接过程日志，返回 disposer */
       onRemoteConnectionLog(handler: (entry: RemoteConnectionRuntimeLog) => void): () => void;
       /** 订阅远程 workspace session 关闭事件，返回 disposer */

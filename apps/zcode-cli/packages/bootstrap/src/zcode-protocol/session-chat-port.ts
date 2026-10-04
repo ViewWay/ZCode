@@ -1,11 +1,12 @@
 // ============================================================
-// Session Chat 协议端口 - 会话互聊（实验）工具面的宿主实现
+// Session Chat 协议端口 - 会话互聊工具面的宿主实现
 // ============================================================
 // 与 offpeak-port 同族：tool handler 经 SessionChatPort 访问同 workspace 的
 // 其它会话；本实现跑在协议 server 进程内，直接读写 context.sessions 注册表
 // （同 workspace 的 resident 会话全在本进程，无需跨进程 RPC）。
 // - SessionList：resident 记录过滤出侧栏可见的主会话（TASK_LIST_SESSION_TYPES），
-//   标题从 session store 解析（与旧 listSessions op 同源）。
+//   标题从 session store 解析（与旧 listSessions op 同源），busy/idle 从注册表
+//   实时判定（busy = 存在未完成 turn）——core 只消费端口结果，不自行推导。
 // - SessionTalk：以用户输入形式注入目标会话（app.sendInput，v4 sendText 同款
 //   fire-and-return admission 语义），消息体头部携带来源标注——接收方 UI 与模型
 //   都能看出这条输入来自另一个会话的模型而非用户；回信指引让对方用 SessionTalk 发回。
@@ -79,7 +80,9 @@ export function createProtocolSessionChatPort(
         contacts.push({
           sessionId,
           title: await resolveSessionTitle(context, sessionId),
-          status: record.activeAbortController !== undefined ? "running" : "idle",
+          // busy = 目标会话存在未完成 turn：注册表 record 上的活跃 abort
+          // controller 即在跑的 turn（specs/session-chat.md busy 语义）。
+          status: record.activeAbortController !== undefined ? "busy" : "idle",
           updatedAt: record.updatedAt,
         });
       }

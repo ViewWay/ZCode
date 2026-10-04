@@ -22,6 +22,9 @@ import type {
   McpConnectionSnapshot,
   SkillLoadOutcome,
   SmartRoutingPort,
+  DesktopSettingsPort,
+  ImageGenerationPort,
+  VoicePipelinePort,
   SkillPort,
   McpPort,
   DynamicWorkflowRunPort,
@@ -62,6 +65,11 @@ export interface AgentRuntimeInternal
   extends AgentRuntimeCoreMethods, AgentRuntimeTurnMethods, AgentRuntimeHookMethods {
   sessionId: SessionId;
   turnNumber: number;
+  /**
+   * Smart 决策暂存：turn 决策点写入、ModelSelected 发射点读取并清除
+   * （specs/smart-routing-v3.md 的切换原因透传边界）。
+   */
+  pendingSmartRoutingDecision?: { tier: "pro" | "flash"; note: string };
   config: AgentRuntimeConfig;
   permissionService: PermissionService;
   permissionBroker: PermissionBrokerPort;
@@ -97,6 +105,12 @@ export interface AgentRuntimeInternal
   contextSourcePort?: ContextSourcePort;
   /** Smart v2 套餐路由端口；turn 期 Smart 虚拟选择时读取（deps 注入，可缺席）。 */
   smartRoutingPort?: SmartRoutingPort;
+  /** agent 可调桌面设置端口；存在时注册 Get/SetDesktopSetting（specs/agent-settings.md）。 */
+  desktopSettingsPort?: DesktopSettingsPort;
+  /** 图像生成/编辑端口；存在时注册 image_gen/image_edit（specs/image-tools.md）。 */
+  imageGenerationPort?: ImageGenerationPort;
+  /** 语音转写/合成端口；存在时注册 asr_transcribe/tts_speech（specs/voice-pipeline.md）。 */
+  voicePipelinePort?: VoicePipelinePort;
   skillPort?: SkillPort;
   mcpPort?: McpPort;
   mcpStartupPromise?: Promise<McpConnectionSnapshot>;

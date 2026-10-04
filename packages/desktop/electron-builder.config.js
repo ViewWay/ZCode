@@ -663,6 +663,9 @@ export default {
     artifactName: buildDesktopArtifactName("mac"),
     extendInfo: {
       NSAppleEventsUsageDescription: `${desktopProductIdentity.productName} needs Apple Events access to coordinate local automation workflows with user-approved desktop apps.`,
+      // 语音输入（specs/voice-pipeline.md）：打包产物缺该声明时 macOS TCC 不会弹系统授权，
+      // getUserMedia 直接失败；dev 的 Electron 预置 plist 自带声明，仅发布包需要补。
+      NSMicrophoneUsageDescription: `${desktopProductIdentity.productName} needs microphone access to record voice input for transcription.`,
     },
     // 预签名脚本走的是原生 codesign，要求完整的 "Developer ID Application: ..." 身份串；
     // 但 electron-builder 的 mac.identity 在 26.x 下会拒绝带此前缀的名字。

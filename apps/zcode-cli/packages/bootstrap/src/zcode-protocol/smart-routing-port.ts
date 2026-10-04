@@ -33,6 +33,11 @@ import type { ZCodeProtocolAgentServerContext } from "./server-types.js";
 /** 剩余额度低于该占比视为套餐即将耗尽，触发重置卡/切换候选。 */
 export const SMART_ROUTING_LOW_QUOTA_THRESHOLD = 0.05;
 
+/** s2 深会话阈值：轮次达到该值按复杂任务处理（specs/smart-routing-v3.md）。 */
+export const SMART_TIER_COMPLEX_TURN_INDEX = 6;
+/** s3 深上下文阈值：既往上下文消息数达到该值按复杂任务处理（specs/smart-routing-v3.md）。 */
+export const SMART_TIER_COMPLEX_CONTEXT_MESSAGES = 120;
+
 /** 宿主侧额度/重置卡查询的单次超时；超时按该候选查询失败处理（跳过，不重试）。 */
 const SMART_ROUTING_REQUEST_TIMEOUT_MS = 10_000;
 
@@ -159,8 +164,15 @@ export function createSmartRoutingPort(input: {
 }): SmartRoutingPort {
   const now = input.now ?? Date.now;
   return {
-    async getRoutingDecision(taskInput?: { taskPreview?: string }): Promise<SmartRoutingDecision> {
-      const tier = classifyTaskTier(taskInput?.taskPreview);
+    async getRoutingDecision(taskInput?: {
+      taskPreview?: string;
+      turnIndex?: number;
+      contextMessageCount?: number;
+    }): Promise<SmartRoutingDecision> {
+      const tier = classifyTaskTier(taskInput?.taskPreview, {
+        turnIndex: taskInput?.turnIndex,
+        contextMessageCount: taskInput?.contextMessageCount,
+      });
       const skipped: string[] = [];
       let catalog: readonly SmartRoutingCatalogEntry[] = [];
       try {
@@ -198,7 +210,9 @@ export function createSmartRoutingPort(input: {
           evaluated.push({ candidate, queryError: errorMessage(error) });
         }
       }
-      // flash 档：有 Flash 模型的已认证候选里取剩余最高（免费轨通常满额，天然优先消耗）。
+      // flash 档：降级优先于升级（specs/smart-routing-v3.md D2）——已认证且有 Flash 模型的
+      // 候选里取剩余最高者。剩余 >0 即可走 flash（降级轨）；低于 5% 阈值不回退主力、不消耗
+      // 重置卡（避免低额度烧卡跑简单任务）；额度归零（D1）才落主力循环 → 重置卡 → catalog 回落。
       if (tier === "flash") {
         let best: { candidate: SmartRoutingCatalogEntry; percentage: number } | undefined;
         for (const entry of evaluated) {
@@ -210,7 +224,8 @@ export function createSmartRoutingPort(input: {
           ) {
             continue;
           }
-          if (flashSnapshot.remainingPercentage < SMART_ROUTING_LOW_QUOTA_THRESHOLD) continue;
+          // D1：额度归零的轨不再可走 flash；(0,5%) 区间按 D2 保持 flash（降级优先）。
+          if (flashSnapshot.remainingPercentage <= 0) continue;
           const flash = flashModelOf(entry.candidate);
           if (!flash) continue;
           if (best === undefined || flashSnapshot.remainingPercentage > best.percentage) {
@@ -220,6 +235,7 @@ export function createSmartRoutingPort(input: {
         if (best) {
           const flash = flashModelOf(best.candidate)!;
           const percent = Math.round(best.percentage * 1000) / 10;
+          const lowQuota = best.percentage < SMART_ROUTING_LOW_QUOTA_THRESHOLD;
           return {
             kind: "plan",
             providerId: best.candidate.providerId,
@@ -228,7 +244,9 @@ export function createSmartRoutingPort(input: {
               ? { options: optionsFor(best.candidate, flash.modelId) }
               : {}),
             tier,
-            note: `Smart flash 档：任务简单，优先消耗剩余最高的轨（${best.candidate.providerId}/${flash.modelId}，剩余 ${percent}%）`,
+            note: `Smart flash 档：任务简单，优先消耗剩余最高的轨（${best.candidate.providerId}/${flash.modelId}，剩余 ${percent}%${
+              lowQuota ? "，低于 5% 阈值——降级优先于升级，不消耗重置卡" : ""
+            }）`,
           };
         }
       }
@@ -345,8 +363,22 @@ function flashModelOf(candidate: SmartRoutingCatalogEntry): {
 }
 
 /** 任务档位启发式：复杂→pro（主力模型），简单→flash（免费轨/Flash 优先消耗）。 */
-function classifyTaskTier(taskPreview?: string): "pro" | "flash" {
+function classifyTaskTier(
+  taskPreview?: string,
+  signals?: { turnIndex?: number; contextMessageCount?: number },
+): "pro" | "flash" {
   const text = (taskPreview ?? "").trim();
+  // s2 深会话（specs/smart-routing-v3.md）：轮次达到阈值按复杂任务处理。
+  if (signals?.turnIndex !== undefined && signals.turnIndex >= SMART_TIER_COMPLEX_TURN_INDEX) {
+    return "pro";
+  }
+  // s3 深上下文（specs/smart-routing-v3.md）：既往上下文消息数达到阈值按复杂处理。
+  if (
+    signals?.contextMessageCount !== undefined &&
+    signals.contextMessageCount >= SMART_TIER_COMPLEX_CONTEXT_MESSAGES
+  ) {
+    return "pro";
+  }
   if (text.length === 0) return "pro";
   if (text.length > 2000) return "pro";
   if ((text.match(/```/g) ?? []).length >= 2) return "pro";

@@ -1,65 +1,131 @@
-# Spec：Smart 调度 v3（任务类型感知路由）
+# Spec：Smart 调度扩展 v3（任务类型感知路由）
 
-在 Smart v2（套餐额度感知路由，`packages/provider/src/smart-routing.ts`）之上增加
-任务复杂度/类型感知，形成 MiMo Smart Router 的等价物：简单任务走快模型，复杂任务
-升级旗舰。
+在 Smart v2（套餐额度感知路由）之上增加任务复杂度/类型感知，对齐 MiMo Smart Router：简单任务走快模型，复杂任务升级旗舰；额度约束始终优先于升级诉求。
 
 ## 目标
 
-1. 路由决策引入任务复杂度信号，与现有套餐额度规则共同决定模型选择。
-2. 额度约束优先于升级意图：额度不足时降级优先，升级被抑制。
-3. 路由决策可观测：每次切换有结构化日志，UI 显示当前模型与切换原因。
+1. Smart 虚拟选择（smart/auto）的路由决策从"额度感知"扩展为"额度 + 任务类型"双信号，简单任务走 flash 档，复杂任务升级 pro 档。
+2. 分类 v1 规则式：不新增任何模型判别调用；模型判别作为后续可切换增强。
+3. 路由决策对用户可见：档位切换有决策日志（note）与会话 UI 提示（当前模型 + 切换原因）。
+4. 唯一路由入口：只扩展 SmartRoutingPort 宿主实现，不新建第二套路由面；v1 目录择优保持为回落层。
 
 ## 现状与增量
 
-| 项 | 现状 | 增量 |
-| --- | --- | --- |
-| 路由 | `smart-routing.ts` 已做额度感知路由（Smart v2，本地 fork 已提交） | 在同一模块内扩展复杂度信号，不建第二路由入口 |
-| 信号源 | 额度、模型列表 | 新增复杂度信号：提示词长度、工具调用密度、上下文增长速率、会话阶段（规划 vs 执行） |
-| 可观测 | `packages/ui/src/store/modelTrajectoryStore.ts` 已存在 | 接入切换原因展示；provider 侧补结构化决策日志 |
-| 配置 | `config/rule-data-schema.ts` 定义规则数据 | 新增复杂度阈值配置项，走既有配置编解码（`provider-config-file-codec.ts`） |
+| 项         | 现状                                                                                                                                                                                                  | 增量                                                                         |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| v1 路由    | `packages/provider/src/smart-routing.ts`：解析期目录择优（上下文窗口最大者优先，平手保持目录顺序）                                                                                                    | 不变；作为套餐耗尽时的回落层                                                 |
+| v2 端口    | `apps/zcode-cli/packages/contracts/src/interfaces/smart-routing.port.ts`：`SmartRoutingPort.getRoutingDecision({ taskPreview })`，决策为 plan（tier: pro \| flash）/ catalog / unavailable，note 必带 | 宿主实现内扩展任务信号评估与决策表；端口契约不变（taskPreview 已是信号入口） |
+| 额度层     | `packages/shared/src/usage-quota.ts`、`coding-plan-subscription.ts` 与 `packages/services/src/coding-plan-subscription`                                                                               | 只读消费，不改额度规则                                                       |
+| automation | `packages/desktop/src/host/automationModelSelection.ts`：提交边界固定模型身份                                                                                                                         | 不变；automation 不参与逐轮路由                                              |
+| UI         | Smart 选中时隐藏具体模型名与思考等级控件                                                                                                                                                              | 新增"当前模型 + 切换原因"提示（由决策 note 驱动）                            |
 
 ## 领域词汇
 
-- **信号（signal）**：本次请求可观测的特征值（长度/密度/增速/阶段）。
-- **升降级**：在同一 provider 的模型梯队内切换（快 ↔ 旗舰）；不跨 provider 切换。
-- **抑制**：额度规则命中时，升级意图被否决。
+- **档位（tier）**：一次 Smart 路由的模型档——pro（复杂任务主力档）、flash（简单任务快档，免费轨优先）。
+- **升级 / 降级**：相对上一轮档位的跳变；仅 flash→pro 为升级，pro→flash 为降级。
+- **额度保护**：额度状态约束先于任务类型决策——降级优先于升级。
 
-## 决策流程
+## 决策信号与决策表（草案）
+
+信号全部规则式、逐轮计算、零新增模型调用：
 
 ```text
-请求 → 收集信号 → 复杂度评分（v1 规则式）
-  → 与额度规则合并决策（额度优先）：
-      额度紧张 → 降级优先，升级一律抑制
-      额度充裕 → 按复杂度评分选梯队
-  → effective-model-selection 输出最终模型
-  → 决策日志 + UI（当前模型 + 切换原因）
+s1 输入规模   ：taskPreview 长度、代码块数、引用文件数
+s2 会话阶段   ：会话内轮次；近几轮工具调用密度
+s3 上下文规模 ：当前 context 长度档位
+s4 额度状态   ：剩余额度 / 重置卡可用性（继承 v2）
 ```
 
-- v1 复杂度评分用规则式（阈值查表）；模型判别作为可选增强，走配置开关。
-- 同会话内评分带滞后（防抖）：单次弱信号不立即降级，连续信号才切换，避免模型震荡。
+决策表（自上而下，命中即停）：
 
-## 状态所有者
+```text
+D1 套餐耗尽且无重置卡                          → catalog（回落 v1 目录择优）   ← 额度保护优先
+D2 额度低 + flash 可用                         → plan/flash                    ← 降级优先于升级
+D3 信号为复杂（多文件引用/长上下文/高工具密度）→ plan/pro（升级）
+D4 信号为简单（短问答/单点修改）               → plan/flash
+D5 信号中性或不确定                            → plan/pro（默认档，对齐 v2 现状）
+```
 
-- 路由决策唯一所有者：`packages/provider/src/smart-routing.ts`（扩展，不新建入口）。
-- 决策日志：provider 侧追加结构化日志事件；UI 侧只读展示。
-- 模型选择输出仍归 `effective-model-selection.ts`。
+- 阈值集中定义为命名常量（复杂度阈值、低额度阈值），不放散落字面量。
+- 决策必须携带人话 note（对齐 v2 端口约定），供日志与会话 UI 消费。
+
+## 状态所有者与数据流
+
+```text
+core turn（getRoutingDecision({ taskPreview })，契约不变）
+  → SmartRoutingPort 宿主实现（bootstrap zcode-protocol 宿主，唯一路由所有者）
+      ├─ 任务信号评估（v3 新增，纯函数、可独立单测）
+      ├─ 决策表 → plan(tier, note) / catalog / unavailable
+      └─ 额度读取（usage-quota / coding-plan-subscription，只读）
+  → 决策 note → 会话事件 → UI「当前模型 + 切换原因」提示
+```
+
+- 信号评估是纯函数：输入 taskPreview / 会话统计 / 额度快照，输出信号集；决策表由宿主实现持有。
+- core 侧零改动（端口缺席仍回落 v1）；UI 只消费决策 note，不自行推导档位。
+
+## 权限与边界
+
+- 决策日志：`info` 记录档位切换事件（升级/降级/回落），`debug` 记录逐轮信号与决策明细（高频，生产不落盘）。
+- UI 提示是消息派生渲染，不新建持久化状态；广播同步不回写档位（防回环）。
+- 端口实现方自行兜底：任何信号计算失败不得阻断 turn（对齐 v2 端口约定）。
 
 ## 非目标（v1 边界）
 
-- 不做跨 provider 切换（仅在模型梯队内升降级）。
-- 不做 harness/专职 agent 维度的调度（MiMo 是模型+Harness+专职 agent 三层，本 spec
-  只做模型层）。
-- 不做用户自定义规则编辑器（阈值走配置文件）。
+- 不做模型判别调用（零新增推理成本；模型判别作为可切换增强另评估）。
+- 不做用户自定义路由规则 / 阈值设置页。
+- 非 Smart 选择的会话不参与逐轮切换。
+- automation 提交边界固定模型身份的语义不变。
 
 ## 验收场景
 
-1. 同会话中简单问答走快模型；发起多文件重构请求后升级旗舰，UI 显示切换原因。
-2. 额度低于阈值时发起复杂任务：升级被抑制，输出降级/保持决策，日志可查。
-3. 单次长提示词不触发震荡：防抖生效，连续复杂信号才切换。
+1. 同一会话：短问答走 flash；随后提出多文件重构请求升级 pro；会话 UI 显示切换原因，日志有对应 info 事件。
+2. 套餐额度耗尽且无重置卡：回落目录择优（catalog），不因任务复杂而尝试升级。
+3. 额度偏低时简单任务命中 D2 降级 flash，不出现"低额度还升级旗舰"的决策。
 
 ## 验证
 
-- 路由决策表驱动测试（信号组合→期望决策，含额度边界用例）。
-- 防抖逻辑测试。
-- `pnpm typecheck`；`pnpm architecture:check --changed`。
+- 决策表表驱动测试：信号组合 → 期望档位（覆盖 D1–D5 全分支与优先级冲突用例）。
+- 真实额度边界用例：耗尽 / 低额度 / 重置卡三种额度状态下的决策断言。
+- note 生成与日志事件断言；`pnpm typecheck`；`pnpm architecture:check --changed`。
+
+## 待定项
+
+1. 升级/降级阈值默认值（复杂度阈值、低额度阈值；上线前按实测校准）。
+2. UI 提示形态：会话头部 badge 还是消息内联标记（对齐 DESIGN.md 后定）。
+3. 模型判别增强是否复用 taskPreview 通道传入更多上下文。
+4. s2/s3 信号（会话轮次/工具密度/上下文规模）：**s2 与 s3 均已接入**——s2 轮次（契约
+   入参 turnIndex，阈值 6 轮）、s3 上下文规模以决策时点既往上下文**消息数**为代理指标
+   （契约入参 contextMessageCount，阈值 120 条；真实 token 估算留后续）。工具密度信号
+   暂以输入规模启发覆盖。D1–D5 决策表已生效（含 D2 降级优先于升级、低额度不消耗重置
+   卡）。防抖：档位切换只在选型变化时经 ModelSelected 事件出现（天然无重复刷屏）。
+5. UI 透传面（已定）：切换档位时 Smart 决策（tier+note）随 ModelSelected 会话事件载荷的可选 smartRouting 字段透出（选型变化才发，天然只在换档时出现）；UI 消费面契约见下节「Smart 决策 UI 消费面（B3，已落地）」。
+
+## Smart 决策 UI 消费面（B3 收官，已落地）
+
+ModelSelected 事件的 smartRouting 字段只在 Smart 换档的选型变化事件出现（wire 语义，cf5becf）。UI 消费分三面：
+
+- **wire 面（v4 快照 config）**：`sessionConfigStateSchema.smartRouting?: { tier: "pro" | "flash"; note: string }`（加性可选，冻结面演进）。投影规则：事件带 smartRouting → 设为当前档位决策；事件不带（非 Smart 换档，如显式切换）→ 清除；hydration 合成事件（HYDRATION_TRACE_ID）只重建历史选型，不触碰该面；只有值变化才进 config patch（键级整体替换语义）。
+- **数据面（renderer）**：`modelTrajectoryStore` 在打开桥之外新增数据面 `smartRoutingTrailBySession: Record<sessionId, SmartRoutingDecisionRecord[]>`，记录 `{ seq, tier, note, at }`；每 session 上限 100 条（淘汰最旧）。
+- **查询面（renderer）**：纯选择器 `selectSmartRoutingTrail(state, sessionId)` + hook `useSmartRoutingTrail(sessionId)`，供后续 UI 形态（待定项 2）消费；E2E 沿用 `__zcodeModelTrajectoryStoreE2E` 暴露的同一 store。
+
+### 状态所有者与事件顺序
+
+```text
+core turn 决策（SmartRoutingPort 宿主实现，唯一路由所有者）
+  → runtime.pendingSmartRoutingDecision（发射边界暂存，发后即清）
+  → ModelSelected{smartRouting}（仅 Smart 换档出现）
+  → v4 product-projection onModelSelected（唯一投影者：config.smartRouting 设值/清除）
+  → state.updated{config} 帧
+  → renderer conversationProjectionStore.applyFrame（唯一摄取者）
+      ├─ snapshot 帧：播种观察基线，不落记录
+      └─ deltas 帧：config.smartRouting 前后值比对，变化才 recordSmartRoutingDecision
+  → modelTrajectoryStore.smartRoutingTrailBySession（查询面消费）
+```
+
+幂等与边界：
+
+- seq 是帧右端点水位：重复帧由订阅层去重（`toSeq <= 当前 seq` 静默丢弃）；摄取侧再以 `seq <= 最后一条记录 seq` 拒绝迟到/乱序，写路径 exactly-once。
+- 快照（initial/recovery/overflow）只播种基线，不回填历史——trail 是 renderer 生命周期内的切换轨迹；订阅前发生的历史档位不回填。
+- hydration 合成事件与 seedConfig 均不触碰 smartRouting（runtime 不持久化"当前档位"；CLI 重启/resume 后 trail 自下一次换档重新累积）。
+- sessionId 为 trail 键（同 host 内唯一）；跨 host 的 sessionId 理论碰撞不影响状态正确性（trail 仅展示面，非权威事实；权威档位事实归 v4 config）。
+- UI 提示形态仍是待定项 2（会话头部 badge vs 消息内联标记，对齐 DESIGN.md 后定）：本次交付数据面 + 摄取 + 查询面，验收场景 1 的"会话 UI 显示切换原因"由查询面消费方落地后闭环。

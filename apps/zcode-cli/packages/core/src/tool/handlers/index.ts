@@ -77,6 +77,32 @@ import { resolveWorkflowQuestionToolEntry } from "./resolve-workflow-question.js
 import { taskOutputToolEntry } from "./task-output.js";
 import { taskStopToolEntry } from "./task-stop.js";
 import { readSessionContextToolEntry } from "./read-session-context.js";
+// 外部会话只读互操作（specs/external-sessions.md）：always-on 只读工具，端口无关。
+import { listExternalSessionsToolEntry } from "./external-session-list.js";
+import { readExternalSessionToolEntry } from "./external-session-read.js";
+// agent 可调桌面设置（specs/agent-settings.md）：端口在场才注册（fail-closed）。
+import { getDesktopSettingToolEntry } from "./get-desktop-setting.js";
+import { setDesktopSettingToolEntry } from "./set-desktop-setting.js";
+import {
+  GET_DESKTOP_SETTING_TOOL_NAME,
+  SET_DESKTOP_SETTING_TOOL_NAME,
+} from "@zcode/contracts";
+// 图像工具（specs/image-tools.md）：端口在场才注册（fail-closed）。
+import { imageGenToolEntry } from "./image-gen.js";
+import { imageEditToolEntry } from "./image-edit.js";
+// 语音工具（specs/voice-pipeline.md）：端口在场才注册（fail-closed）。
+import { asrTranscribeToolEntry } from "./asr-transcribe.js";
+import { ttsSpeechToolEntry } from "./tts-speech.js";
+// PDF 预览联动（specs/pdf-preview-linkage.md）：桌面形态门待 UI 链路接入，当前休眠。
+import { pdfLocateToolEntry } from "./pdf-locate.js";
+// 交付物卡片（specs/deliverable-cards.md）：纯声明工具，always-on。
+import { presentFilesToolEntry } from "./present-files.js";
+import { IMAGE_GEN_TOOL_NAME, IMAGE_EDIT_TOOL_NAME } from "@zcode/contracts";
+import {
+  ASR_TRANSCRIBE_TOOL_NAME,
+  TTS_SPEECH_TOOL_NAME,
+} from "@zcode/contracts";
+import { PDF_LOCATE_TOOL_NAME } from "@zcode/contracts";
 import { amendWorkflowToolEntry } from "./amend-workflow.js";
 import { createWorkflowToolEntry } from "./create-workflow.js";
 import { saveWorkflowToolEntry } from "./save-workflow.js";
@@ -133,6 +159,19 @@ export const builtInTools: ToolEntry[] = [
   sessionListToolEntry,
   sessionTalkToolEntry,
   sessionCreateToolEntry,
+  // agent 可调桌面设置（specs/agent-settings.md）：端口在场才注册（fail-closed）。
+  getDesktopSettingToolEntry,
+  setDesktopSettingToolEntry,
+  // 图像工具（specs/image-tools.md）：端口在场才注册（fail-closed）。
+  imageGenToolEntry,
+  imageEditToolEntry,
+  // 语音工具（specs/voice-pipeline.md）：端口在场才注册（fail-closed）。
+  asrTranscribeToolEntry,
+  ttsSpeechToolEntry,
+  // PDF 预览联动（specs/pdf-preview-linkage.md）：桌面形态门待 UI 链路，当前休眠不注册。
+  pdfLocateToolEntry,
+  // 交付物卡片（specs/deliverable-cards.md）：纯声明工具，always-on。
+  presentFilesToolEntry,
   submitResultToolEntry,
   // actor 的升级通道。与 submit_result 完全同构：
   // 端口在场即注册（includeEscalate），`tools:"none"` 下由 workflow_child 的 allowlist
@@ -142,6 +181,9 @@ export const builtInTools: ToolEntry[] = [
   taskOutputToolEntry,
   taskStopToolEntry,
   readSessionContextToolEntry,
+  // 外部会话只读互操作（specs/external-sessions.md）：always-on 只读工具。
+  listExternalSessionsToolEntry,
+  readExternalSessionToolEntry,
   agentToolEntry,
   taskToolEntry,
   skillToolEntry,
@@ -211,6 +253,14 @@ interface RegisterBuiltInToolsOptions {
    * ——只在宿主注入了 SessionChatPort 的会话注册；subagent_child 不暴露（无嵌套互聊）。
    */
   includeSessionChat?: boolean;
+  /** agent 可调桌面设置（specs/agent-settings.md）：Get/SetDesktopSetting，端口在场才注册。 */
+  includeDesktopSettings?: boolean;
+  /** 图像工具（specs/image-tools.md）：image_gen/image_edit，端口在场才注册。 */
+  includeImageTools?: boolean;
+  /** 语音工具（specs/voice-pipeline.md）：asr_transcribe/tts_speech，端口在场才注册。 */
+  includeVoiceTools?: boolean;
+  /** PDF 预览联动（specs/pdf-preview-linkage.md）：pdf_locate，桌面形态门显式开启才注册。 */
+  includePdfLocate?: boolean;
   includeSubmitResult?: boolean;
   /**
    * 在场时 submit_result 以 typed 声明注册（`{ result: <schema> }`，strict 资格），供 dwf mono
@@ -299,6 +349,29 @@ export function registerBuiltInTools(
         entry.metadata.name === "SessionCreate") &&
       options.includeSessionChat !== true
     ) {
+      continue;
+    }
+    if (
+      (entry.metadata.name === GET_DESKTOP_SETTING_TOOL_NAME ||
+        entry.metadata.name === SET_DESKTOP_SETTING_TOOL_NAME) &&
+      options.includeDesktopSettings !== true
+    ) {
+      continue;
+    }
+    if (
+      (entry.metadata.name === IMAGE_GEN_TOOL_NAME || entry.metadata.name === IMAGE_EDIT_TOOL_NAME) &&
+      options.includeImageTools !== true
+    ) {
+      continue;
+    }
+    if (
+      (entry.metadata.name === ASR_TRANSCRIBE_TOOL_NAME ||
+        entry.metadata.name === TTS_SPEECH_TOOL_NAME) &&
+      options.includeVoiceTools !== true
+    ) {
+      continue;
+    }
+    if (entry.metadata.name === PDF_LOCATE_TOOL_NAME && options.includePdfLocate !== true) {
       continue;
     }
     if (

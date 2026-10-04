@@ -225,6 +225,9 @@ const BROADCAST_FIELD_LIST = [
   "uiFontSizePx",
   "interfaceMode",
   "appearancePreferences",
+  // agent 可调桌面设置（specs/agent-settings.md）：notifications.enabled 广播同步
+  // （renderer store 为唯一所有者，宿主工具面写经此通道，接收端 set 复用既有持久化）。
+  "notificationEnabled",
 ] as const;
 
 const BROADCAST_FIELDS = new Set<string>(BROADCAST_FIELD_LIST);
@@ -494,6 +497,8 @@ export function createZCodeStore(
       const state = useStore.getState();
       if (field === "theme" && typeof msg.payload === "string") {
         state.setTheme(msg.payload as Theme);
+      } else if (field === "notificationEnabled" && typeof msg.payload === "boolean") {
+        state.setNotificationEnabled(msg.payload);
       } else if (field === "locale" && typeof msg.payload === "string") {
         state.setLocale(msg.payload);
       } else if (
