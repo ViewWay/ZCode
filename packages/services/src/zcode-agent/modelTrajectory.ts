@@ -500,6 +500,10 @@ export async function aggregateModelUsageStats(
     byModel: [],
     byTool: [],
     bySession: [],
+    skillTurns: 0,
+    nonSkillTurns: 0,
+    avgTokensWithSkill: 0,
+    avgTokensWithoutSkill: 0,
   };
   const byModelKey = new Map<
     string,
@@ -514,6 +518,11 @@ export async function aggregateModelUsageStats(
   >();
   const byToolKey = new Map<string, number>();
   const bySessionKey = new Map<string, { calls: number; errored: number; lastStartedAt: string }>();
+  // 技能效率对比累加器（GenericAgent 式证据）：用/不用 Skill 轮的 token 与轮数。
+  let skillTurns = 0;
+  let skillTokens = 0;
+  let nonSkillTurns = 0;
+  let nonSkillTokens = 0;
 
   for (const dir of dirs) {
     let names: string[];
@@ -582,6 +591,15 @@ export async function aggregateModelUsageStats(
           if (typeof tool !== "string" || tool.length === 0) continue;
           byToolKey.set(tool, (byToolKey.get(tool) ?? 0) + 1);
         }
+        // 技能效率切片：本轮 toolNames 含 Skill 即计入「用技能」侧（GenericAgent 式证据）。
+        const recordTokens = inputTokens + outputTokens;
+        if (toolNames.includes("Skill")) {
+          skillTurns += 1;
+          skillTokens += recordTokens;
+        } else {
+          nonSkillTurns += 1;
+          nonSkillTokens += recordTokens;
+        }
 
         const sessionEntry = bySessionKey.get(sessionId) ?? {
           calls: 0,
@@ -609,5 +627,10 @@ export async function aggregateModelUsageStats(
     .map(([sessionId, entry]) => ({ sessionId, ...entry }))
     .sort((a, b) => b.calls - a.calls)
     .slice(0, 200);
+  // 技能效率证据：用/不用 Skill 轮的均 token（0 轮侧均值为 0）。
+  stats.avgTokensWithSkill = skillTurns > 0 ? Math.round(skillTokens / skillTurns) : 0;
+  stats.avgTokensWithoutSkill = nonSkillTurns > 0 ? Math.round(nonSkillTokens / nonSkillTurns) : 0;
+  stats.skillTurns = skillTurns;
+  stats.nonSkillTurns = nonSkillTurns;
   return stats;
 }

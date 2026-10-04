@@ -181,6 +181,13 @@ export interface TrajectoryUsageStats {
   byModel: TrajectoryModelUsageStat[];
   byTool: TrajectoryToolCallStat[];
   bySession: TrajectorySessionUsageStat[];
+  /** 用了 Skill 工具的调用轮数（GenericAgent 式技能效率对比用）。 */
+  skillTurns: number;
+  /** 未用 Skill 的调用轮数。 */
+  nonSkillTurns: number;
+  /** 用/不用 Skill 轮的均 token（技能效率证据；任一侧为 0 时该均值为 0）。 */
+  avgTokensWithSkill: number;
+  avgTokensWithoutSkill: number;
 }
 
 /** 某个 task/session 的完整模型调用轨迹。 */

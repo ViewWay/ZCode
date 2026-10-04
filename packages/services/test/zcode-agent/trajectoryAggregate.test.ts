@@ -75,3 +75,18 @@ test("聚合：损坏行跳过；无目录返回空统计", async () => {
   assert.equal(empty.scannedRecords, 0);
   assert.equal(empty.byTool.length, 0);
 });
+
+test("技能效率切片：Skill 轮与非 Skill 轮分开计 token", async () => {
+  const fixture = makeFixtureDir();
+  fixture.write("model-io-s1.jsonl", [
+    REC("glm-5.3", "Skill", 100),
+    REC("glm-5.3", "Bash", 300),
+    REC("glm-5.3-flash", "Read", 60),
+  ]);
+  const stats = await aggregateModelUsageStats({ dirs: [fixture.dir] });
+  assert.equal(stats.skillTurns, 1);
+  assert.equal(stats.nonSkillTurns, 2);
+  // tokens 计 input+output：Skill 轮 150，非 Skill 轮 (300+150 + 60+30)/2 = 270。
+  assert.equal(stats.avgTokensWithSkill, 150);
+  assert.equal(stats.avgTokensWithoutSkill, 270);
+});
