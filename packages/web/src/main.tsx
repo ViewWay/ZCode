@@ -1147,6 +1147,11 @@ export function createHomeOnlyWebRemoteControlServices(): RootServices {
       ensureConversationWorkspace: unsupported("fileService.ensureConversationWorkspace"),
       createScratchWorkspace: unsupported("fileService.createScratchWorkspace"),
       readTextFile: unsupported("fileService.readTextFile"),
+      // 修复原因：fork 给 IFileService 新增了 writeTextFile/deleteFile（预览面板编辑保存
+      // 与删除 Wiki），web 端 stub 未同步补齐导致 tsc -b 重建时报 TS2739；
+      // web 端无本地文件系统语义，与同族方法一致走 unsupported 占位。
+      writeTextFile: unsupported("fileService.writeTextFile"),
+      deleteFile: unsupported("fileService.deleteFile"),
       readMediaPreview: unsupported("fileService.readMediaPreview"),
       readFileRange: unsupported("fileService.readFileRange"),
       readBinaryPreview: unsupported("fileService.readBinaryPreview"),
@@ -1277,6 +1282,9 @@ export function createHomeOnlyWebRemoteControlServices(): RootServices {
       createUnsupportedHomeOnlyService<RootServices["highspeedCardService"]>(
         "highspeedCardService",
       ),
+    // 修复原因：fork 给 IServiceAccessor 新增必填 teamsService（Agent Teams 面板），
+    // web 端 stub 未同步导致 tsc -b 重建时报 TS2741；web 端不支持该面板，走 unsupported 占位。
+    teamsService: createUnsupportedHomeOnlyService<RootServices["teamsService"]>("teamsService"),
     skillsService: createEmptyHomeOnlyService<RootServices["skillsService"]>({
       list: async () => ({
         skills: [],
