@@ -8,6 +8,7 @@ export * from "./interfaces/execution.port.js";
 export * from "./interfaces/browser-control.port.js";
 export * from "./interfaces/file-system.port.js";
 export * from "./interfaces/context-source.port.js";
+export * from "./interfaces/provider-endpoint-routing.port.js";
 export * from "./interfaces/http-client.port.js";
 export * from "./interfaces/image-processor.port.js";
 export * from "./interfaces/pdf-document.port.js";
@@ -27,6 +28,7 @@ export * from "./interfaces/dynamic-workflow-snippet.port.js";
 export * from "./interfaces/model-catalog.port.js";
 export * from "./interfaces/automation.port.js";
 export * from "./interfaces/off-peak.port.js";
+export * from "./interfaces/topic-resource.port.js";
 export * from "./interfaces/session-chat.port.js";
 export * from "./interfaces/smart-routing.port.js";
 // agent 可调桌面设置（specs/agent-settings.md）：宿主端口，缺席 fail-closed。

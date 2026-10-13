@@ -1,18 +1,16 @@
 import type {
   AgentExecutionTelemetryPort,
   AgentTelemetryActorKind,
+  AutomationPort,
   BackgroundResultOriginMeta,
+  BrowserControlPort,
   CollaborationMode,
   CoordinatorResponsePort,
   DynamicWorkflowRunPort,
   DynamicWorkflowSnippetPort,
-  ModelCatalogPort,
   EmbeddedSearchBackend,
   ExecutionPort,
-  BrowserControlPort,
   ExecutionShellSelection,
-  AutomationPort,
-  OffPeakPort,
   SessionChatPort,
   DesktopSettingsPort,
   ImageGenerationPort,
@@ -20,22 +18,25 @@ import type {
   FileSystemPort,
   HttpClientPort,
   ImageProcessorPort,
-  PdfDocumentPort,
   Logger,
   Model,
+  ModelCatalogPort,
+  OffPeakPort,
+  TopicResourcePort,
+  PdfDocumentPort,
   PermissionBrokerPort,
   SessionEvent,
   SessionId,
   SessionModePort,
   SessionStorePort,
   SkillPort,
-  SubagentRunOptions,
   SubagentPort,
+  SubagentRunOptions,
   ToolArtifactStorePort,
   TraceContext,
   TurnId,
-  WorkflowPort,
   WorkflowEscalatePort,
+  WorkflowPort,
   WorkflowSubmitPort,
 } from "@zcode/contracts";
 import type { HookRunner } from "../../hooks/index.js";
@@ -44,10 +45,10 @@ import type { RuntimeTaskRegistry } from "../../runtime-task/registry.js";
 import type { ToolRegistry } from "../registry.js";
 import type { ToolSchedule } from "../scheduler.js";
 import type {
+  BackgroundTaskControlPort,
   ExecutableToolCall,
   ReadFileStateMap,
   ToolBatchEvent,
-  BackgroundTaskControlPort,
   ToolExecutionResult,
   ToolRuntimeScope,
 } from "../types.js";
@@ -110,6 +111,7 @@ export interface ToolExecutorOptions {
   artifactStore?: ToolArtifactStorePort;
   automationPort?: AutomationPort;
   offPeakPort?: OffPeakPort;
+  topicResourcePort?: TopicResourcePort;
   /** 会话互聊（实验）端口；存在即为该会话注册 SessionList/SessionTalk/SessionCreate。 */
   sessionChatPort?: SessionChatPort;
   /** agent 可调桌面设置端口；存在时注册 Get/SetDesktopSetting（specs/agent-settings.md）。 */
@@ -154,6 +156,13 @@ export interface ToolExecutorOptions {
 }
 
 export interface ToolExecutor {
+  /** 同一权限链供 MCP App 使用；返回审批后的输入，不执行 handler / 不做模型结果投影。 */
+  authorizeAppTool?(
+    toolCall: ExecutableToolCall,
+    entry: import("../types.js").ToolEntry,
+    options?: ToolExecuteOptions,
+  ): Promise<unknown>;
+
   execute(toolCall: ExecutableToolCall, options?: ToolExecuteOptions): Promise<ToolExecutionResult>;
   executeBatch(
     toolCalls: ExecutableToolCall[],
@@ -226,6 +235,7 @@ export interface ToolExecutorDeps {
   artifactStore?: ToolArtifactStorePort;
   automationPort?: AutomationPort;
   offPeakPort?: OffPeakPort;
+  topicResourcePort?: TopicResourcePort;
   /** 会话互聊（实验）端口；存在即为该会话注册 SessionList/SessionTalk/SessionCreate。 */
   sessionChatPort?: SessionChatPort;
   /** agent 可调桌面设置端口；存在时注册 Get/SetDesktopSetting（specs/agent-settings.md）。 */

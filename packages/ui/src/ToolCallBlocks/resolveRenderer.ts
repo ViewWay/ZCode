@@ -38,6 +38,7 @@ import { CuaGroupToolCallBlock } from "@/ToolCallBlocks/renderers/cua-group.js";
 import { GoalToolCallBlock } from "@/ToolCallBlocks/renderers/goal.js";
 import { NodeReplToolCallBlock } from "@/ToolCallBlocks/renderers/node-repl.js";
 import { McpToolCallBlock, readMcpToolPresentation } from "@/ToolCallBlocks/renderers/mcp.js";
+import * as PluginUi from "@/plugin-ui/index.js";
 import { PlanGuidanceToolCallBlock } from "@/ToolCallBlocks/renderers/plan-guidance.js";
 // 交付物卡片（specs/deliverable-cards.md）：present_files 按名认领（workflowToolNames 同款先例）。
 import {
@@ -141,6 +142,7 @@ export function resolveToolCallRenderer(context: ToolCallBlockRenderContext) {
   if (identity.family === "node-repl") {
     return NodeReplToolCallBlock;
   }
+  if (PluginUi.shouldRenderPluginUi(context)) return PluginUi.PluginUiToolCallBlock;
   if (readMcpToolPresentation(context)) {
     return McpToolCallBlock;
   }

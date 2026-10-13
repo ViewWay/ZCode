@@ -1,4 +1,5 @@
 packages:
+  - apps/dev-docs
   - packages/*
   - apps/zcode-cli
   - apps/zcode-cli/packages/*
@@ -36,3 +37,6 @@ patchedDependencies:
   '@arms/rum-electron@0.0.3': patches/@arms__rum-electron@0.0.3.patch
   '@ai-sdk/openai-compatible@2.0.60': patches/@ai-sdk__openai-compatible@2.0.60.patch
   '@ai-sdk/anthropic@3.0.81': patches/@ai-sdk__anthropic@3.0.81.patch
+  # 上游 v3.15.1 新增补丁（原登记在 package.json，按本仓迁移约定并入此处）
+  'vitest@4.1.7': patches/vitest@4.1.7.patch
+  'wdio-electron-service@9.2.1': patches/wdio-electron-service@9.2.1.patch
