@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import { test } from "vitest";
 import type { AutomationRecordingStep } from "@zcode/shared";
 import { createAutomationRecordingStore } from "../../src/host/automationRecordingStore.js";
 

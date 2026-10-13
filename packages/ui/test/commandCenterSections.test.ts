@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import {
   COMMAND_CENTER_DEFAULT_SECTION_ORDER,
   COMMAND_CENTER_RECENT_TASK_PREVIEW_LIMIT,

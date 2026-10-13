@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import { test } from "vitest";
 import type { AutomationRecordingStep } from "@zcode/shared";
 import { createAutomationRecordingHostService } from "../../src/host/automationRecordingHostService.js";
 import type { BrowserActionExecutor } from "../../src/host/automationReplayExecutors.js";

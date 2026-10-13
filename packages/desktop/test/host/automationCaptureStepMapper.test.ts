@@ -2,7 +2,7 @@
 // scroll 同向聚合、长间隔插 wait、截断与乱序输入。产出步骤用 shared 的
 // step schema 收口校验，保证映射结果可直接进入 store.save。
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import {
   automationRecordingSchema,
   automationRecordingStepSchema,

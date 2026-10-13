@@ -1,10 +1,10 @@
 // defaultSession 媒体权限策略单测（specs/voice-pipeline.md「麦克风权限」节）：
 // - 纯决策函数：media 仅纯音频放行；含视频或缺 mediaTypes 拒绝；非 media 走默认。
 // - 安装函数：default 路径保持默认放行，deny 路径 fail-closed 并留日志。
-// 运行：cd <repo-root> && ./node_modules/.bin/tsx --test packages/desktop/test/main/desktopMediaPermissionPolicy.test.ts
+// 运行：cd <repo-root> && pnpm exec vitest run packages/desktop/test/main/desktopMediaPermissionPolicy.test.ts
 
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import {
   installDesktopMediaPermissionPolicy,
   resolveDesktopMediaPermissionDecision,

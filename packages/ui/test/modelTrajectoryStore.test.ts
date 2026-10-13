@@ -3,7 +3,7 @@
 // 注意：zustand getState() 是即时快照，断言前必须重新 getState()，不能缓存引用。
 
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "vitest";
 
 import {
   selectSmartRoutingTrail,

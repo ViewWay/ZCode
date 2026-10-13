@@ -1,10 +1,10 @@
 // ModelPropertiesConfig 能力声明叠加单测：普通对象按 ConfigOverlay 约定整体替换
 // （不按字段深合并），toJSON/validateComplete 不丢 capabilities。这保证 builtin
 // 与 personal 规则合成后能力声明与 contextWindow 等叶子走同一套语义。
-// 运行：cd <repo-root> && ./node_modules/.bin/tsx --test packages/provider/test/model-properties-capabilities.test.ts
+// 运行：cd <repo-root> && pnpm exec vitest run packages/provider/test/model-properties-capabilities.test.ts
 
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "vitest";
 
 import { ModelPropertiesConfig } from "../src/config/model-config.js";
 

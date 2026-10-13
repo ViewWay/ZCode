@@ -1,6 +1,6 @@
 // A5 执行面单测（specs/record-replay.md）：步骤→BrowserCommand 映射、派发结果归一、no-op 执行面诚实失败。
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import type { BrowserCommand, BrowserCommandResult } from "@zcode/shared";
 import {
   automationRecordingStepToBrowserCommand,

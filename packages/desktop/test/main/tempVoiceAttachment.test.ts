@@ -1,13 +1,13 @@
 // 临时语音附件落盘单测（specs/voice-pipeline.md 目标 3）：真实文件系统，
 // 注入 rootDir 隔离 tmp 目录。覆盖：读写回环、空/超限拒绝、文件名消毒与
 // 扩展名归一、`wx` 独占写不覆盖。
-// 运行：cd <repo-root> && ./node_modules/.bin/tsx --test packages/desktop/test/main/tempVoiceAttachment.test.ts
+// 运行：cd <repo-root> && pnpm exec vitest run packages/desktop/test/main/tempVoiceAttachment.test.ts
 
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import { test } from "vitest";
 import {
   TEMP_VOICE_ATTACHMENT_MAX_BYTES,
   createTempVoiceAttachment,

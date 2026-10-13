@@ -5,13 +5,13 @@
 //   status=missing 不再写；写失败/缺工作区时候选补偿回列表（所有权未移交）。
 // - delete：只删候选；promote：SKILL.md 草稿落注入的用户技能根目录。
 // fixture 全部为虚构脱敏数据。
-// 运行：cd <repo-root> && ./node_modules/.bin/tsx --test packages/services/test/auto-distill/distillKnowledgeService.test.ts
+// 运行：cd <repo-root> && pnpm exec vitest run packages/services/test/auto-distill/distillKnowledgeService.test.ts
 
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { test } from "node:test";
+import { test } from "vitest";
 import { parse as parseYaml } from "yaml";
 
 import type { DistillCandidate } from "@zcode/shared";

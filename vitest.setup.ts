@@ -2,6 +2,32 @@ import { afterEach, vi } from "vitest";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+// Bugfix: jsdom 未实现 DOMMatrix，而 pdfjs-dist 在模块求值期就会读取它（pdf.mjs 顶层），
+// 导致任何间接 import pdf 组件的测试在导入阶段即崩（ReferenceError: DOMMatrix is not defined）。
+// 单测不做真实光栅化，提供最小占位实现仅满足模块加载与视口计算。
+if (typeof globalThis.DOMMatrix === "undefined") {
+  // prettier-ignore
+  const matrixMembers = {
+    a: 1, b: 0, c: 0, d: 1, e: 0, f: 0,
+    m11: 1, m12: 0, m13: 0, m14: 0,
+    m21: 0, m22: 1, m23: 0, m24: 0,
+    m31: 0, m32: 0, m33: 1, m34: 0,
+    m41: 0, m42: 0, m43: 0, m44: 1,
+  };
+  class DOMMatrixStub {
+    constructor(init?: number[] | string) {
+      if (typeof init === "string") {
+        const parts = init.trim().split(/[\s,]+/).map(Number);
+        if (parts.length === 6 && parts.every((n) => Number.isFinite(n))) {
+          [this.a, this.b, this.c, this.d, this.e, this.f] = parts;
+        }
+      }
+    }
+  }
+  Object.assign(DOMMatrixStub.prototype, matrixMembers);
+  globalThis.DOMMatrix = DOMMatrixStub as unknown as typeof DOMMatrix;
+}
+
 process.env.GIT_CONFIG_COUNT = "2";
 
 // Bugfix: Git Bash 会把 /usr/bin（GNU tar 1.35）注入 PATH 最前，子进程 spawn "tar"

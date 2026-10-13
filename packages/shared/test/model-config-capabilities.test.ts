@@ -1,9 +1,9 @@
 // model-config 能力声明 schema 单测（specs/image-tools.md、specs/voice-pipeline.md）：
 // sparse/complete 均可选（既有数据不因缺 capabilities 判为不完整）、strict 拒绝未知
-// 叶子、布尔类型校验。运行：cd <repo-root> && ./node_modules/.bin/tsx --test packages/shared/test/model-config-capabilities.test.ts
+// 叶子、布尔类型校验。运行：cd <repo-root> && pnpm exec vitest run packages/shared/test/model-config-capabilities.test.ts
 
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "vitest";
 
 import {
   completeModelPropertiesDataSchema,

@@ -1,7 +1,7 @@
 // A5 实时采集页面脚本单测（specs/record-replay.md v1.1）：drain 表达式遵循页面脚本
 // 约定（无反引号/${}）且可被 JS 解析；drain 返回值经 Zod 校验，非法数据整体拒绝。
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import {
   buildAutomationCaptureDrainExpression,
   parseAutomationCaptureDrainResult,

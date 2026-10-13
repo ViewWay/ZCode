@@ -6,7 +6,7 @@
 // 运行：cd <repo-root> && ./node_modules/.bin/tsx --test packages/ui/test/pdfLocateTextLayer.test.ts
 
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "vitest";
 
 import {
   buildPdfLocateTextRenderer,

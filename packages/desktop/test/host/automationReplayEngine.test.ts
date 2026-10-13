@@ -1,6 +1,6 @@
 // A5 回放引擎单测（specs/record-replay.md）：逐步顺序、失败中断/跳过策略、报告内容、wait 本地延时。
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import type { AutomationRecording, AutomationRecordingStep } from "@zcode/shared";
 import { createAutomationReplayEngine } from "../../src/host/automationReplayEngine.js";
 import type { BrowserActionExecutor } from "../../src/host/automationReplayExecutors.js";

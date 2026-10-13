@@ -1,12 +1,13 @@
 // Agent Teams 只读发现服务单测（specs/agent-teams.md：services 只读投影、身份键隔离、
 // 与 runtime team-paths.ts 的目录兼容性）。
-// 运行：cd <repo-root> && ./node_modules/.bin/tsx --test packages/services/test/teamsDiscovery.test.ts
+// 运行：cd <repo-root> && pnpm exec vitest run packages/services/test/teamsDiscovery.test.ts
 
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, before, test } from "node:test";
+// vitest 无 node:test 的 before/after 别名，等价 API 是 beforeAll/afterAll（同为整文件一次性执行）。
+import { afterAll, beforeAll, test } from "vitest";
 
 import { createTeamsService } from "../src/teams/teamsDiscoveryService.js";
 import {
@@ -18,12 +19,12 @@ import {
 let homeDir: string;
 let cleanup: () => Promise<void>;
 
-before(async () => {
+beforeAll(async () => {
   homeDir = await mkdtemp(join(tmpdir(), "zcode-teams-discovery-"));
   cleanup = () => rm(homeDir, { recursive: true, force: true });
 });
 
-after(async () => {
+afterAll(async () => {
   await cleanup();
 });
 

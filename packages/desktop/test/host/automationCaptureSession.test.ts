@@ -2,7 +2,7 @@
 // 轮询 drain、URL 变化补 navigate、drain 失败容忍、停止/取消的释放语义
 // （visibility 复位 + scope tabs close，尽力而为）。
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import type { BrowserCommand, BrowserCommandResult, BrowserTabSummary } from "@zcode/shared";
 import {
   AUTOMATION_CAPTURE_SESSION_PREFIX,

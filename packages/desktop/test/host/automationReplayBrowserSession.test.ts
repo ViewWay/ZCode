@@ -1,7 +1,7 @@
 // A5 回放浏览器会话单测（specs/record-replay.md）：preflight 语义、dispatch 上下文
 // （sessionId 前缀 + workspace 透传）、释放（list 后逐 tab close）与尽力而为清理。
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import type { BrowserCommand, BrowserCommandResult, BrowserTabSummary } from "@zcode/shared";
 import {
   acquireAutomationReplayBrowserSession,

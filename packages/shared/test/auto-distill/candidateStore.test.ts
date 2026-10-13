@@ -6,13 +6,13 @@
 // - delete：不产生任何数据移交（删除不触 memory 写入）。
 // - promote：SKILL.md 草稿落盘（frontmatter 可解析、含来源信息），候选删除，重复 promote 幂等。
 // - 边界：损坏 candidates.json 抛稳定错误码；homeDir / distillRootDir 注入生效；非法候选拒绝写入。
-// 运行：cd <repo-root> && ./node_modules/.bin/tsx --test packages/shared/test/auto-distill/candidateStore.test.ts
+// 运行：cd <repo-root> && pnpm exec vitest run packages/shared/test/auto-distill/candidateStore.test.ts
 
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { test } from "node:test";
+import { test } from "vitest";
 import { parse as parseYaml } from "yaml";
 
 import {
