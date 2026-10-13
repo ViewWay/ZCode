@@ -49,6 +49,14 @@ function expectedTelemetrySendOptions() {
   });
 }
 
+// 只覆盖 usePlatform（useOptionalPlatform 等其余导出保留真实实现），同
+// v4ConversationComposerErrorBanner.test.ts 的做法：fork 的麦克风入口消费
+// usePlatform，测试环境无 PlatformProvider 会直接抛错。
+vi.mock("@/hooks/usePlatform.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  usePlatform: () => ({}),
+}));
+
 vi.mock("@/components/ui/dialog.js", async () => {
   const React = await import("react");
   const Passthrough = ({ children }: { children?: ReactNode }) =>

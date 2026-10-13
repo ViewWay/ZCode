@@ -195,6 +195,14 @@ const AMBIENT_TOOL_PASSTHROUGH_ENV_KEYS = new Set([
   "CURL_CA_BUNDLE",
   "GIT_SSL_CAINFO",
   "ZCODE_MODEL_TELEMETRY_ENABLED",
+  // Bugfix: 在已安装的 ZCode 桌面应用内跑单测时，应用会向子进程注入 CUA Helper 环境
+  // （如 ZCODE_CUA_BUNDLED_HELPER_APP_PATH 指向 /Applications 下的签名 Helper）。
+  // buildHostProcessEnv 的免签 dev 分支里显式路径优先于默认 dev bundle，继承的注入值
+  // 会让「本地免签 CUA」用例收到安装应用路径而非期望的 dev bundle。按同样的 ambient
+  // 口径捕获、清理并在 afterAll 恢复，保持断言只受用例自身铺设的环境控制。
+  "ZCODE_CUA_BUNDLED_HELPER_APP_PATH",
+  "ZCODE_CUA_PRODUCT_HELPER",
+  "ZCODE_CUA_HELPER_ALLOW_UNSIGNED_LOCAL",
 ]);
 const AMBIENT_PACKAGE_MANAGER_PROXY_ENV_PATTERN =
   /^(npm_config|yarn|pnpm)_(http_proxy|https_proxy|proxy|all_proxy|no_proxy|cafile|ca)$/i;

@@ -17,6 +17,15 @@ const { chatPromptEditorProps } = vi.hoisted(() => ({
   chatPromptEditorProps: [] as Array<Record<string, unknown>>,
 }));
 
+// fork 在 composer 内新增 VoiceRecorderControl（麦克风入口），其 usePlatform
+// 在无 PlatformProvider 的静态渲染测试中会抛错；用 importOriginal partial mock
+// 只覆盖 usePlatform（useOptionalPlatform 等其余导出保留真实实现），
+// 桩平台不含 createTempVoiceAttachment 即可让录音入口按设计自隐藏。
+vi.mock("@/hooks/usePlatform.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  usePlatform: () => ({}),
+}));
+
 vi.mock("@/ControlHintTooltip.js", async () => {
   const React = await import("react");
   return {

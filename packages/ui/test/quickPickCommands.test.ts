@@ -78,6 +78,10 @@ describe("createQuickPickCommands", () => {
       "add-terminal-tab",
       "add-browser-tab",
       "add-review-tab",
+      // fork 给命令注册表新增了 file-explorer / repo-wiki 两个侧栏 tab 命令
+      // （同 animatedSidePanePanelLayout.test.ts 先例：期望数组按并集语义补齐）。
+      "add-file-explorer-tab",
+      "add-repo-wiki-tab",
       "settings",
       "switch-theme",
       "skills-settings",

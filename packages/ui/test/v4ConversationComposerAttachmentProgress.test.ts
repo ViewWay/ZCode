@@ -18,6 +18,13 @@ const attachmentState = vi.hoisted(() => ({
 
 const cuaEntryProps = vi.hoisted(() => [] as Array<Record<string, unknown>>);
 
+// fork 在 composer 内新增 VoiceRecorderControl（麦克风入口），其 usePlatform
+// 在无 PlatformProvider 的静态渲染测试中会抛错；桩一个不含 createTempVoiceAttachment
+// 的平台服务即可让录音入口按设计自隐藏（supported=false → null）。
+vi.mock("@/hooks/usePlatform.js", () => ({
+  usePlatform: () => ({}),
+}));
+
 vi.mock("@/ControlHintTooltip.js", async () => {
   const React = await import("react");
   return {

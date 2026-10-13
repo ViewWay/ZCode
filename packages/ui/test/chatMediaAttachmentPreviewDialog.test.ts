@@ -14,8 +14,11 @@ vi.mock("@/components/ui/dialog.js", () => ({
   DialogTitle: ({ children }: { children: ReactNode }) => createElement("div", null, children),
 }));
 
-vi.mock("@/components/ui/pdf-viewer.js", () => ({
-  PdfViewer: ({ labels }: { labels?: Record<string, string> }) =>
+// fork 将对话框的 PDF 查看器从 @/components/ui/pdf-viewer.js (PdfViewer) 切换为
+// @/pdf/PdfLocateViewer.js (PdfLocateViewer)，mock 必须跟随新模块路径，
+// 否则真实 react-pdf 链被拉起且断言的 testid 不存在。
+vi.mock("@/pdf/PdfLocateViewer.js", () => ({
+  PdfLocateViewer: ({ labels }: { labels?: Record<string, string> }) =>
     createElement(
       "div",
       {

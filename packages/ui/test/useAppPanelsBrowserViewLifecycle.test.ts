@@ -20,6 +20,12 @@ vi.mock("@/hooks/useServices.js", () => ({
   }),
 }));
 
+// fork 在 useAppPanels 内新增 useZCodeIntl 消费；hook 级测试无 React 树，
+// 按仓库先例（accountConnectionLossNotification.test.ts）mock IntlProvider。
+vi.mock("@/i18n/IntlProvider.js", () => ({
+  useZCodeIntl: () => ({ intl: { formatMessage: ({ id }: { id: string }) => id } }),
+}));
+
 vi.mock("@/logger.js", () => ({
   logger: {
     debug: vi.fn(),

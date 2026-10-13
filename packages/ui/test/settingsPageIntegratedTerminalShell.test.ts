@@ -179,7 +179,10 @@ vi.mock("@/store/TabStoreProvider.js", () => ({
     }),
 }));
 
-vi.mock("@/lib/settingsNavigation.js", () => ({
+vi.mock("@/lib/settingsNavigation.js", async (importOriginal) => ({
+  // fork 的 settingsPageConfig 新增了 isSettingsSectionEnabled 消费；
+  // mock 必须保留真实实现，否则模块加载即崩溃（11 例级联失败）。
+  ...(await importOriginal<object>()),
   addPendingSettingsSectionListener: () => () => {},
   consumeInitialSettingsSection: () => "general",
   consumePendingSettingsPluginTab: () => undefined,
@@ -189,7 +192,6 @@ vi.mock("@/lib/settingsNavigation.js", () => ({
   clearPendingSettingsPluginScopeKey: () => undefined,
   consumePendingSettingsModelProviderTarget: () => undefined,
   consumePendingSettingsUsageTab: () => undefined,
-  resolveSettingsSection: (section: string) => section,
   shouldFallbackSettingsUsageTabToApp: () => false,
   writeLastSettingsSectionPreference: vi.fn(),
 }));

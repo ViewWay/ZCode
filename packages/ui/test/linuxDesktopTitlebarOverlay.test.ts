@@ -161,14 +161,17 @@ describe("Desktop titlebar overlay guards", () => {
     );
   });
 
-  it("keeps the command center top-positioned after CommandDialog class merging", async () => {
+  it("keeps the command center clear of the legacy Linux centered compensation", async () => {
     const html = await renderCommandCenterDialog();
 
-    // Bugfix: Command Center 不是居中弹窗，不能继承 DialogContent 的 Linux 居中补偿。
-    expect(html).toContain("top-16");
-    expect(html).toContain("sm:top-20");
-    expect(html).toContain("platform-linux-desktop:top-16");
-    expect(html).toContain("sm:platform-linux-desktop:top-20");
+    // fork a7ca443e 将 Command Center 重设计为 ChatGPT 式居中搜索卡：继承
+    // DialogContent 的 top-1/2 -translate-y-1/2 垂直居中并加宽卡片，dialog.tsx
+    // 的旧 Linux 标题栏避让已整体移除。原顶部锚定断言（top-16/sm:top-20/
+    // platform-linux-desktop:top-*）随该设计一并失效；保留的回归护栏是
+    // Linux 居中补偿类不得回流到 Command Center 卡片。
+    expect(html).toContain("top-1/2");
+    expect(html).toContain("-translate-y-1/2");
+    expect(html).toContain("max-w-2xl");
     expect(html).not.toContain("platform-linux-desktop:top-[calc(50%+1.5rem)]");
   });
 

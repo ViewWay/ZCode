@@ -1138,6 +1138,22 @@ process.stdin.on("data", (chunk) => {
     if (!line.trim()) continue;
     let msg;
     try { msg = JSON.parse(line); } catch { continue; }
+    // 会话互聊（实验）开关是 v3.15.1 合并恢复的第三条偏好同步（enqueueInteractionPreferenceSync
+    // 顺序：interaction → modelIo → sessionChat）。真实 CLI 在
+    // apps/zcode-cli/packages/bootstrap/src/zcode-protocol/server.ts 的
+    // workspace/updateSessionChatPreferences 处理器会回执；假 agent 必须同样回执，
+    // 否则请求落到 180s 默认协议超时，把 initialize 挂死在 30s 测试超时之后。
+    // 不写 logPath / logPath.model-io：断言只统计前两条同步的条目。
+    if (msg.method === "workspace/updateSessionChatPreferences" && msg.id !== undefined) {
+      send({
+        id: msg.id,
+        result: {
+          workspace: msg.params.workspace,
+          sessionChatEnabled: msg.params.preferences.sessionChatEnabled === true,
+        },
+      });
+      continue;
+    }
     if (msg.method === "workspace/updateModelIoPreferences" && msg.id !== undefined) {
       fs.appendFileSync(logPath + ".model-io", JSON.stringify({
         method: msg.method,
