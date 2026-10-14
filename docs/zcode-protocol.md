@@ -135,6 +135,25 @@ desktop-continuous 或 web-remote-replayable 的投递与恢复边界。
 
 回归需覆盖两种 deliveryKind、两种 input 形式、缺省字段兼容及非法/未知字段拒绝。
 
+## session/event strict 校验的已知运行时字段与降级（feedback#1029）
+
+CLI runtime 在 session/event payload 上随执行演进新增字段。Host 的 `zcodeSessionEventSchema`
+是 strict 校验，schema 漏声明就会丢弃整条事件；截至 2026-10 已第 4 次同类修复
+（cacheStats、executionStartedAt、assistantMessageId、本次能力/展示字段）：
+
+- `tool.updated` 各 kind（base payload）：`readOnly`（boolean）、`sideEffectScope`
+  （`none|workspace|git|network|system|session|userInteraction`）、`display`（工具展示载荷，
+  形状随工具变化，深度校验沿用 result 层 per-kind 先例）。
+- `turn.started`：`automationId`/`offPeakTaskId`（非空字符串）、`offPeakRunType`
+  （`init|resume`，与 `session/send` 参数 schema 同型）、`epilogueStart`
+  （用户消息文本内的字符偏移，非负整数）。
+
+消费侧降级规则（`zcodeAgentService` 的 session/event 分支）：strict 解析失败时，若失败原因
+全部是 `unrecognized_keys`（schema 漏字段而非数据损坏），按 issues 的 path/keys 剥离未知键后
+用原 strict schema 复检；复检通过则降级收下并派发（日志降为 debug），复检仍失败（类型错误等）
+才维持丢弃。该规则只覆盖 Host 消费链路，不放宽 schema 本身——shared 的 strict schema 仍拒绝
+未知键，新增字段必须先声明。
+
 ## 修改规则
 
 - 修改协议前先改 `packages/shared/src/zcode-protocol-v4/` 的 schema、纯函数和 spec。

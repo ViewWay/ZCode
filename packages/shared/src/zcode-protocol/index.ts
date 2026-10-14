@@ -1530,6 +1530,14 @@ export const zcodeTurnStartedEventPayloadSchema = z
     // runtime 会透传后台唤醒来源，strict schema 必须同步声明以免丢弃整条事件。
     backgroundSource: z.enum(["bash", "subagent"]).optional(),
     attachments: z.array(jsonObjectSchema).optional(),
+    // feedback#1029（第 4 次同类修复）：turn.started 还会携带自动化调度归因（automationId/
+    // offPeakTaskId/offPeakRunType，类型与 session/send 参数 schema 保持一致）与用户消息
+    // 尾注定位（epilogueStart，用户消息文本内的字符偏移，runtime 声明为 number）。漏声明
+    // 会让 strict 校验把整条 turn.started 丢掉，Bot 无法清空上一轮回复。
+    automationId: nonEmptyString.optional(),
+    offPeakTaskId: nonEmptyString.optional(),
+    offPeakRunType: z.enum(["init", "resume"]).optional(),
+    epilogueStart: z.number().int().nonnegative().optional(),
   })
   .strict();
 const zcodeTurnSteerSourceSchema = z.enum(["plan_approval_feedback", "workflow_refine_feedback"]);
@@ -1663,6 +1671,16 @@ const zcodeToolCallBasePayloadSchema = z
     childSessionId: nonEmptyString.optional(),
     childToolCallId: nonEmptyString.optional(),
     description: z.string().optional(),
+    // feedback#1029（第 4 次同类修复）：runtime tool 执行器在 tool payload 上附带解析后的
+    // 只读能力（readOnly/sideEffectScope，与权限判定同源）与展示载荷（display）。strict
+    // schema 漏声明会让整条 tool.updated 被 Host 丢弃。display 的具体形状是各工具 display
+    // payload 的 discriminated union（zcode-cli contracts），shared 不依赖该包，沿用 result
+    // 层 zcodeToolResultObjectSchema 的 per-kind 校验先例只做存在性声明。
+    readOnly: z.boolean().optional(),
+    sideEffectScope: z
+      .enum(["none", "workspace", "git", "network", "system", "session", "userInteraction"])
+      .optional(),
+    display: z.unknown().optional(),
   })
   .strict();
 

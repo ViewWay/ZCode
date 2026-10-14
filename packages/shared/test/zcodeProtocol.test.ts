@@ -1145,6 +1145,114 @@ describe("ZCode Protocol", () => {
     expect(event.payload.background).toBe(true);
   });
 
+  it("parses tool payload capability and display fields emitted by the runtime executor", () => {
+    // feedback#1029：runtime 执行器在 tool payload 上附带 readOnly/sideEffectScope/display，
+    // strict schema 漏声明会让整条 tool.updated 被 Host 丢弃。
+    const started = zcodeSessionEventSchema.parse({
+      eventId: "evt_tool_capability_started",
+      seq: 15,
+      sessionId: "sess_1",
+      timestamp: 16,
+      traceId: "trace_tool_capability",
+      turnId: "turn_1",
+      type: "tool.updated",
+      payload: {
+        kind: "started",
+        toolCallId: "call_capability_1",
+        startedAt: 16,
+        readOnly: false,
+        sideEffectScope: "workspace",
+        display: { kind: "file_diff", filePath: "src/app.ts" },
+      },
+    });
+
+    expect(started.payload).toMatchObject({
+      readOnly: false,
+      sideEffectScope: "workspace",
+      display: { kind: "file_diff" },
+    });
+  });
+
+  it("parses turn.started automation attribution and epilogue offset emitted by the runtime", () => {
+    // feedback#1029：runtime turn.started 还会带 automationId/offPeakTaskId/offPeakRunType
+    // 与 epilogueStart；与 session/send 一致，automationId 与 offPeakTaskId 互斥，分两个事件覆盖。
+    const automated = zcodeSessionEventSchema.parse({
+      eventId: "evt_turn_started_automation",
+      seq: 16,
+      sessionId: "sess_1",
+      timestamp: 17,
+      traceId: "trace_turn_automation",
+      turnId: "turn_2",
+      type: "turn.started",
+      payload: {
+        turnNumber: 3,
+        input: "夜间任务输入",
+        automationId: "auto_1",
+      },
+    });
+    const offPeak = zcodeSessionEventSchema.parse({
+      eventId: "evt_turn_started_offpeak",
+      seq: 17,
+      sessionId: "sess_1",
+      timestamp: 18,
+      traceId: "trace_turn_offpeak",
+      turnId: "turn_3",
+      type: "turn.started",
+      payload: {
+        turnNumber: 4,
+        input: "错峰续跑输入",
+        offPeakTaskId: "task_1",
+        offPeakRunType: "resume",
+        epilogueStart: 42,
+      },
+    });
+
+    expect(automated.payload).toMatchObject({ automationId: "auto_1" });
+    expect(offPeak.payload).toMatchObject({
+      offPeakTaskId: "task_1",
+      offPeakRunType: "resume",
+      epilogueStart: 42,
+    });
+  });
+
+  it("still rejects session events with unrecognized keys under strict validation", () => {
+    // 第一层与第二层分工的锚：schema 本身保持 strict 拒绝未知键（新增字段必须先声明），
+    // 未知键剥离只发生在 Host 消费侧的降级路径。
+    expect(() =>
+      zcodeSessionEventSchema.parse({
+        eventId: "evt_unknown_key_tool",
+        seq: 18,
+        sessionId: "sess_1",
+        timestamp: 19,
+        traceId: "trace_unknown",
+        turnId: "turn_4",
+        type: "tool.updated",
+        payload: {
+          kind: "started",
+          toolCallId: "call_unknown_key",
+          startedAt: 19,
+          someUndeclaredRuntimeField: true,
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      zcodeSessionEventSchema.parse({
+        eventId: "evt_unknown_key_turn",
+        seq: 19,
+        sessionId: "sess_1",
+        timestamp: 20,
+        traceId: "trace_unknown",
+        turnId: "turn_5",
+        type: "turn.started",
+        payload: {
+          turnNumber: 5,
+          input: "输入",
+          anotherUndeclaredField: "x",
+        },
+      }),
+    ).toThrow();
+  });
+
   it("parses subagent mirrored permission events with routing metadata", () => {
     const requested = zcodeSessionEventSchema.parse({
       eventId: "evt_subagent_permission_requested",

@@ -236,6 +236,56 @@ process.stdin.on("data", (chunk) => {
 });
 `;
 
+// feedback#1029：CLI runtime 给 session/event 新增未声明字段时，Host strict 校验此前会整条
+// 丢弃。该 fake agent 在订阅成功后推两条 live 事件：一条带未知键（应剥离后收下并派发），
+// 一条带真正的类型错误（缺 toolCallId，剥离救不了，必须继续丢弃）。
+const UNKNOWN_KEY_SESSION_EVENT_FAKE_AGENT = `
+let buf = "";
+function send(obj) { process.stdout.write(JSON.stringify(obj) + "\\n"); }
+process.stdin.on("data", (chunk) => {
+  buf += chunk.toString("utf8");
+  let idx;
+  while ((idx = buf.indexOf("\\n")) >= 0) {
+    const line = buf.slice(0, idx);
+    buf = buf.slice(idx + 1);
+    if (!line.trim()) continue;
+    let msg;
+    try { msg = JSON.parse(line); } catch { continue; }
+    if (msg.method !== "session/subscribe" || msg.id === undefined) continue;
+    const sessionId = msg.params.sessionId;
+    send({ id: msg.id, result: { sessionId, eventSeq: 0, events: [] } });
+    setTimeout(() => {
+      send({ method: "session/event", params: {
+        type: "tool.updated",
+        eventId: "evt-unknown-key-1",
+        sessionId,
+        seq: 1,
+        timestamp: 1700000000000,
+        turnId: "turn-unknown-key",
+        payload: {
+          kind: "started",
+          toolCallId: "call-unknown-key-1",
+          startedAt: 1700000000000,
+          futureRuntimeCapability: true,
+        },
+      } });
+      send({ method: "session/event", params: {
+        type: "tool.updated",
+        eventId: "evt-type-error-1",
+        sessionId,
+        seq: 2,
+        timestamp: 1700000000100,
+        turnId: "turn-unknown-key",
+        payload: {
+          kind: "started",
+          startedAt: 1700000000100,
+        },
+      } });
+    }, 0);
+  }
+});
+`;
+
 const BROWSER_DISCOVERY_FAKE_AGENT = `
 let buf = "";
 function send(obj) { process.stdout.write(JSON.stringify(obj) + "\\n"); }
@@ -2401,6 +2451,57 @@ describe("createZCodeAgentService", () => {
     firstSubscription.dispose();
     secondSubscription.dispose();
     await service.disposeAllAndWait();
+  });
+
+  it("strips unrecognized keys from session events and still delivers them to subscribers", async () => {
+    // feedback#1029（第 4 次同类修复）：CLI runtime 新增未声明字段导致 strict 校验失败时，
+    // 此前整条事件被丢弃。现在仅 unrecognized_keys 的失败按 issues 剥离未知键后复检收下；
+    // 带真正类型错误的事件（缺 toolCallId）剥离救不了，必须继续丢弃。
+    const workspacePath = mkdtempSync(join(tmpdir(), "zcode-agent-unknown-key-event-"));
+    createdDirs.push(workspacePath);
+    const scriptPath = join(workspacePath, "unknown-key-event-agent.cjs");
+    writeFileSync(scriptPath, UNKNOWN_KEY_SESSION_EVENT_FAKE_AGENT);
+    const service = createReadyZCodeAgentService({
+      commandResolver: () => ({ command: process.execPath, args: [scriptPath] }),
+    });
+
+    const received: ZCodeAgentServiceEvent[] = [];
+    const subscription = service.onDynamicSessionEvent({
+      workspacePath,
+      sessionId: "sess-unknown-key",
+      deliveryKind: "desktop-continuous",
+      includeSnapshot: false,
+    })((event) => received.push(event));
+
+    try {
+      await vi.waitFor(
+        () => {
+          expect(received.filter((event) => event.type === "session.event")).toHaveLength(1);
+        },
+        { timeout: 5000, interval: 50 },
+      );
+
+      const deliveredEvents = received
+        .filter(
+          (event): event is Extract<ZCodeAgentServiceEvent, { type: "session.event" }> =>
+            event.type === "session.event",
+        )
+        .map((event) => event.event);
+      expect(deliveredEvents).toHaveLength(1);
+      expect(deliveredEvents[0]?.eventId).toBe("evt-unknown-key-1");
+      expect(deliveredEvents[0]?.type).toBe("tool.updated");
+      // 未知键被剥离：派发出去的事件不再携带 futureRuntimeCapability。
+      expect(deliveredEvents[0]?.payload).not.toHaveProperty("futureRuntimeCapability");
+      expect(deliveredEvents[0]?.payload).toMatchObject({
+        kind: "started",
+        toolCallId: "call-unknown-key-1",
+      });
+      // 带类型错误的事件（缺 toolCallId）仍走丢弃路径，不派发。
+      expect(deliveredEvents.some((event) => event.eventId === "evt-type-error-1")).toBe(false);
+    } finally {
+      subscription.dispose();
+      await service.disposeAllAndWait();
+    }
   });
 
   it("reports only validated de-duplicated CUA sideband events without legacy session delivery", async () => {

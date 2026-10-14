@@ -628,6 +628,71 @@ function getUnrecognizedTopLevelKeys(error: unknown): string[] {
   return [...keys];
 }
 
+// feedback#1029（第 4 次同类修复：cacheStats、executionStartedAt、assistantMessageId、本次
+// readOnly/display/automationId 等）：CLI runtime 给 session/event 新增字段时，Host 的 strict
+// schema 只要漏声明就会把整条事件丢弃，桌面端表现为工具卡/轮次静默消失。仅当失败原因全部是
+// unrecognized_keys（schema 漏字段而非数据损坏）时才允许降级；混入类型错误说明事件本身坏了，
+// 不能放行。
+function areAllIssuesUnrecognizedKeys(
+  issues: ReadonlyArray<{
+    code?: unknown;
+  }>,
+): boolean {
+  return issues.length > 0 && issues.every((issue) => issue.code === "unrecognized_keys");
+}
+
+// 按 unrecognized_keys issue 的 path + keys 深拷贝并剥离未知键，产出可供原 strict schema
+// 复检的对象。message.params 是 NDJSON 反序列化产物（纯 JSON），structuredClone 总能成功；
+// 失败时原样返回让上层走丢弃路径，不用超时或猜测兜底。
+function stripUnrecognizedKeysByIssues(
+  value: unknown,
+  issues: ReadonlyArray<{
+    code?: unknown;
+    keys?: unknown;
+    path?: unknown;
+  }>,
+): unknown {
+  let cloned: unknown;
+  try {
+    cloned = structuredClone(value);
+  } catch {
+    return value;
+  }
+  for (const issue of issues) {
+    if (
+      issue.code !== "unrecognized_keys" ||
+      !Array.isArray(issue.keys) ||
+      !Array.isArray(issue.path)
+    ) {
+      continue;
+    }
+    let container: unknown = cloned;
+    let reachable = true;
+    for (const segment of issue.path) {
+      if (!container || typeof container !== "object") {
+        reachable = false;
+        break;
+      }
+      const record = container as Record<string, unknown>;
+      if (typeof segment !== "string" || !Object.hasOwn(record, segment)) {
+        reachable = false;
+        break;
+      }
+      container = record[segment];
+    }
+    if (!reachable || !container || typeof container !== "object") {
+      continue;
+    }
+    const target = container as Record<string, unknown>;
+    for (const key of issue.keys) {
+      if (typeof key === "string") {
+        delete target[key];
+      }
+    }
+  }
+  return cloned;
+}
+
 function getSessionCreateCompatFields(error: unknown): SessionCreateCompatField[] {
   const keys = getUnrecognizedTopLevelKeys(error);
   if (keys.length === 0) {
@@ -2234,28 +2299,42 @@ export function createZCodeAgentService(
         }
 
         if (message.method === "session/event") {
-          const parsed = zcodeSessionEventSchema.safeParse(message.params);
+          const rawParams =
+            typeof message.params === "object" && message.params !== null
+              ? (message.params as Record<string, unknown>)
+              : {};
+          const traceId = typeof rawParams.traceId === "string" ? rawParams.traceId : undefined;
+          let parsed = zcodeSessionEventSchema.safeParse(message.params);
+          if (!parsed.success && areAllIssuesUnrecognizedKeys(parsed.error.issues)) {
+            // feedback#1029（第 4 次同类修复）：CLI runtime 给事件新增未声明字段时，strict
+            // 校验失败会让整条事件被丢弃。失败原因若全部是 unrecognized_keys（schema 漏字段
+            // 而非数据损坏），按 issues 的 path/keys 剥离未知键后用原 strict schema 复检，
+            // 通过则降级收下（warn 降为 debug）；复检仍失败才走丢弃路径。
+            const reparsed = zcodeSessionEventSchema.safeParse(
+              stripUnrecognizedKeysByIssues(message.params, parsed.error.issues),
+            );
+            if (reparsed.success) {
+              parsed = reparsed;
+              logger.debug(traceId, "剥离未知键后收下 ZCode Protocol session event（feedback#1029）", {
+                eventId: rawParams.eventId,
+                sessionId: rawParams.sessionId,
+                type: rawParams.type,
+              });
+            }
+          }
           if (parsed.success) {
             handleSessionEvent(workspace, parsed.data);
           } else {
-            const rawParams =
-              typeof message.params === "object" && message.params !== null
-                ? (message.params as Record<string, unknown>)
-                : {};
-            logger.warn(
-              typeof rawParams.traceId === "string" ? rawParams.traceId : undefined,
-              "丢弃无效 ZCode Protocol session event",
-              {
-                eventId: rawParams.eventId,
-                issues: parsed.error.issues.map((issue) => ({
-                  code: issue.code,
-                  message: issue.message,
-                  path: issue.path.join("."),
-                })),
-                sessionId: rawParams.sessionId,
-                type: rawParams.type,
-              },
-            );
+            logger.warn(traceId, "丢弃无效 ZCode Protocol session event", {
+              eventId: rawParams.eventId,
+              issues: parsed.error.issues.map((issue) => ({
+                code: issue.code,
+                message: issue.message,
+                path: issue.path.join("."),
+              })),
+              sessionId: rawParams.sessionId,
+              type: rawParams.type,
+            });
           }
           return;
         }
