@@ -207,6 +207,16 @@ function modelFailureSource(
     return ModelErrorSource.Provider;
   }
 
+  // feedback#1012：无 HTTP 响应证据的未知失败若发生在建连阶段（errorPhase: connect），
+  // 几乎总是传输层问题；归 Network 而非 Runtime，避免把并发建连的网络抖动记成本地故障。
+  if (
+    reason === ModelFailureReason.Unknown &&
+    failure.statusCode === undefined &&
+    additionalContext?.errorPhase === "connect"
+  ) {
+    return ModelErrorSource.Network;
+  }
+
   // invalid_request/unknown 同时覆盖请求前的本地配置校验和 provider 响应失败；
   // 只按 reason 归因会把尚未发出网络请求的错误也记到 provider。缺少上游证据时归 runtime。
   if (

@@ -208,6 +208,29 @@ describe("toAdapterError attribution context", () => {
     });
   });
 
+  it("attributes connection-phase unknown failures without HTTP evidence to the network (feedback#1012)", () => {
+    const error = toAdapterError(
+      new Error("fetch failed"),
+      {
+        code: ModelErrorCode.ModelRequestFailed,
+        message: "Model request failed.",
+        reason: ModelFailureReason.Unknown,
+        retryReason: ModelRetryReason.NetworkError,
+        retryable: true,
+      },
+      statusContext,
+      1,
+      { errorPhase: "connect" },
+    );
+
+    expect(error.context).toMatchObject({
+      errorPhase: "connect",
+      reason: ModelFailureReason.Unknown,
+      source: "network",
+      statusCode: undefined,
+    });
+  });
+
   it.each([
     {
       name: "cause",

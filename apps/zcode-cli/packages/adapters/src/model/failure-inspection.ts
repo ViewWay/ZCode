@@ -143,12 +143,40 @@ function getErrorCodeFromError(error: unknown, seen: WeakSet<object>): string | 
     return code;
   }
 
+  // feedback#1012：Node 并发建连常抛 AggregateError（多个子 socket 错误聚合），外层没有
+  // code，真实 errno（如 ECONNRESET）只存在于 errors[] 子错误里；不递归取码会整类漏判。
+  // 遍历子错误取第一个可识别 code；全部不可识别时返回类标记，供分类层做无响应兜底。
+  const aggregatedCode = firstAggregatedErrorCode(record, seen);
+  if (aggregatedCode) {
+    return aggregatedCode;
+  }
+
   const cause = record.cause;
   if (cause && cause !== error) {
     return getErrorCodeFromError(cause, seen);
   }
 
   return undefined;
+}
+
+function firstAggregatedErrorCode(
+  record: Record<string, unknown>,
+  seen: WeakSet<object>,
+): string | undefined {
+  const errors = record.errors;
+  if (!Array.isArray(errors) || errors.length === 0) {
+    return undefined;
+  }
+
+  for (const nested of errors) {
+    const code = getErrorCodeFromError(nested, seen);
+    if (code) {
+      return code;
+    }
+  }
+
+  // feedback#1012：子错误均无 code 时保留 AggregateError 类标记，避免错误形态完全丢失。
+  return "AggregateError";
 }
 
 export function isAbortFailure(error: unknown, abortSignal?: AbortSignal): boolean {
@@ -260,18 +288,30 @@ export function isProxyFailure(code?: string): boolean {
   return code?.toUpperCase().includes("PROXY") ?? false;
 }
 
+/**
+ * 传输层网络错误码表（feedback#1012 补全）。除既有 8 个码外，补充并发建连阶段常见的
+ * ECONNABORTED / ERR_SOCKET_CONNECTION_TIMEOUT / UND_ERR_ABORTED / EPIPE / EPROTO：
+ * 这些码同样出现在建连/传输失败现场，缺任何一个都会把可重试的网络失败误判为 unknown。
+ */
+const NETWORK_ERROR_CODES: ReadonlySet<string> = new Set([
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ECONNABORTED",
+  "EAI_AGAIN",
+  "ENOTFOUND",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+  "EPIPE",
+  "EPROTO",
+  "UND_ERR_SOCKET",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_ABORTED",
+  "ERR_SOCKET_CONNECTION_TIMEOUT",
+]);
+
 export function isNetworkFailure(code?: string): boolean {
   const normalized = code?.toUpperCase();
-  return (
-    normalized === "ECONNRESET" ||
-    normalized === "ECONNREFUSED" ||
-    normalized === "EAI_AGAIN" ||
-    normalized === "ENOTFOUND" ||
-    normalized === "ENETUNREACH" ||
-    normalized === "EHOSTUNREACH" ||
-    normalized === "UND_ERR_SOCKET" ||
-    normalized === "UND_ERR_CONNECT_TIMEOUT"
-  );
+  return normalized !== undefined && NETWORK_ERROR_CODES.has(normalized);
 }
 
 export function isProviderMarkedRetryable(error: unknown): boolean {

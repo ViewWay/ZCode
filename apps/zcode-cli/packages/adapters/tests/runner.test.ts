@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, readdir, rm, stat, truncate, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, readdir, rm, stat, truncate, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { APICallError, RetryError } from "ai";
@@ -342,6 +343,62 @@ describe("AiSdkModelAdapter", () => {
       "finish",
     ]);
     expect(statusEvents.filter((event) => event.type === "model_retry_scheduled")).toHaveLength(1);
+  });
+
+  it("retries a bounded-budget unknown connect failure without HTTP evidence (feedback#1012)", async () => {
+    // 并发建连被端点重置时是裸错误（无 code、无 HTTP 状态）；有界预算下必须可重试，
+    // 否则子代理首请求零工作即死。
+    let attempts = 0;
+    const statusEvents: ModelNetworkStatusEvent[] = [];
+    const runtime: AiSdkModelRuntime = {
+      async generateText() {
+        throw new Error("not used");
+      },
+      streamText() {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new Error("fetch failed");
+        }
+        return {
+          fullStream: stream([
+            { type: "start" },
+            { type: "text-start", id: "recovered-text" },
+            { type: "text-delta", id: "recovered-text", text: "recovered" },
+            { type: "text-end", id: "recovered-text" },
+            { type: "finish", finishReason: "stop", totalUsage: usage(1, 1) },
+          ]),
+        } as never;
+      },
+    };
+    const adapter = new AiSdkModelAdapter({
+      registry: registry(),
+      retry: { baseDelayMs: 0, jitter: false, maxAttempts: 2, maxDelayMs: 0 },
+      runtime,
+    });
+
+    const events: ModelStreamEvent[] = [];
+    for await (const event of executeAdapterStreamText(adapter, {
+      providerId: "test",
+      modelId: "model-a",
+      messages: [{ role: "user", content: "Ping" }],
+      statusSink: {
+        publish(event) {
+          statusEvents.push(event);
+        },
+      },
+    })) {
+      events.push(event);
+    }
+
+    expect(attempts).toBe(2);
+    expect(statusEvents.filter((event) => event.type === "model_retry_scheduled")).toHaveLength(1);
+    expect(events.map((event) => event.type)).toEqual([
+      "start",
+      "text_start",
+      "text_delta",
+      "text_end",
+      "finish",
+    ]);
   });
 
   it("does not retry a generic empty stream completion more than once", async () => {
@@ -1797,7 +1854,9 @@ describe("AiSdkModelAdapter", () => {
     }
   });
 
-  it("keeps complete production ModelIO records and all session files when full retention is enabled", async () => {
+  it("keeps complete production ModelIO records when full retention is enabled, still capping session file count", async () => {
+    // feedback#1022：全量保留只放宽单文件容量与压缩，不放宽文件个数上限（rollout 3），
+    // 否则用户关闭开关后遗留的巨型 session 文件没有任何清理路径。
     const debugDir = await mkdtemp(join(tmpdir(), "zcode-model-io-full-retention-"));
     const runtime: AiSdkModelRuntime = {
       async generateText() {
@@ -1854,17 +1913,27 @@ describe("AiSdkModelAdapter", () => {
         }
       };
 
+      // 先写 4 个额外 session，再显式拉开 mtime 使轮转顺序确定，最后写主 session。
+      for (let index = 0; index < 4; index += 1) {
+        await writeSession(`sess_extra_${index}`, [{ role: "user", content: "ping" }]);
+        const filePath = join(debugDir, `model-io-sess_extra_${index}.jsonl`);
+        const mtimeMs = Date.now() - (100 - index) * 60_000;
+        await utimes(filePath, new Date(mtimeMs), new Date(mtimeMs));
+      }
       await writeSession("sess_full", [{ role: "user", content: "first" }]);
       await writeSession("sess_full", [
         { role: "user", content: "first" },
         { role: "assistant", content: "second" },
         { role: "user", content: "third" },
       ]);
-      for (let index = 0; index < 4; index += 1) {
-        await writeSession(`sess_extra_${index}`, [{ role: "user", content: "ping" }]);
-      }
 
-      expect(await readdir(debugDir)).toHaveLength(5);
+      // 文件个数仍受 rollout 上限约束：最旧的 sess_extra_00/01 被淘汰，保留其余与最新的主 session。
+      expect(await readdir(debugDir)).toHaveLength(3);
+      expect(existsSync(join(debugDir, "model-io-sess_extra_0.jsonl"))).toBe(false);
+      expect(existsSync(join(debugDir, "model-io-sess_extra_1.jsonl"))).toBe(false);
+      for (const session of ["sess_extra_2", "sess_extra_3", "sess_full"]) {
+        expect(existsSync(join(debugDir, `model-io-${session}.jsonl`))).toBe(true);
+      }
       const records = (await readFile(join(debugDir, "model-io-sess_full.jsonl"), "utf8"))
         .trim()
         .split("\n")
@@ -5353,7 +5422,9 @@ describe("AiSdkModelAdapter", () => {
       }
     })().catch((error: unknown) => error);
 
-    expect(attempts).toBe(1);
+    // feedback#1012：无 HTTP 证据的 setup 阶段未知错误现在默认可重试，有界预算 maxAttempts:2
+    // 下两次尝试都会执行；终止错误仍保留 request_setup 归因。
+    expect(attempts).toBe(2);
     expect(terminalError).toBeInstanceOf(AiSdkModelAdapterError);
     expect(terminalError).toMatchObject({
       context: { streamFailurePhase: "request_setup" },
@@ -5373,7 +5444,12 @@ describe("AiSdkModelAdapter", () => {
         throw setupError;
       },
     };
-    const adapter = new AiSdkModelAdapter({ registry: registry(), runtime });
+    // feedback#1012：这类未知错误默认可重试；本测试只验证错误 identity 不被重包装，锁定单次尝试。
+    const adapter = new AiSdkModelAdapter({
+      registry: registry(),
+      retry: { baseDelayMs: 0, jitter: false, maxAttempts: 1, maxDelayMs: 0 },
+      runtime,
+    });
 
     const terminalError = await (async () => {
       for await (const _event of executeAdapterStreamText(adapter, {
@@ -5407,7 +5483,12 @@ describe("AiSdkModelAdapter", () => {
         } as never;
       },
     };
-    const adapter = new AiSdkModelAdapter({ registry: registry(), runtime });
+    // feedback#1012：流内未知错误默认可重试；本测试只验证归因保留，锁定单次尝试。
+    const adapter = new AiSdkModelAdapter({
+      registry: registry(),
+      retry: { baseDelayMs: 0, jitter: false, maxAttempts: 1, maxDelayMs: 0 },
+      runtime,
+    });
 
     const terminalError = await (async () => {
       for await (const _event of executeAdapterStreamText(adapter, {

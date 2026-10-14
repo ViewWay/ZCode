@@ -291,14 +291,26 @@ export function classifyModelFailure(
     };
   }
 
-  const retryable = isProviderMarkedRetryable(unwrapped);
+  // feedback#1012：并发 5+ 子代理时，首请求在建连阶段（~100ms）就被端点重置连接；此时
+  // 没有任何 HTTP 响应证据（statusCode 取不到），错误形态（AggregateError / ECONNABORTED
+  // 等）也常不在 isNetworkFailure 的码表内，旧逻辑在这里按 reason:unknown、
+  // retryable:false 分类，有界重试预算下子代理首请求零重试即死。连接建立阶段天然幂等
+  // （未产生任何 provider 侧状态变更，重放无害），且重试预算有限，因此无 HTTP 响应证据、
+  // 非用户中止（abort 分支已在其前返回）、provider 也未显式标记 retryable 的未知错误
+  // 默认可重试。已有 HTTP 状态码的未知错误（如未映射的 404）与 provider 标记路径维持原状。
+  const providerMarkedRetryable = isProviderMarkedRetryable(unwrapped);
+  const retryable = providerMarkedRetryable || statusCode === undefined;
   return {
     code: ModelErrorCode.ModelRequestFailed,
-    message: retryable
+    message: providerMarkedRetryable
       ? "Provider marked the model request as retryable."
       : "Model request failed.",
-    reason: retryable ? ModelFailureReasonValue.ServerError : ModelFailureReasonValue.Unknown,
-    retryReason: retryable ? ModelRetryReasonValue.ServerError : ModelRetryReasonValue.NetworkError,
+    reason: providerMarkedRetryable
+      ? ModelFailureReasonValue.ServerError
+      : ModelFailureReasonValue.Unknown,
+    retryReason: providerMarkedRetryable
+      ? ModelRetryReasonValue.ServerError
+      : ModelRetryReasonValue.NetworkError,
     retryable,
     retryAfterMs,
     statusCode,

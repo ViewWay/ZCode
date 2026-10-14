@@ -1,6 +1,7 @@
 import { APICallError } from "ai";
 import { describe, expect, it } from "vitest";
 import { classifyModelFailure, inspectProviderFailure } from "../src/model/failure-classifier.js";
+import { getErrorCode, isNetworkFailure } from "../src/model/failure-inspection.js";
 import { detectProviderBusinessFinishError } from "../src/model/provider-finish-business-error.js";
 import { ProviderBusinessError } from "../src/model/model-execution.js";
 
@@ -1041,6 +1042,109 @@ describe("classifyModelFailure provider business codes", () => {
       retryable: true,
       statusCode: 408,
     });
+  });
+});
+
+describe("classifyModelFailure concurrent connect failures (feedback#1012)", () => {
+  it("classifies an AggregateError wrapping ECONNRESET as a retryable network error", () => {
+    // 并发建连阶段端点重置连接的典型形态：外层无 code、无 HTTP 状态，errno 在 errors[] 里。
+    const error = new AggregateError(
+      [Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" })],
+      "fetch failed",
+    );
+
+    expect(classifyModelFailure(error)).toMatchObject({
+      code: "model_request_failed",
+      message: "Network connection failed for the provider request.",
+      reason: "network_error",
+      retryReason: "network_error",
+      retryable: true,
+      statusCode: undefined,
+    });
+  });
+
+  it("extracts the aggregated network code from an AggregateError", () => {
+    const error = new AggregateError(
+      [
+        new Error("child without a code"),
+        Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }),
+      ],
+      "fetch failed",
+    );
+
+    expect(getErrorCode(error)).toBe("ECONNRESET");
+    expect(isNetworkFailure(getErrorCode(error))).toBe(true);
+  });
+
+  it("falls back to an AggregateError class marker when no child carries a code", () => {
+    const error = new AggregateError([new Error("opaque child")], "fetch failed");
+
+    expect(getErrorCode(error)).toBe("AggregateError");
+  });
+
+  it("retries a plain unknown error without code or HTTP evidence (terminal fallback default)", () => {
+    // 无任何 HTTP 响应证据时建连阶段天然幂等，未知错误默认可重试（feedback#1012 核心）。
+    expect(classifyModelFailure(new Error("fetch failed"))).toMatchObject({
+      code: "model_request_failed",
+      reason: "unknown",
+      retryReason: "network_error",
+      retryable: true,
+      statusCode: undefined,
+    });
+  });
+
+  it("keeps user cancellation non-retryable (regression anchor)", () => {
+    const abortError = Object.assign(new Error("This operation was aborted"), {
+      name: "AbortError",
+    });
+    expect(classifyModelFailure(abortError)).toMatchObject({
+      code: "model_request_cancelled",
+      reason: "cancelled",
+      retryable: false,
+    });
+
+    const controller = new AbortController();
+    controller.abort();
+    expect(classifyModelFailure(new Error("fetch failed"), controller.signal)).toMatchObject({
+      reason: "cancelled",
+      retryable: false,
+    });
+  });
+
+  it("keeps HTTP 401 auth failures non-retryable (regression anchor)", () => {
+    const error = new APICallError({
+      message: "Unauthorized",
+      statusCode: 401,
+    });
+
+    expect(classifyModelFailure(error)).toMatchObject({
+      code: "provider_not_configured",
+      reason: "auth_failed",
+      retryable: false,
+      statusCode: 401,
+    });
+  });
+
+  it("keeps unknown failures with an unmapped HTTP status non-retryable", () => {
+    // 用普通错误携带 statusCode（APICallError 的 isRetryable 默认为 true，会走 provider 标记路径）。
+    const error = Object.assign(new Error("Conflict"), { statusCode: 409 });
+
+    expect(classifyModelFailure(error)).toMatchObject({
+      code: "model_request_failed",
+      reason: "unknown",
+      retryable: false,
+      statusCode: 409,
+    });
+  });
+
+  it.each([
+    "ECONNABORTED",
+    "ERR_SOCKET_CONNECTION_TIMEOUT",
+    "UND_ERR_ABORTED",
+    "EPIPE",
+    "EPROTO",
+  ])("treats %s as a transport network code (feedback#1012)", (code) => {
+    expect(isNetworkFailure(code)).toBe(true);
   });
 });
 
