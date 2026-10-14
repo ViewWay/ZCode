@@ -95,6 +95,9 @@ export default defineConfig({
             "packages/*/src/**/contract.test.ts",
             // Gen UI 目录回归位于源码旁，默认入口也必须执行，避免只在手动定向运行时生效。
             "packages/shared/src/node/genUiPaths.test.ts",
+            // UI 的 jsdom 单测（.tsx 不被上面的 *.test.ts glob 命中）：不显式列出就只会在
+            // packages/ui 包内手动运行，pre-push 门槛永远覆盖不到（feedback#1027 回归测试）。
+            "packages/ui/test/reasoningTimer.test.tsx",
             "packages/services/src/gen-ui/**/*.test.ts",
             "scripts/assert-safe-cua-helper-zip.test.mjs",
             "scripts/ci/ci-telemetry-keyword-guard.test.mjs",
