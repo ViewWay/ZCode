@@ -2310,7 +2310,7 @@ export class ProductProjection {
         : undefined;
 
     const deltas: ConversationDelta[] = [
-      ...this.closeStreamingRows(streamClose),
+      ...this.closeStreamingRows(event, streamClose),
       // turn 终态一并收口在飞的 foreground tool row（收口不变量：被 profile
       // 过滤的 inputText 流必须被不可过滤的 row.upserted 蕴含，见 profiles.ts）。
       ...this.closeOpenToolRows(event, payload.resultType === "cancelled" ? "cancelled" : "error"),
@@ -2401,7 +2401,7 @@ export class ProductProjection {
           }
         : undefined;
     return [
-      ...this.closeStreamingRows("interrupted"),
+      ...this.closeStreamingRows(event, "interrupted"),
       ...this.closeOpenToolRows(event, "error"),
       ...this.upsertTurnHeader(
         event,
@@ -2537,7 +2537,7 @@ export class ProductProjection {
     // toolCallId 再开一行，UI 于是并排出现两张「正在编写工作流」。已提交（running /
     // pendingApproval）的行不在此列，它们的终态由 executor 自己发布。
     return [
-      ...this.closeStreamingRows("interrupted"),
+      ...this.closeStreamingRows(event, "interrupted"),
       ...this.closeOpenToolRows(event, "cancelled", (row) => row.status === "inputStreaming"),
     ];
   }
@@ -2656,7 +2656,7 @@ export class ProductProjection {
         ];
       }
       case "reasoning_end":
-        return this.closeReasoningRow();
+        return this.closeReasoningRow(event);
       case "tool_input_start":
         return this.openToolRow(event, payload, fact.entityId);
       case "tool_input_delta": {
@@ -2786,7 +2786,7 @@ export class ProductProjection {
     // 已提交执行的工具不在这里处理，它们由 core 的 tool_abandoned 事件收口。
     const discardedStreamDeltas = this.acceptsActiveModelEvent(event)
       ? [
-          ...this.closeStreamingRows("interrupted"),
+          ...this.closeStreamingRows(event, "interrupted"),
           ...this.closeOpenToolRows(event, "cancelled", (row) => row.status === "inputStreaming"),
         ]
       : [];
@@ -2823,7 +2823,7 @@ export class ProductProjection {
     event: SessionEvent,
     fact: CanonicalAssistantSegmentFact,
   ): ConversationDelta[] {
-    const close = this.closeReasoningRow();
+    const close = this.closeReasoningRow(event);
     const row: ReasoningRow = {
       ...this.rowBase(event, this.turnIdOf(event), fact.entityId),
       kind: "reasoning",
@@ -2840,16 +2840,27 @@ export class ProductProjection {
     return [...close, { op: "row.appended", row }];
   }
 
-  private closeReasoningRow(state: "complete" | "interrupted" = "complete"): ConversationDelta[] {
+  private closeReasoningRow(
+    event: SessionEvent,
+    state: "complete" | "interrupted" = "complete",
+  ): ConversationDelta[] {
     if (this.streamingReasoningRowId === null) return [];
     const row = this.findRow(this.streamingReasoningRowId);
     this.streamingReasoningRowId = null;
     if (row?.kind !== "reasoning") return [];
-    return [{ op: "row.upserted", row: { ...row, state } }];
+    // Bug 修复（zai-org/feedback#1027）：思考计时此前只存在组件内存 ref 里，
+    // 会话切换触发 cold hydration 重放后计时从 1 秒重新开始。这里把耗时投影进行：
+    // durationMs = 收口事件时间 − 行 createdAt，两者都是事件时间戳，重放确定可复现；
+    // hydration 合成时间戳可能产生亚秒负差，由 Math.max(0, …) 兜底为 0。
+    const durationMs = Math.max(0, this.ms(event) - row.createdAt);
+    return [{ op: "row.upserted", row: { ...row, state, durationMs } }];
   }
 
-  private closeStreamingRows(state: "complete" | "interrupted"): ConversationDelta[] {
-    return [...this.closeTextRow(state), ...this.closeReasoningRow(state)];
+  private closeStreamingRows(
+    event: SessionEvent,
+    state: "complete" | "interrupted",
+  ): ConversationDelta[] {
+    return [...this.closeTextRow(state), ...this.closeReasoningRow(event, state)];
   }
 
   // turn 终态收口所有 foreground 未终态 tool row（迟到终态不复活由 isRunning 闸保证）；

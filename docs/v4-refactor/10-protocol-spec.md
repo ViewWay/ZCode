@@ -965,7 +965,7 @@ interface ReasoningRow extends RowBase {
   kind: "reasoning";
   text: string; // 流式：path="text"
   state: "streaming" | "complete" | "interrupted";
-  durationMs?: number; // 完成时出现
+  durationMs?: number; // 收口时出现 = 收口事件时间 − createdAt，重放确定可复现（feedback#1027）
 }
 ```
 

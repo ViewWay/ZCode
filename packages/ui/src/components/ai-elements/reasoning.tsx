@@ -57,6 +57,10 @@ export type ReasoningProps = ComponentProps<typeof Collapsible> & {
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
   duration?: number;
+  // 计时起点种子（毫秒时间戳）。会话切换触发 cold hydration 重挂后，组件内存
+  // ref 会归零（zai-org/feedback#1027）；由投影行的 createdAt 供种，让流式中
+  // 重挂的计时从真实起点续算。收口耗时仍以 duration（来自投影 durationMs）为准。
+  startedAt?: number;
 };
 
 const MS_IN_S = 1000;
@@ -96,6 +100,7 @@ export const Reasoning = memo(
     defaultOpen = false,
     onOpenChange,
     duration: durationProp,
+    startedAt,
     children,
     ...props
   }: ReasoningProps) => {
@@ -135,8 +140,10 @@ export const Reasoning = memo(
         return;
       }
 
+      // 重挂（会话切换 cold hydration，zai-org/feedback#1027）时内存 ref 归零；
+      // 有 startedAt 种子则从真实起点续算，避免计时重新从 1 秒开始。
       if (startTimeRef.current === null) {
-        startTimeRef.current = Date.now();
+        startTimeRef.current = startedAt ?? Date.now();
       }
 
       // 收起态展示流式摘要，不需要为了隐藏的耗时每秒触发整块 reasoning 重渲染；
@@ -155,7 +162,7 @@ export const Reasoning = memo(
       updateDuration();
       const durationTimer = window.setInterval(updateDuration, MS_IN_S);
       return () => window.clearInterval(durationTimer);
-    }, [isOpen, isStreaming, setDuration]);
+    }, [isOpen, isStreaming, setDuration, startedAt]);
 
     useEffect(() => {
       const previousAutoCollapseKey = previousAutoCollapseKeyRef.current;

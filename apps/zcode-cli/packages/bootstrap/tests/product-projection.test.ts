@@ -4935,6 +4935,106 @@ describe("结构性4：两 profile 终态一致", () => {
     assertProfileConvergence(log.events);
   });
 
+  // feedback#1027：思考计时此前只存在 UI 组件内存 ref，会话切换 cold hydration
+  // 重挂后从 1 秒重新计时。投影在收口时写入 durationMs（收口事件时间 − 行
+  // createdAt），UI 由 row.durationMs 供数即可在重放后恢复真实耗时。
+  it("reasoning_end 后投影写入 durationMs = end − createdAt（feedback#1027）", () => {
+    const turnId = "turn-reason-duration";
+    const startMs = 1_700_000_020_000;
+    const log = new EventLog();
+    log.push(SessionEventType.SessionCreated, { mode: "default", contextWindow: 200_000 });
+    log.push(SessionEventType.TurnStarted, { turnNumber: 1, input: "think" }, { turnId });
+    log.push(
+      SessionEventType.ModelStreaming,
+      { kind: "reasoning_start", delta: "", done: false },
+      { turnId, timestampMs: startMs },
+    );
+    log.push(
+      SessionEventType.ModelStreaming,
+      { kind: "reasoning_delta", delta: "hmm...", done: false },
+      { turnId, timestampMs: startMs + 1200 },
+    );
+    log.push(
+      SessionEventType.ModelStreaming,
+      { kind: "reasoning_end", delta: "", done: false },
+      { turnId, timestampMs: startMs + 4300 },
+    );
+    const reasoningRows = runAll(log.events).projection
+      .getSnapshot()
+      .rows.window.filter((row) => row.kind === "reasoning");
+    expect(reasoningRows).toEqual([
+      expect.objectContaining({ state: "complete", durationMs: 4300 }),
+    ]);
+    expect(() => conversationSnapshotSchema.parse(runAll(log.events).projection.getSnapshot())).not
+      .toThrow();
+  });
+
+  it("reasoning 亚秒收口保留毫秒精度，乱序早于起点的收口兜底为 0（feedback#1027）", () => {
+    const turnId = "turn-reason-subsecond";
+    const startMs = 1_700_000_030_000;
+    const buildReasoning = (endMs: number) => {
+      const log = new EventLog();
+      log.push(SessionEventType.SessionCreated, { mode: "default", contextWindow: 200_000 });
+      log.push(SessionEventType.TurnStarted, { turnNumber: 1, input: "think" }, { turnId });
+      log.push(
+        SessionEventType.ModelStreaming,
+        { kind: "reasoning_start", delta: "", done: false },
+        { turnId, timestampMs: startMs },
+      );
+      log.push(
+        SessionEventType.ModelStreaming,
+        { kind: "reasoning_end", delta: "", done: false },
+        { turnId, timestampMs: endMs },
+      );
+      return runAll(log.events).projection.getSnapshot();
+    };
+    // 亚秒：保留毫秒事实，秒级展示由 UI 侧 ceil（≥1）。
+    expect(
+      buildReasoning(startMs + 400).rows.window.find((row) => row.kind === "reasoning"),
+    ).toMatchObject({ state: "complete", durationMs: 400 });
+    // hydration 合成时间戳可能早于起点：Math.max(0, …) 兜底，不产生负值。
+    expect(
+      buildReasoning(startMs - 500).rows.window.find((row) => row.kind === "reasoning"),
+    ).toMatchObject({ state: "complete", durationMs: 0 });
+  });
+
+  it("cold hydration 全量重放后 reasoning durationMs 保留且与 live 终态逐字节一致（R-04，feedback#1027）", () => {
+    const turnId = "turn-reason-replay";
+    const startMs = 1_700_000_040_000;
+    const log = new EventLog();
+    log.push(SessionEventType.SessionCreated, { mode: "default", contextWindow: 200_000 });
+    log.push(SessionEventType.TurnStarted, { turnNumber: 1, input: "think" }, { turnId });
+    log.push(
+      SessionEventType.ModelStreaming,
+      { kind: "reasoning_start", delta: "", done: false },
+      { turnId, timestampMs: startMs },
+    );
+    log.push(
+      SessionEventType.ModelStreaming,
+      { kind: "reasoning_delta", delta: "deep thought", done: false },
+      { turnId, timestampMs: startMs + 2000 },
+    );
+    log.push(
+      SessionEventType.ModelStreaming,
+      { kind: "reasoning_end", delta: "", done: false },
+      { turnId, timestampMs: startMs + 7500 },
+    );
+    log.push(
+      SessionEventType.TurnComplete,
+      { response: "done", tokenCount: 3, toolCallCount: 0, duration: 8000, resultType: "success" },
+      { turnId },
+    );
+
+    const live = runAll(log.events).projection.getSnapshot();
+    // cold hydration：同一事件日志重放进全新投影（会话切换恢复路径）。
+    const cold = runAll(log.events).projection.getSnapshot();
+    const liveReasoning = live.rows.window.filter((row) => row.kind === "reasoning");
+    const coldReasoning = cold.rows.window.filter((row) => row.kind === "reasoning");
+    expect(coldReasoning).toEqual(liveReasoning);
+    expect(cold).toEqual(live);
+    expect(liveReasoning).toEqual([expect.objectContaining({ durationMs: 7500 })]);
+  });
+
   it("compact 生命周期（marker + usage 回落）", () => {
     const log = new EventLog();
     basicTurnEvents(log);

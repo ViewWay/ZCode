@@ -1790,10 +1790,14 @@ const ReasoningRowView = memo(function ReasoningRowView({
   }
   return (
     <RowShell rowId={row.rowId}>
+      {/* Bug 修复（zai-org/feedback#1027）：恒传 createdAt 作计时种子，流式中重挂
+          （会话切换 cold hydration）后从真实起点续算；完成态 durationMs 已由投影
+          写入，组件内 duration prop 受控，种子不影响收口展示。 */}
       <Reasoning
         className="w-full"
         isStreaming={streaming}
         autoCollapseKey={streaming ? null : row.state}
+        startedAt={row.createdAt}
         {...(durationSeconds !== undefined ? { duration: durationSeconds } : {})}
       >
         {/* Bug 原因：附件重构合并时误丢了 streamingText 接线，导致摘要组件仍在但永远收到空文本。 */}
