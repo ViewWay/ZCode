@@ -35,6 +35,8 @@ import type {
   SessionProjection,
   SessionStorePort,
   SessionGoal,
+  SessionInfo,
+  SessionTitleSource,
   SavedWorkflowScope,
   TargetChangedPayload,
   DynamicWorkflowRunProgressPayload,
@@ -421,8 +423,13 @@ export interface AgentRuntime {
     input: string,
     options?: { goalSummaryTargetID?: string; traceContext?: TraceContext },
   ): void;
-  /** renameSession：用户显式重命名（titleSource=custom，发 SessionTitleUpdated）。 */
-  setCustomSessionTitle(input: { title: string; traceContext: TraceContext }): Promise<void>;
+  /** renameSession：用户显式重命名（titleSource=custom，发 SessionTitleUpdated）。
+   * 传 options.expectedTitleSources 时走 store 乐观锁，未命中返回未改写的 current 且不发事件
+   * （automation freeze 用，zai-org/feedback#1016）。 */
+  setCustomSessionTitle(
+    input: { title: string; traceContext: TraceContext },
+    options?: { expectedTitleSources?: readonly SessionTitleSource[] },
+  ): Promise<SessionInfo | undefined>;
   maybeStartGoalSummaryTitleGeneration(
     input: string,
     targetID: string,

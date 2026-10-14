@@ -15,6 +15,9 @@ import {
   zcodeProtocolMethods,
   type ZCodeAutomationProtocol,
 } from "@zcode/shared";
+// 与 core 的 generated title sidecar 共用同一乐观锁来源列表，防止两处列表漂移
+// （feedback#1016：freeze 不得覆盖 custom/generated 标题）。
+import { GENERATED_TITLE_EXPECTED_SOURCES } from "@zcode/core";
 import {
   ProtocolRequestError,
   type ZCodeProtocolAgentServerContext,
@@ -162,13 +165,28 @@ export function createProtocolAutomationPort(
       const title = automation.title.trim();
       if (activeSession && title.length > 0) {
         try {
-          // 会话内 CronCreate 会在首轮回复中创建 automation，但首条消息触发的
-          // session_title sidecar 可能迟到并根据助手解释生成标题，导致标题变成“我无法...”。
-          // CronCreate 成功后把当前会话标题固定为 automation 标题，阻止 generated 标题覆盖。
-          await activeSession.app.setCustomSessionTitle({
-            title,
-            traceContext: activeSession.traceContext,
-          });
+          // 会话内 CronCreate 会在首轮回复中创建 automation，首条消息触发的
+          // session_title sidecar 可能迟到（仅 turnNumber=0 窗口）并根据助手解释生成
+          // 标题，导致标题变成“我无法...”。曾用无条件 setCustomSessionTitle 抢占，
+          // 但 zai-org/feedback#1016：这会把用户手动命名（custom）与已完成的自动命名
+          // （generated）一并改写。改走 store 乐观锁，仅在 titleSource 仍为
+          // default/first_input/generated（即首轮迟到 sidecar 尚未落库）时冻结为
+          // automation 标题；未命中时 core 不写入也不发 SessionTitleUpdated，
+          // 既有任务名原样保留。
+          const frozen = await activeSession.app.setCustomSessionTitle(
+            {
+              title,
+              traceContext: activeSession.traceContext,
+            },
+            { expectedTitleSources: GENERATED_TITLE_EXPECTED_SOURCES },
+          );
+          if (!frozen || frozen.title !== title || frozen.titleSource !== "custom") {
+            context.logger?.debug("Session title freeze skipped after CronCreate", {
+              event: "automation.session_title_freeze.skipped",
+              sessionId: createContext?.sessionId,
+              ...(frozen ? { titleSource: frozen.titleSource } : {}),
+            });
+          }
         } catch (error) {
           context.logger?.warn("Failed to freeze session title after CronCreate", {
             errorMessage: error instanceof Error ? error.message : String(error),

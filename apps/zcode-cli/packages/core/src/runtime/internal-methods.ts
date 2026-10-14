@@ -13,6 +13,8 @@ import type {
   SessionEvent,
   SessionEventSink,
   SkillLoadOutcome,
+  SessionInfo,
+  SessionTitleSource,
   SubagentPort,
   TodoItem,
   SessionGoal,
@@ -91,7 +93,10 @@ export interface AgentRuntimeCoreMethods {
     input: string,
     options?: { goalSummaryTargetID?: string; traceContext?: TraceContext },
   ): void;
-  setCustomSessionTitle(input: { title: string; traceContext: TraceContext }): Promise<void>;
+  setCustomSessionTitle(
+    input: { title: string; traceContext: TraceContext },
+    options?: { expectedTitleSources?: readonly SessionTitleSource[] },
+  ): Promise<SessionInfo | undefined>;
   recordUserInputAutoResolutionUpdate(
     input: UserInputAutoResolutionUpdatedPayload & { traceContext?: TraceContext },
   ): Promise<void>;

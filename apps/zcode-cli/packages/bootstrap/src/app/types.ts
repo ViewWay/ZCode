@@ -52,8 +52,10 @@ import type {
   SessionEventStorePort,
   SessionGoal,
   SessionId,
+  SessionInfo,
   SessionMailboxPort,
   SessionStorePort,
+  SessionTitleSource,
   SkillLoadOutcome,
   SkillPort,
   SmartRoutingPort,
@@ -368,7 +370,12 @@ export interface ZCodeApp {
   ): Promise<import("./subagent-observation.js").SubagentTranscriptSnapshot>;
   readTodos(): Promise<TodoItem[]>;
   readTarget(): Promise<SessionGoal | null>;
-  setCustomSessionTitle(input: { title: string; traceContext?: TraceContext }): Promise<void>;
+  /** 传 options.expectedTitleSources 时走 store 乐观锁：titleSource 不在列表内则不写入、
+   * 不发事件，返回未改写的 SessionInfo（automation freeze 用，zai-org/feedback#1016）。 */
+  setCustomSessionTitle(
+    input: { title: string; traceContext?: TraceContext },
+    options?: { expectedTitleSources?: readonly SessionTitleSource[] },
+  ): Promise<SessionInfo | undefined>;
   readToolResultArtifact(uri: string): Promise<ToolArtifactReadResult>;
   /** chunk transaction commit 后把完整二进制原子寄存到 session artifact store。 */
   writePromptAttachment(input: {

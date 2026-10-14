@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { AutomationCreateLimitError, isAutomationCreateLimitError } from "@zcode/contracts";
+import { GENERATED_TITLE_EXPECTED_SOURCES } from "@zcode/core";
 import { AUTOMATION_CREATE_LIMIT_ERROR_CODE, isHighspeedProviderId, zcodeProtocolMethods } from "@zcode/shared";
 import {
   AUTOMATION_CREATE_BOUND_SESSION_CHECK_ERROR,
@@ -740,10 +741,13 @@ describe("createProtocolAutomationPort", () => {
       },
       expect.anything(),
     );
-    expect(setCustomSessionTitle).toHaveBeenCalledWith({
-      title: "daily report",
-      traceContext: { traceId: "trace-session-1" },
-    });
+    expect(setCustomSessionTitle).toHaveBeenCalledWith(
+      {
+        title: "daily report",
+        traceContext: { traceId: "trace-session-1" },
+      },
+      { expectedTitleSources: GENERATED_TITLE_EXPECTED_SOURCES },
+    );
   });
 
   it("Highspeed Turn 中 CronCreate 持久化加速前的会话模型", async () => {
@@ -853,11 +857,209 @@ describe("createProtocolAutomationPort", () => {
       { sessionId: "session-1" },
     );
 
-    expect(setCustomSessionTitle).toHaveBeenCalledWith({
-      title: "每5分钟给我讲个笑话",
-      traceContext: { traceId: "trace-session-1" },
-    });
+    expect(setCustomSessionTitle).toHaveBeenCalledWith(
+      {
+        title: "每5分钟给我讲个笑话",
+        traceContext: { traceId: "trace-session-1" },
+      },
+      { expectedTitleSources: GENERATED_TITLE_EXPECTED_SOURCES },
+    );
   });
+
+  it("CronCreate 冻结不覆盖用户手动命名（custom）的会话标题（feedback#1016）", async () => {
+    const logger = { debug: vi.fn(), warn: vi.fn() };
+    // fake 模拟 store 乐观锁未命中：titleSource=custom 不在 expected 列表内，
+    // updateSession 原样返回 current，标题保持用户手动命名。
+    const setCustomSessionTitle = vi.fn(async () => ({
+      id: "session-1",
+      title: "我的晨报任务",
+      titleSource: "custom",
+    }));
+    const port = createProtocolAutomationPort({
+      logger,
+      requestClient: vi.fn(async () => ({
+        automation: {
+          automationId: "automation-1",
+          title: "每5分钟给我讲个笑话",
+          cronExpr: "*/5 * * * *",
+          prompt: "给我讲一个笑话",
+          enabled: true,
+          lifecycleStatus: "active" as const,
+          runCount: 0,
+          recurring: true,
+        },
+      })),
+      sessions: new Map([
+        [
+          "session-1",
+          {
+            app: {
+              runtime: { getSessionModelSelection: () => undefined },
+              getModel: () => undefined,
+              getMode: () => undefined,
+              getThoughtLevel: () => undefined,
+              setCustomSessionTitle,
+            },
+            traceContext: { traceId: "trace-session-1" },
+          },
+        ],
+      ]),
+    } as unknown as ZCodeProtocolAgentServerContext);
+
+    await port.create(
+      {
+        cron: "*/5 * * * *",
+        delayMinutes: null,
+        prompt: "给我讲一个笑话",
+        title: "每5分钟给我讲个笑话",
+      },
+      { sessionId: "session-1" },
+    );
+
+    expect(setCustomSessionTitle).toHaveBeenCalledWith(
+      {
+        title: "每5分钟给我讲个笑话",
+        traceContext: { traceId: "trace-session-1" },
+      },
+      { expectedTitleSources: GENERATED_TITLE_EXPECTED_SOURCES },
+    );
+    expect(logger.debug).toHaveBeenCalledWith(
+      "Session title freeze skipped after CronCreate",
+      expect.objectContaining({
+        event: "automation.session_title_freeze.skipped",
+        sessionId: "session-1",
+        titleSource: "custom",
+      }),
+    );
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("CronCreate 冻结不覆盖已完成的自动命名（generated）会话标题（feedback#1016）", async () => {
+    const logger = { debug: vi.fn(), warn: vi.fn() };
+    // fake 模拟 store 乐观锁未命中：titleSource=generated 不在 expected 列表内。
+    const setCustomSessionTitle = vi.fn(async () => ({
+      id: "session-1",
+      title: "每天讲笑话的助手",
+      titleSource: "generated",
+    }));
+    const port = createProtocolAutomationPort({
+      logger,
+      requestClient: vi.fn(async () => ({
+        automation: {
+          automationId: "automation-1",
+          title: "每5分钟给我讲个笑话",
+          cronExpr: "*/5 * * * *",
+          prompt: "给我讲一个笑话",
+          enabled: true,
+          lifecycleStatus: "active" as const,
+          runCount: 0,
+          recurring: true,
+        },
+      })),
+      sessions: new Map([
+        [
+          "session-1",
+          {
+            app: {
+              runtime: { getSessionModelSelection: () => undefined },
+              getModel: () => undefined,
+              getMode: () => undefined,
+              getThoughtLevel: () => undefined,
+              setCustomSessionTitle,
+            },
+            traceContext: { traceId: "trace-session-1" },
+          },
+        ],
+      ]),
+    } as unknown as ZCodeProtocolAgentServerContext);
+
+    await port.create(
+      {
+        cron: "*/5 * * * *",
+        delayMinutes: null,
+        prompt: "给我讲一个笑话",
+        title: "每5分钟给我讲个笑话",
+      },
+      { sessionId: "session-1" },
+    );
+
+    expect(logger.debug).toHaveBeenCalledWith(
+      "Session title freeze skipped after CronCreate",
+      expect.objectContaining({
+        event: "automation.session_title_freeze.skipped",
+        sessionId: "session-1",
+        titleSource: "generated",
+      }),
+    );
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it.each(["default", "first_input"] as const)(
+    "CronCreate 冻结仍抢占自动命名尚未落库的会话（titleSource=%s）",
+    async () => {
+      const logger = { debug: vi.fn(), warn: vi.fn() };
+      // fake 模拟 store 乐观锁命中：default/first_input 允许覆盖，冻结为 automation 标题
+      // （titleSource 写成 custom）。保留原“阻止首轮迟到 sidecar 覆盖”的意图。
+      const setCustomSessionTitle = vi.fn(async () => ({
+        id: "session-1",
+        title: "每5分钟给我讲个笑话",
+        titleSource: "custom",
+      }));
+      const port = createProtocolAutomationPort({
+        logger,
+        requestClient: vi.fn(async () => ({
+          automation: {
+            automationId: "automation-1",
+            title: "每5分钟给我讲个笑话",
+            cronExpr: "*/5 * * * *",
+            prompt: "给我讲一个笑话",
+            enabled: true,
+            lifecycleStatus: "active" as const,
+            runCount: 0,
+            recurring: true,
+          },
+        })),
+        sessions: new Map([
+          [
+            "session-1",
+            {
+              app: {
+                runtime: { getSessionModelSelection: () => undefined },
+                getModel: () => undefined,
+                getMode: () => undefined,
+                getThoughtLevel: () => undefined,
+                setCustomSessionTitle,
+              },
+              traceContext: { traceId: "trace-session-1" },
+            },
+          ],
+        ]),
+      } as unknown as ZCodeProtocolAgentServerContext);
+
+      await port.create(
+        {
+          cron: "*/5 * * * *",
+          delayMinutes: null,
+          prompt: "给我讲一个笑话",
+          title: "每5分钟给我讲个笑话",
+        },
+        { sessionId: "session-1" },
+      );
+
+      expect(setCustomSessionTitle).toHaveBeenCalledWith(
+        {
+          title: "每5分钟给我讲个笑话",
+          traceContext: { traceId: "trace-session-1" },
+        },
+        { expectedTitleSources: GENERATED_TITLE_EXPECTED_SOURCES },
+      );
+      expect(logger.debug).not.toHaveBeenCalledWith(
+        "Session title freeze skipped after CronCreate",
+        expect.objectContaining({ event: "automation.session_title_freeze.skipped" }),
+      );
+      expect(logger.warn).not.toHaveBeenCalled();
+    },
+  );
 
   it("CronUpdate 将严格 patch 映射到 automation/update，并保留 maxRuns=null", async () => {
     const requestClient = vi.fn(async () => ({

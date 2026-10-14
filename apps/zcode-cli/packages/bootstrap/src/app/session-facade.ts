@@ -367,11 +367,14 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
     ...createSubagentObservation(deps),
     readTodos: async () => deps.sessionStore.readTodos({ sessionID: deps.sessionId }),
     readTarget: readTargetWithInterruptedRunRecovery,
-    setCustomSessionTitle: async (input) =>
-      deps.runtime.setCustomSessionTitle({
-        title: input.title,
-        traceContext: input.traceContext ?? deps.traceContext,
-      }),
+    setCustomSessionTitle: async (input, options) =>
+      deps.runtime.setCustomSessionTitle(
+        {
+          title: input.title,
+          traceContext: input.traceContext ?? deps.traceContext,
+        },
+        options,
+      ),
     setTarget: async (input) =>
       (await setTargetStatus("set", input)) as Awaited<ReturnType<ZCodeApp["setTarget"]>>,
     updateTargetStatus: async (status) =>

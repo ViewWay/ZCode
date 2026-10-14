@@ -19,7 +19,11 @@ import {
   normalizeTitleInput,
 } from "./title-generation-sidecar.js";
 
-const GENERATED_TITLE_EXPECTED_SOURCES: readonly SessionTitleSource[] = [
+// 自动写入方（generated 标题 sidecar、automation 冻结）允许覆盖的 titleSource 集合
+// ——即除 custom（用户手动命名）外的全部来源。persistGeneratedSessionTitle 与 bootstrap
+// 的 automation freeze 共用同一常量（经 @zcode/core 导出），防止两处列表漂移
+// （zai-org/feedback#1016）。
+export const GENERATED_TITLE_EXPECTED_SOURCES: readonly SessionTitleSource[] = [
   "default",
   "first_input",
   "generated",
@@ -260,18 +264,36 @@ async function generateAndPersistSessionTitle(
  * renameSession：用户显式重命名会话（titleSource=custom）。custom 之后自动标题
  * 生成会被跳过（见 persistGeneratedSessionTitle 的 custom_title 短路），持久化 + 发
  * SessionTitleUpdated(source:custom) 供 v4 投影 meta 更新。
+ *
+ * options.expectedTitleSources：传入时走 store 乐观锁，当前 titleSource 不在列表内时
+ * updateSession 静默返回原值，本方法随之跳过写入与 SessionTitleUpdated 事件——
+ * automation freeze 借此只抢占 default/first_input/generated（即 GENERATED_TITLE_
+ * EXPECTED_SOURCES，首轮迟到的自动命名窗口），不改写用户手动命名（custom）与已完成的
+ * 自动命名（generated）（zai-org/feedback#1016）。
+ *
+ * 返回写入后的 SessionInfo（sessionStore 缺失时为 undefined）。乐观锁未命中时返回的是
+ * 未被改写的 current，调用方可据此判断写入是否实际生效。
  */
 export async function setCustomSessionTitle(
   this: AgentRuntimeInternal,
   input: { title: string; traceContext: TraceContext },
-): Promise<void> {
+  options?: { expectedTitleSources?: readonly SessionTitleSource[] },
+): Promise<SessionInfo | undefined> {
   const previous = await this.sessionStore?.getSession(this.sessionId);
   const previousTitle = previous?.title ?? "";
-  await this.sessionStore?.updateSession({
+  const updated = await this.sessionStore?.updateSession({
+    ...(options?.expectedTitleSources
+      ? { expectedTitleSources: options.expectedTitleSources }
+      : {}),
     id: this.sessionId,
     title: input.title,
     titleSource: "custom",
   });
+  // 乐观锁未命中时 updateSession 返回未被改写的 current（见 session-store 乐观锁）；
+  // 此时必须跳过 SessionTitleUpdated，否则 UI 投影会出现从未实际写入的标题。
+  if (!updated || updated.title !== input.title || updated.titleSource !== "custom") {
+    return updated;
+  }
   await this.appendEvent(
     this.createEvent(
       SessionEventType.SessionTitleUpdated,
@@ -284,6 +306,7 @@ export async function setCustomSessionTitle(
     ),
     input.traceContext,
   );
+  return updated;
 }
 
 async function persistGeneratedSessionTitle(
