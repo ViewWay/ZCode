@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync, renameSync, rmSync } from "node:fs";
-import { access, cp, mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
+import { existsSync, readFileSync, rmSync } from "node:fs";
+import { access, cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { appendPluginSourceCleanupError, cleanupPluginSourceBestEffort } from "./helpers.js";
+import { renameSyncWithRetry, renameWithRetry } from "./rename-retry.js";
 
 export interface ActivateDirectoryAtomicallyInput {
   authorityPath?: string;
@@ -109,16 +110,17 @@ export function recoverAtomicTargetSync(targetPath: string): string {
         rmSync(backupPath, { force: true, recursive: true });
       } else if (!existsSync(targetPath) && existsSync(backupPath)) {
         // 理论上权威状态只会在 target 激活后写入；异常磁盘状态下优先恢复一个完整版本。
-        renameSync(backupPath, targetPath);
+        // feedback#1018：Windows 过滤驱动的瞬时锁也会打断恢复 rename，用同步短退避重试。
+        renameSyncWithRetry(backupPath, targetPath);
       }
     } else if (existsSync(backupPath)) {
       rmSync(targetPath, { force: true, recursive: true });
-      renameSync(backupPath, targetPath);
+      renameSyncWithRetry(backupPath, targetPath);
     } else if (!transaction.hadTarget) {
       rmSync(targetPath, { force: true, recursive: true });
     }
   } else if (!existsSync(targetPath) && existsSync(backupPath)) {
-    renameSync(backupPath, targetPath);
+    renameSyncWithRetry(backupPath, targetPath);
   } else if (existsSync(targetPath) && existsSync(backupPath)) {
     rmSync(backupPath, { force: true, recursive: true });
   }
@@ -278,16 +280,19 @@ export async function activateDirectoryAtomically(
     });
     transactionWritten = true;
     if (hadTarget) {
-      await rename(input.targetPath, backupPath);
+      // feedback#1018：target→backup 这一步同样会撞过滤驱动瞬时锁，一并带重试。
+      await renameWithRetry(input.targetPath, backupPath);
       targetMoved = true;
     }
     try {
-      await rename(stagedPath, input.targetPath);
+      // 最终激活 staged→target 是 issue#1018 的主诉路径：Windows 杀软短暂锁定
+      // 目标目录时单次 rename 必现 EPERM。短退避重试即可一次成功。
+      await renameWithRetry(stagedPath, input.targetPath);
       committed = true;
     } catch (error) {
       if (targetMoved && !(await pathExists(input.targetPath))) {
         try {
-          await rename(backupPath, input.targetPath);
+          await renameWithRetry(backupPath, input.targetPath);
           targetMoved = false;
         } catch (rollbackError) {
           throw appendPluginSourceCleanupError(error, rollbackError);
@@ -331,7 +336,7 @@ export async function activateDirectoryAtomically(
         try {
           // 依赖 closure 的后续插件或 installed state 写入失败时，撤销已激活目录。
           await rm(input.targetPath, { force: true, recursive: true });
-          if (targetMoved) await rename(backupPath, input.targetPath);
+          if (targetMoved) await renameWithRetry(backupPath, input.targetPath);
           await cleanupPluginSourceBestEffort(async () => {
             await rm(transactionPath, { force: true });
           });
@@ -376,7 +381,8 @@ export async function writeFileAtomically(path: string, data: string | Uint8Arra
     try {
       // POSIX 可直接原子替换同目录文件，不制造 target 缺失窗口。
       // Windows 若拒绝覆盖已有目标，再进入带确定性 backup 的可恢复路径。
-      await rename(temporaryPath, path);
+      // feedback#1018：这一步同样撞过滤驱动瞬时锁，重试耗尽前不进入 backup 路径。
+      await renameWithRetry(temporaryPath, path);
       committed = true;
       return;
     } catch (replaceError) {
@@ -387,15 +393,17 @@ export async function writeFileAtomically(path: string, data: string | Uint8Arra
       mode: "standalone",
       transactionId,
     });
-    await rename(path, backupPath);
+    // feedback#1018：state 文件的连环 rename 与目录激活共用同一瞬时锁场景，
+    // 三步 rename（target→backup、staged→target、backup→target）都带短退避重试。
+    await renameWithRetry(path, backupPath);
     targetMoved = true;
     try {
-      await rename(temporaryPath, path);
+      await renameWithRetry(temporaryPath, path);
       committed = true;
     } catch (error) {
       if (targetMoved && !(await pathExists(path))) {
         try {
-          await rename(backupPath, path);
+          await renameWithRetry(backupPath, path);
           targetMoved = false;
         } catch (rollbackError) {
           throw appendPluginSourceCleanupError(error, rollbackError);

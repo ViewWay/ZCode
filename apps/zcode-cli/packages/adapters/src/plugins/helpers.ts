@@ -1,7 +1,13 @@
 import { statSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
-const PLUGIN_SOURCE_CLEANUP_RETRY_DELAYS_MS = [0, 25, 100] as const;
+// feedback#1018：stage 清理同样会撞上 Windows 过滤驱动的瞬时目录锁，
+// 退避表从 [0,25,100] 放宽到 [0,50,200]，给杀软释放句柄留出时间。
+const PLUGIN_SOURCE_CLEANUP_RETRY_DELAYS_MS = [0, 50, 200] as const;
+
+// 仅短暂占用类错误值得重试；其余错误（参数/路径语义错误等）原样返回，
+// 避免对任意错误都空转等待 3 轮。
+const PLUGIN_SOURCE_CLEANUP_TRANSIENT_CODES = new Set(["EPERM", "EACCES", "EBUSY", "ENOTEMPTY"]);
 
 export function resolveInside(rootPath: string, rawPath: string): string | null {
   if (isAbsolute(rawPath)) return null;
@@ -83,9 +89,16 @@ export async function cleanupPluginSourceBestEffort(
       return undefined;
     } catch (error) {
       cleanupError = error;
+      if (!isTransientPluginSourceCleanupError(error)) return cleanupError;
     }
   }
   return cleanupError;
+}
+
+function isTransientPluginSourceCleanupError(error: unknown): boolean {
+  return PLUGIN_SOURCE_CLEANUP_TRANSIENT_CODES.has(
+    String((error as NodeJS.ErrnoException | undefined)?.code),
+  );
 }
 
 export function appendPluginSourceCleanupError(

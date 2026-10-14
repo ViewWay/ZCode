@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -50,6 +50,30 @@ import {
   ZCODE_NO_PROXY_ENV_KEY,
   ZCODE_TOOL_ENV_PASSTHROUGH_ENV_KEY,
 } from "@zcode/shared";
+import {
+  RENAME_RETRY_ATTEMPTS_FIELD,
+  RENAME_RETRY_DELAYS_MS,
+} from "../src/plugins/rename-retry.js";
+
+// feedback#1018 的重试用例需要拦截 node:fs/promises 的 rename（原子激活链路
+// 是裸具名导入，唯一可靠的拦截点）。默认逐字委托真实实现，不影响本文件
+// 其余用例；重试用例内再临时替换实现，afterEach 恢复。
+const fsPromisesMock = vi.hoisted(() => ({
+  actualRename: undefined as
+    | ((from: string, to: string) => Promise<void>)
+    | undefined,
+  rename: vi.fn(),
+}));
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  fsPromisesMock.actualRename = actual.rename;
+  fsPromisesMock.rename.mockImplementation(actual.rename);
+  return { ...actual, rename: fsPromisesMock.rename };
+});
+
+function errnoError(code: string): NodeJS.ErrnoException {
+  return Object.assign(new Error(code), { code });
+}
 
 const execFileAsync = promisify(execFile);
 
@@ -1818,8 +1842,11 @@ describe("NodePluginAdapter", () => {
     }
   });
 
-  it("retries source cleanup without replacing the primary error", async () => {
-    const cleanupError = new Error("temporary directory is locked");
+  it("retries transient source cleanup without replacing the primary error", async () => {
+    // feedback#1018：只有 EPERM/EACCES/EBUSY/ENOTEMPTY 这类短暂占用错误才重试。
+    const cleanupError = Object.assign(new Error("temporary directory is locked"), {
+      code: "EPERM",
+    });
     const cleanup = vi.fn(async () => {
       throw cleanupError;
     });
@@ -1834,6 +1861,17 @@ describe("NodePluginAdapter", () => {
     expect(primaryError.message).toContain("Plugin zip sha256 mismatch");
     expect(primaryError.message).toContain("plugin source cleanup also failed");
     expect(primaryError.message).toContain("temporary directory is locked");
+  });
+
+  it("does not retry non-transient source cleanup failures", async () => {
+    const cleanup = vi.fn(async () => {
+      throw Object.assign(new Error("path is not a directory"), { code: "ENOTDIR" });
+    });
+
+    const returnedCleanupError = await cleanupPluginSourceBestEffort(cleanup, [0, 50, 200]);
+
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(returnedCleanupError).toMatchObject({ code: "ENOTDIR" });
   });
 
   it("downloads a zip through captured user proxy env", async () => {
@@ -3275,6 +3313,175 @@ describe("NodePluginAdapter", () => {
     } finally {
       await rm(dir, { force: true, recursive: true });
     }
+  });
+
+  // feedback#1018（zai-org/feedback#1018）：Windows 上过滤驱动类杀软短暂锁定
+  // 目录导致最终激活 rename 必现 EPERM。以下用例通过拦截 node:fs/promises 的
+  // rename 注入瞬时/持续 EPERM，并断言短退避节奏与回滚路径同样带重试。
+  describe("atomic directory rename retry", () => {
+    const isStagedActivationRename = (from: string, to: string, targetPath: string): boolean =>
+      to === targetPath && basename(from) === "content";
+
+    afterEach(() => {
+      // 恢复逐字委托真实 rename，避免影响本文件其余用例。
+      fsPromisesMock.rename.mockImplementation(
+        (...args: Parameters<typeof fsPromisesMock.actualRename>) =>
+          fsPromisesMock.actualRename!(...args),
+      );
+      fsPromisesMock.rename.mockClear();
+    });
+
+    it("retries the final activation rename on transient EPERM and succeeds", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "zcode-plugin-atomic-retry-"));
+      const sourcePath = join(dir, "source");
+      const targetPath = join(dir, "active");
+      let timerSpy: ReturnType<typeof vi.spyOn> | undefined;
+      try {
+        await mkdir(sourcePath, { recursive: true });
+        await writeFile(join(sourcePath, "version.txt"), "v2");
+
+        vi.useFakeTimers();
+        timerSpy = vi.spyOn(globalThis, "setTimeout");
+        let renameAttempts = 0;
+        fsPromisesMock.rename.mockImplementation(async (from: string, to: string) => {
+          renameAttempts += 1;
+          // 模拟过滤驱动短暂锁定 target：最终激活 rename 前 3 次抛 EPERM 后放行。
+          if (isStagedActivationRename(from, to, targetPath) && renameAttempts <= 3) {
+            throw errnoError("EPERM");
+          }
+          return fsPromisesMock.actualRename!(from, to);
+        });
+
+        let settledError: unknown;
+        let finished = false;
+        let activationResult:
+          | Awaited<ReturnType<typeof activateDirectoryAtomically>>
+          | undefined;
+        const settled = activateDirectoryAtomically({ sourcePath, targetPath }).then(
+          (result) => {
+            activationResult = result;
+            finished = true;
+          },
+          (error) => {
+            settledError = error;
+            finished = true;
+          },
+        );
+        // 激活链路里的真实 fs IO 与 fake timer 交替：激活尚未调度到首个 sleep 时
+        // 单次 advance 会空转返回，必须逐窗推进直到事务落定。
+        for (let tick = 0; !finished && tick < 200; tick += 1) {
+          await vi.advanceTimersByTimeAsync(250);
+        }
+        await settled;
+
+        expect(finished).toBe(true);
+        expect(settledError).toBeUndefined();
+        if (!activationResult) throw new Error("expected activation to resolve");
+        expect(await readFile(join(targetPath, "version.txt"), "utf8")).toBe("v2");
+        expect(renameAttempts).toBe(4);
+        // 重试 sleep 序列符合退避表前三档（唯一会调度 timer 的路径就是重试 sleep）。
+        expect(timerSpy.mock.calls.map((call) => call[1])).toEqual([30, 60, 120]);
+        await activationResult.finalize();
+      } finally {
+        timerSpy?.mockRestore();
+        vi.useRealTimers();
+        await rm(dir, { force: true, recursive: true });
+      }
+    });
+
+    it("throws the last EPERM after exhausting retries and restores the backup via the retrying rollback", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "zcode-plugin-atomic-retry-exhaust-"));
+      const sourcePath = join(dir, "source");
+      const targetPath = join(dir, "active");
+      const backupPath = join(dir, ".active.backup");
+      let timerSpy: ReturnType<typeof vi.spyOn> | undefined;
+      try {
+        await mkdir(sourcePath, { recursive: true });
+        await mkdir(targetPath, { recursive: true });
+        await writeFile(join(sourcePath, "version.txt"), "v2");
+        await writeFile(join(targetPath, "version.txt"), "v1");
+
+        vi.useFakeTimers();
+        timerSpy = vi.spyOn(globalThis, "setTimeout");
+        fsPromisesMock.rename.mockImplementation(async (from: string, to: string) => {
+          // 最终激活恒 EPERM；target→backup 与回滚 backup→target 真实执行。
+          if (isStagedActivationRename(from, to, targetPath)) throw errnoError("EPERM");
+          return fsPromisesMock.actualRename!(from, to);
+        });
+
+        let settledError: unknown;
+        let resolvedUnexpectedly = false;
+        let finished = false;
+        const settled = activateDirectoryAtomically({ sourcePath, targetPath }).then(
+          () => {
+            resolvedUnexpectedly = true;
+            finished = true;
+          },
+          (error) => {
+            settledError = error;
+            finished = true;
+          },
+        );
+        // 同上：真实 fs IO 与 fake timer 交替，逐窗推进直到事务落定。
+        for (let tick = 0; !finished && tick < 200; tick += 1) {
+          await vi.advanceTimersByTimeAsync(250);
+        }
+        await settled;
+
+        expect(finished).toBe(true);
+        expect(resolvedUnexpectedly).toBe(false);
+        const error = settledError as NodeJS.ErrnoException;
+        expect(error).toMatchObject({ code: "EPERM" });
+        expect(
+          (error as unknown as Record<string, unknown>)[RENAME_RETRY_ATTEMPTS_FIELD],
+        ).toBe(RENAME_RETRY_DELAYS_MS.length + 1);
+        // 重试耗尽前覆盖整张退避表。
+        expect(timerSpy?.mock.calls.map((call) => call[1])).toEqual([
+          ...RENAME_RETRY_DELAYS_MS,
+        ]);
+        // 回滚 rename（backup→target）同样经过重试包装并真实恢复 target。
+        expect(await readFile(join(targetPath, "version.txt"), "utf8")).toBe("v1");
+        expect(existsSync(backupPath)).toBe(false);
+        expect(existsSync(join(dir, ".active.transaction.json"))).toBe(false);
+        expect(
+          fsPromisesMock.rename.mock.calls.filter(
+            ([from, to]) =>
+              to === targetPath && basename(String(from)) === ".active.backup",
+          ).length,
+        ).toBe(1);
+      } finally {
+        timerSpy?.mockRestore();
+        vi.useRealTimers();
+        await rm(dir, { force: true, recursive: true });
+      }
+    });
+
+    it("does not retry non-transient rename failures", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "zcode-plugin-atomic-retry-enoent-"));
+      const sourcePath = join(dir, "source");
+      const targetPath = join(dir, "active");
+      try {
+        await mkdir(sourcePath, { recursive: true });
+        await writeFile(join(sourcePath, "version.txt"), "v2");
+
+        fsPromisesMock.rename.mockImplementation(async (from: string, to: string) => {
+          // ENOENT 不是短暂占用错误，不进入重试，原样抛出。
+          if (isStagedActivationRename(from, to, targetPath)) throw errnoError("ENOENT");
+          return fsPromisesMock.actualRename!(from, to);
+        });
+
+        await expect(
+          activateDirectoryAtomically({ sourcePath, targetPath }),
+        ).rejects.toMatchObject({ code: "ENOENT" });
+        expect(
+          fsPromisesMock.rename.mock.calls.filter(([from, to]) =>
+            isStagedActivationRename(String(from), String(to), targetPath),
+          ).length,
+        ).toBe(1);
+      } finally {
+        await rm(dir, { force: true, recursive: true });
+      }
+    });
   });
 
   it("rolls back earlier dependency cache activations when a later dependency install fails", async () => {
