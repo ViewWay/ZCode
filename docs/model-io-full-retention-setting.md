@@ -10,9 +10,10 @@
 
 Settings / General 提供“完整保留模型 I/O”开关：
 
-- 关闭：保持当前 bounded 模式。生产态最多保留 3 个 session 文件，单 session 达到 64 MiB 后重置；开发态单 session 达到 256 MiB 后重置；请求消息使用 `full` / `delta` / `tail` 压缩，生产态裁剪重复的大字段。
-- 开启：从下一次模型 attempt 开始写完整记录，不淘汰旧 session 文件，不按单 session 容量重置，不生成 `delta` / `tail`，也不执行生产态字段裁剪。
+- 关闭：保持当前 bounded 模式。生产态最多保留 3 个 session 文件，单 session 达到 64 MiB 后重置；开发态最多保留 10 个 session 文件，单 session 达到 256 MiB 后重置；请求消息使用 `full` / `delta` / `tail` 压缩，生产态裁剪重复的大字段。
+- 开启：从下一次模型 attempt 开始写完整记录，不按单 session 容量重置，不生成 `delta` / `tail`，也不执行生产态字段裁剪；仍按文件数轮转（生产态 3 个、开发态 10 个，只在新建 session 文件时淘汰最旧），防止长期运行磁盘无界（feedback#1022）。
 - 切换不重写、恢复或删除已经存在的记录。重新关闭后，从下一次写入开始恢复 bounded 策略。
+- 无论开关状态，CLI 进程启动 60 秒后会删除 `debug/`、`rollout/` 两个目录中 mtime 超过 7 天的 `model-io-*.jsonl`（与日志保留策略对齐），兜底清理用户关闭开关后遗留的巨型 session 文件。
 - 开启后会完整保存 prompt、tool input/result 和模型输出；该设置只改变保留策略，不改变安全脱敏边界。
 - Header 与 Anthropic request metadata 的凭据脱敏属于安全边界，任何模式都不能关闭。
 
@@ -61,13 +62,18 @@ write model_io record
 sanitize headers / request metadata       always
   |
   +-- fullRetention = true --> append complete sanitized record
+  |                             + session-count rotation (new session only)
   |
   `-- fullRetention = false
          |
          +--> production duplicate-field pruning
          +--> full / delta / tail compaction
-         +--> session-count rotation
+         +--> session-count rotation (rollout 3 / debug 10)
          `--> per-session size reset
+
+startup (after 60s delay)
+  |
+  `--> delete model-io-*.jsonl older than 7 days by mtime (debug + rollout)
 ```
 
 开关值在一次模型 attempt 开始时取快照；切换发生在请求中途时，当前 attempt 沿用开始时的模式，下一 attempt 生效，避免一条记录内部出现不确定语义。
@@ -147,7 +153,7 @@ sanitize headers / request metadata       always
 
 | Boundary | Decision | Includes | Excludes / prunes | Source |
 | --- | --- | --- | --- | --- |
-| 全量定义 | 禁止所有自动删除、重置、delta/tail 与生产字段裁剪 | request/response 完整诊断字段 | 安全脱敏 | user intent + security invariant |
+| 全量定义 | 禁止单 session 容量重置、delta/tail 与生产字段裁剪；保留按文件数的轮转与启动 7 天 mtime 清理（feedback#1022） | request/response 完整诊断字段 | 安全脱敏 | user intent + security invariant |
 | 生效范围 | App 全局，活动 local/remote CLI 即时同步 | future and resident apps | standalone CLI UI | app settings architecture |
 | 历史处理 | 不回填、不重写 | future attempts | 恢复已淘汰数据 | append-only boundary |
 | conversation E2E | 不新增 | schema/UI/protocol/adapter integration tests | session state matrix | no conversation behavior change |
@@ -158,10 +164,11 @@ sanitize headers / request metadata       always
 | --- | --- | --- | --- | --- |
 | MIO-FR-01 | empty historical settings | load settings | switch/default is false | schema |
 | MIO-FR-02 | bounded production writer | write multiple sessions and growing context | max 3 files; delta/tail and size reset unchanged | adapter/files |
-| MIO-FR-03 | full retention enabled | write multiple sessions and repeated context | all files remain; each record is full; production duplicate fields remain | adapter/files |
+| MIO-FR-03 | full retention enabled | write multiple sessions and repeated context | each record is full; production duplicate fields remain; session-file count still bounded (rollout 3 / debug 10, oldest removed on new session) | adapter/files |
 | MIO-FR-04 | full retention enabled with oversized session file | append next record | existing file is not reset and no `modelIOReset` marker is emitted | adapter/files |
 | MIO-FR-05 | active local/remote services | toggle switch | setting persists, active Host ACKs, cross-window payload includes full snapshot | UI/service/protocol |
 | MIO-FR-06 | full retention record contains credentials in headers | write record | sensitive headers remain `[redacted]` | adapter/files |
+| MIO-FR-07 | model-io-*.jsonl older than 7 days in debug/rollout | CLI startup +60s | stale files deleted by mtime; other files untouched | adapters tests |
 
 ### Pruning Decisions
 

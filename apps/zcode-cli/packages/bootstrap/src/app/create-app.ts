@@ -15,6 +15,7 @@ import { createNodeWebFetchHttpClientAdapter } from "@zcode/adapters/http";
 import { createJimpImageProcessorAdapter } from "@zcode/adapters/image";
 import { createPopplerPdfDocumentAdapter } from "@zcode/adapters/pdf";
 import { createNodeSessionMailboxAdapter } from "@zcode/adapters/mailbox";
+import { scheduleModelIoRetentionCleanup } from "@zcode/adapters/model";
 import { createNodeContextSourceAdapter } from "@zcode/adapters/context";
 import { createNodeSkillAdapter } from "@zcode/adapters/skills";
 import { createMcpAdapter } from "@zcode/adapters/mcp";
@@ -920,6 +921,13 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       workingDirectory,
     });
     scheduleStartupLogRetentionCleanup(loggerFactory, logger);
+    // model-io 诊断日志的启动兜底清理（feedback#1022）：写入侧的文件数轮转只覆盖进程内写入，
+    // 全量保留模式遗留的巨型 session 文件在用户关闭开关后没有任何清理路径。
+    // debug 与 rollout 两个目录都按 7 天 mtime 淘汰，保留期与延迟对齐日志清理策略。
+    scheduleModelIoRetentionCleanup({
+      logger: modelLogger,
+      rootDirs: [getModelIoDir(cliStorageRoot, true), getModelIoDir(cliStorageRoot, false)],
+    });
     const inputFacade = createInputFacade({
       artifactStore,
       customCommandPromptResolver: async (text, resolverOptions) => {

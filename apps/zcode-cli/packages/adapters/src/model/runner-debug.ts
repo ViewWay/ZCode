@@ -33,6 +33,10 @@ import type {
 
 // 生产环境 rollout 目录最多保留的 model-io 会话文件数。超出删最旧。
 const MAX_ROLLOUT_FILES = 3;
+// 开发态 debug 目录最多保留的 model-io 会话文件数（feedback#1022）。
+// 此前轮转被 !development 门控挡住，debug 目录从未按文件数淘汰，session 文件无限堆积；
+// 比 rollout 的 3 宽（开发场景需要更多可回溯上下文），但必须有界。
+const MAX_DEBUG_FILES = 10;
 // 生产环境单个 session 的 model-io 文件硬上限。诊断日志不能因为无限增长影响 agent 主流程。
 const MAX_ROLLOUT_SESSION_BYTES = 64 * 1024 * 1024;
 // 开发态保留更多上下文，但仍避免单个 debug 文件无限膨胀。
@@ -485,17 +489,23 @@ function writeModelIODebugRecord(
     const filePath = join(dir, fileName);
     const fileExists = existsSync(filePath);
     if (modelIoFullRetentionEnabled) {
-      // 全量保留仍经过统一脱敏边界，但跳过轮转、限额重置、生产裁剪和上下文压缩。
+      // 全量保留仍经过统一脱敏边界，但跳过限额重置、生产裁剪和上下文压缩；
       // 这是用户显式选择的诊断模式；更新 compaction state 使关闭后下一次 bounded 写入可平滑续接。
+      // 仍保留按文件数的轮转（feedback#1022）：全量模式单文件可达 GB 级且不压缩，
+      // 若连文件个数都不限制，关闭开关后遗留的巨型文件在两次启动清理之间就是永久性磁盘泄漏。
+      if (!fileExists) {
+        rotateModelIOFiles(dir, maxModelIOFiles(development) - 1);
+      }
       appendFileSync(filePath, `${stringifyDebugRecord(sanitizedRecord)}\n`, "utf8");
       modelIOCompactionStates.set(filePath, buildModelIOCompactionState(sanitizedRecord));
       return;
     }
-    // 生产态(rollout)做容量上限,避免长期运行把磁盘刷爆;开发态(debug)也保留更高的单文件上限。
+    // 两个目录都按 session 文件个数上限淘汰，避免长期运行把磁盘刷爆（feedback#1022：
+    // 此前开发态 debug 目录被 !development 门控跳过轮转，单文件 ≤256MiB × 无限个 session 无界）。
     // 同一 session 之前每次模型请求都会新建一个完整上下文文件，形成三角形重复；
     // 现在改为一个 session 一个 JSONL 文件，新请求 append 到同文件，只有新 session 才参与淘汰。
-    if (!development && !fileExists) {
-      rotateModelIOFiles(dir, MAX_ROLLOUT_FILES - 1);
+    if (!fileExists) {
+      rotateModelIOFiles(dir, maxModelIOFiles(development) - 1);
     }
     const existingBytes = fileExists ? readFileSize(filePath) : 0;
     const maxSessionBytes = development ? MAX_DEBUG_SESSION_BYTES : MAX_ROLLOUT_SESSION_BYTES;
@@ -532,6 +542,12 @@ function writeModelIODebugRecord(
   } catch {
     // Model I/O debug logging must never affect the model request path.
   }
+}
+
+// 各目录的 session 文件数上限：rollout → MAX_ROLLOUT_FILES，debug → MAX_DEBUG_FILES。
+// bounded 与全量保留共用同一上限，只是全量模式单文件更大且不压缩。
+function maxModelIOFiles(isDev: boolean): number {
+  return isDev ? MAX_DEBUG_FILES : MAX_ROLLOUT_FILES;
 }
 
 // 保证目录下 model-io-*.jsonl 文件数不超过 maxFiles(为本次新 session 文件留位时传 maxFiles-1)。
