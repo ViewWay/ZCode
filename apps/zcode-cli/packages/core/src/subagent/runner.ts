@@ -658,7 +658,9 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       // Agent Teams（specs/agent-teams.md）：teammate = 具名常驻后台代理。
       // 首轮 turn 复用 start 的后台管线（事件/registry/outputFile 全部同源），
       // 完成后由 teammate-supervisor 接管空闲轮询，消息驱动 resume 管线开新一轮。
-      const { profile, request } = resolveAgentProfileForRequest(profiles, rawRequest);
+      // 修复原因：此处曾引用不存在的裸名 profiles（重命名遗漏），spawnTeammate
+      // 运行到即 ReferenceError；与其余调用点统一走 getProfiles()。
+      const { profile, request } = resolveAgentProfileForRequest(getProfiles(), rawRequest);
       const teamDirs = resolveTeamWorkspaceDirs(
         {
           workspaceIdentity: rawRequest.workspaceIdentity,
@@ -840,7 +842,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
             };
             await resumeTerminalAgentInBackground(
               options,
-              profiles,
+              getProfiles(),
               registry,
               abortControllers,
               task,
